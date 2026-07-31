@@ -1,0 +1,51 @@
+From 90b3a5c579ffb0ac164e4cea7163228a864ef0c4 Mon Sep 17 00:00:00 2001
+From: Ross Cawston <rcawston@users.noreply.github.com>
+Date: Mon, 9 Feb 2026 14:35:17 -0800
+Subject: [PATCH 3/5] media: synopsys: hdmirx: fix buffer overflow on repeated HDMI-RX replug
+
+Imported from https://github.com/rcawston/rockchip-rk3588-mainline-patches
+at e13a311d8ee5e8ed92ec3d4a57c21f766c61d660"   # main @ 2026-07-01, file 0003-rockchip-rk3588-hdmirx-plugout-fix-v1.patch.
+
+Authored by Ross Cawston. This CeraLive copy re-packages the file as a git
+mailbox so it can be applied with `git am`. Every added and removed line is
+byte-identical to upstream's; scripts/verify-payload-parity.py enforces that.
+
+Dropped 1 payload-free "Binary files .../.DS_Store ... differ"
+stanza(s) that macOS left in the original `diff -ruN` output. They carry
+no data, and git apply refuses a binary stanza with no index line.
+
+NOT upstream-bound: this is a CeraLive-maintained adaptation, not a submission
+to rockchip-rk3588-mainline-patches. No Signed-off-by is added, because none
+was given upstream and inventing one would misattribute a DCO assertion.
+
+---
+diff -ruN aa/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c bb/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
+--- aa/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c	2026-02-09 14:27:48
++++ bb/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c	2026-02-09 14:27:56
+@@ -619,6 +619,8 @@
+ 
+ static void hdmirx_plugout(struct snps_hdmirx_dev *hdmirx_dev)
+ {
++	struct hdmirx_stream *stream = &hdmirx_dev->stream;
++
+ 	if (!hdmirx_dev->plugged)
+ 		return;
+ 
+@@ -639,6 +641,17 @@
+ 			   PHY_PDDQ, HDMI_DISABLE);
+ 	hdmirx_writel(hdmirx_dev, PHYCREG_CONFIG0, 0x0);
+ 	cancel_delayed_work(&hdmirx_dev->delayed_work_res_change);
++
++	/*
++	 * If V4L2 streaming was active when we killed DMA, signal a
++	 * fatal error on the vb2 queue so that any blocked DQBUF
++	 * returns immediately with POLLERR/POLLHUP instead of
++	 * hanging on EAGAIN until userspace timeout.
++	 */
++	mutex_lock(&hdmirx_dev->stream_lock);
++	if (vb2_is_streaming(&stream->buf_queue))
++		vb2_queue_error(&stream->buf_queue);
++	mutex_unlock(&hdmirx_dev->stream_lock);
+ 
+ 	/* will be NULL on driver removal */
+ 	if (hdmirx_dev->rgb_range)
