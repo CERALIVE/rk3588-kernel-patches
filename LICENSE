@@ -1,0 +1,55 @@
+Licensing of the material in this repository
+============================================
+
+This file DESCRIBES the licence terms the imported material already carries.
+It GRANTS NOTHING. CeraLive is not a copyright holder of any patch content here
+and is not in a position to license it to anyone.
+
+Read docs/PROVENANCE.md for the full audit, including what we verified, what we
+did not, and the open questions. This file is only a summary.
+
+
+Patch content (upstream/, patches/, overlays/)
+----------------------------------------------
+
+Authored by Ross Cawston (https://github.com/rcawston), ported from Rockchip's
+BSP MPP driver sources. The upstream repository
+https://github.com/rcawston/rockchip-rk3588-mainline-patches has NO licence file
+of its own, so licensing information exists only in the per-file headers carried
+inside the diffs:
+
+  * New encoder sources        SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+  * New UAPI header            SPDX-License-Identifier:
+                                 ((GPL-2.0+ WITH Linux-syscall-note) OR MIT)
+  * Device-tree overlay        SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+  * Module metadata            MODULE_LICENSE("Dual MIT/GPL")
+
+  Copyright (C) Rockchip Electronics Co., Ltd.
+  Copyright (C) 2026 Ross Cawston
+
+We verified that the Rockchip BSP files these were ported from carry the SAME
+SPDX tags, so the dual-licence claim is inherited from the copyright holder
+rather than asserted downstream. See docs/PROVENANCE.md section 4.
+
+Files the series MODIFIES rather than adds keep their existing mainline Linux
+licence (GPL-2.0 / GPL-2.0-only). The series alters no SPDX line.
+
+CeraLive uses and redistributes this material under the GPL-2.0 branch of the
+disjunction above, as ordinary Linux kernel patches. We make NO MIT claim and
+take no MIT-dependent action. Relying on the MIT branch would require a
+line-by-line derivation audit that has not been performed, plus actual legal
+review. See docs/PROVENANCE.md section 5.1.
+
+
+CeraLive-authored material
+--------------------------
+
+Everything under scripts/, docs/, rebase/, .github/, plus kernel-pin.env,
+README.md and AGENTS.md, is CeraLive packaging, tooling and documentation. It
+contains no patch content. It is offered under GPL-2.0-or-later, matching the
+material it exists to package.
+
+  Copyright (C) 2026 CeraLive
+
+
+No legal review has been performed on any of the above, and none is implied.
