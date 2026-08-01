@@ -1,0 +1,134 @@
+name: patch-apply
+
+# Trigger hygiene: `push` is constrained to branches because a `pull_request`
+# trigger exists. A bare `push:` would fire a second, duplicate run for every
+# PR-branch push, and `concurrency` does NOT dedupe that — the push event's ref
+# (refs/heads/<branch>) and the PR event's ref (refs/pull/N/merge) hash to
+# different concurrency groups.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly drift watch: has Armbian moved rk3588 edge off the pinned kernel line?
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Cheap and fast: does patches/ still match what the converter produces from
+  # upstream/, and does it still change nothing upstream/ did not already change?
+  # Runs first so a hand-edited series fails in seconds rather than after a 2 GB
+  # kernel clone.
+  series-integrity:
+    name: series integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: patches/ is generated, not hand-edited
+        run: python3 scripts/build-series.py --check
+
+      - name: patches/ payload is byte-identical to upstream/
+        run: python3 scripts/verify-payload-parity.py
+
+      - name: upstream/ is unmodified since import
+        run: |
+          source kernel-pin.env
+          echo "Imported from $UPSTREAM_PATCHES_REPO at $UPSTREAM_PATCHES_REV"
+          # The fork's own history is the provenance record; assert the import
+          # commit is still an ancestor so a rewrite cannot go unnoticed.
+          git fetch --deepen=50 --quiet || true
+          if git cat-file -e "$UPSTREAM_PATCHES_REV^{commit}" 2>/dev/null; then
+            git merge-base --is-ancestor "$UPSTREAM_PATCHES_REV" HEAD \
+              && echo "ok: import commit is an ancestor of HEAD"
+          else
+            echo "note: import commit not in this shallow checkout; skipping ancestry check"
+          fi
+
+  # Non-blocking on the weekly schedule (drift is information, not a regression);
+  # blocking on push/PR (a change that desyncs the pin from Armbian is a bug).
+  preflight:
+    name: armbian pin preflight
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ github.event_name == 'schedule' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: kernel-pin.env matches the pinned armbian/build revision
+        run: scripts/preflight.sh
+
+      - name: armbian/build HEAD has not moved rk3588 edge
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: scripts/preflight.sh --head
+
+  # The gate. Runs the exact script the README tells a human to run, so a broken
+  # instruction is a red build.
+  apply:
+    name: git am against ${{ matrix.tag }}
+    needs: series-integrity
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Single entry today. It is a matrix so a future pin bump can prove the
+        # series against the old and new tag in the same run.
+        tag: [v7.1.5]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Resolve the pin
+        id: pin
+        run: |
+          source kernel-pin.env
+          [ "$KERNEL_TAG" = "${{ matrix.tag }}" ] || {
+            echo "::error::matrix tag ${{ matrix.tag }} != KERNEL_TAG $KERNEL_TAG"
+            exit 1
+          }
+          echo "tag=$KERNEL_TAG"          >> "$GITHUB_OUTPUT"
+          echo "commit=$KERNEL_COMMIT"    >> "$GITHUB_OUTPUT"
+          echo "mirror=$KERNEL_MIRROR"    >> "$GITHUB_OUTPUT"
+
+      # The kernel clone dominates the job. Key on the immutable commit, so the
+      # cache is only ever reused for the exact source it was built from.
+      - name: Cache kernel tree
+        id: kernel-cache
+        uses: actions/cache@v6
+        with:
+          path: .work/linux
+          key: linux-${{ runner.os }}-${{ steps.pin.outputs.commit }}
+
+      - name: Clone kernel at ${{ steps.pin.outputs.tag }}
+        if: steps.kernel-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 --single-branch \
+            --branch "${{ steps.pin.outputs.tag }}" \
+            "${{ steps.pin.outputs.mirror }}" .work/linux
+
+      - name: Reset the cached tree
+        run: |
+          git -C .work/linux am --abort 2>/dev/null || true
+          git -C .work/linux checkout -f "${{ steps.pin.outputs.tag }}"
+          git -C .work/linux clean -fdxq
+
+      - name: Apply the series
+        env:
+          KEEP_TREE: "1"
+        run: scripts/apply.sh .work/linux
+
+      # Save the pristine tree, never a patched one: apply.sh leaves the git am
+      # commits in place, and caching those would poison the next run's reset.
+      - name: Restore the tree to the pinned tag before caching
+        if: always()
+        run: |
+          git -C .work/linux am --abort 2>/dev/null || true
+          git -C .work/linux checkout -f "${{ steps.pin.outputs.tag }}"
+          git -C .work/linux reset --hard "${{ steps.pin.outputs.tag }}"
+          git -C .work/linux clean -fdxq

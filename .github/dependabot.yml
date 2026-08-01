@@ -1,0 +1,22 @@
+version: 2
+
+# This repository ships patch text and shell/Python tooling that uses only the
+# standard library, so `github-actions` is the entire dependency surface. There
+# is deliberately no npm or cargo ecosystem here.
+#
+# The kernel and the upstream patch source are NOT dependabot-managed: both are
+# pinned in kernel-pin.env and bumping either requires re-running the apply gate
+# and writing a rebase ledger. `scripts/preflight.sh --head`, run weekly by the
+# patch-apply workflow, is the drift watch for those.
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    labels:
+      - dependencies
+      - github-actions

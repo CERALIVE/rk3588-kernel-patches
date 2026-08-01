@@ -1,0 +1,5 @@
+# Scratch kernel tree created by scripts/apply.sh. Multi-GB; never committed.
+.work/
+
+__pycache__/
+*.pyc
