@@ -23,9 +23,9 @@ permissions:
 
 jobs:
   # Cheap and fast: does patches/ still match what the converter produces from
-  # upstream/, and does it still change nothing upstream/ did not already change?
-  # Runs first so a hand-edited series fails in seconds rather than after a 2 GB
-  # kernel clone.
+  # upstream/ + ceralive/, and does it still change nothing those sources did not
+  # already change? Runs first so a hand-edited series fails in seconds rather
+  # than after a 2 GB kernel clone.
   series-integrity:
     name: series integrity
     runs-on: ubuntu-latest
@@ -35,7 +35,7 @@ jobs:
       - name: patches/ is generated, not hand-edited
         run: python3 scripts/build-series.py --check
 
-      - name: patches/ payload is byte-identical to upstream/
+      - name: patches/ payload is byte-identical to its source lane
         run: python3 scripts/verify-payload-parity.py
 
       - name: upstream/ is unmodified since import
