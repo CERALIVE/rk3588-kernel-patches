@@ -1,7 +1,7 @@
 From e13a311d8ee5e8ed92ec3d4a57c21f766c61d660 Mon Sep 17 00:00:00 2001
 From: Ross Cawston <rcawston@users.noreply.github.com>
 Date: Wed, 1 Jul 2026 14:19:29 -0700
-Subject: [PATCH 5/5] media: synopsys: hdmirx: add HDMI-RX audio capture support
+Subject: [PATCH 5/6] media: synopsys: hdmirx: add HDMI-RX audio capture support
 
 Imported from https://github.com/rcawston/rockchip-rk3588-mainline-patches
 at e13a311d8ee5e8ed92ec3d4a57c21f766c61d660"   # main @ 2026-07-01, file 0005-rockchip-rk3588-hdmirx-audio.patch.

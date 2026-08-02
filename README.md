@@ -15,15 +15,17 @@ imported at `e13a311` (2026-07-01) with full history and authorship preserved.
 
 ## What's in the series
 
-Upstream's numbering is preserved verbatim, gap included:
+Upstream's numbering is preserved verbatim, gap included. First-party patches
+continue the same counter from `0006`:
 
-| | Patch | What it does |
-|---|---|---|
-| `0001` | vepu580 encoder (v3) | VEPU580 / RKVENC v2 H.265 · H.264 · JPEG hardware encoder, ported from the Rockchip BSP MPP driver. ~4,200 lines, 9 new files. |
-| `0002` | hdmirx EDID fix (v1) | Makes a written EDID actually visible to the HDMI source. |
-| `0003` | hdmirx plugout fix (v1) | Fixes a buffer overflow on repeated HDMI-RX replug. |
-| *0004* | — | **Never published upstream.** The gap is intentional; do not renumber to close it. |
-| `0005` | hdmirx audio | HDMI-RX audio capture support. |
+| | Patch | Source | What it does |
+|---|---|---|---|
+| `0001` | vepu580 encoder (v3) | `upstream/` | VEPU580 / RKVENC v2 H.265 · H.264 · JPEG hardware encoder, ported from the Rockchip BSP MPP driver. ~4,200 lines, 9 new files. |
+| `0002` | hdmirx EDID fix (v1) | `upstream/` | Makes a written EDID actually visible to the HDMI source. |
+| `0003` | hdmirx plugout fix (v1) | `upstream/` | Fixes a buffer overflow on repeated HDMI-RX replug. |
+| *0004* | — | — | **Never published upstream.** The gap is intentional; do not renumber to close it. |
+| `0005` | hdmirx audio | `upstream/` | The driver half of HDMI-RX audio capture: registers an ASoC `hdmi-audio-codec` under `hdmi_receiver@fdee0000` and drives the receiver's audio FIFO, ACR-derived sample rate and recovered clock. Adds no device tree. |
+| `0006` | hdmirx audio sound card | `ceralive/` | The device-tree half. Without it `0005`'s codec is bound but ALSA never instantiates a card, so HDMI-IN audio cannot be captured at all. |
 
 Plus [`overlays/rockchip-rk3588-rkvenc-mpp.dts`](overlays/rockchip-rk3588-rkvenc-mpp.dts),
 the device-tree overlay the encoder needs, carried verbatim.
@@ -32,13 +34,18 @@ the device-tree overlay the encoder needs, carried verbatim.
 
 ```
 upstream/          Ross Cawston's original diff -ruN files, byte-for-byte
-patches/           the git-am series — GENERATED, never hand-edit
+ceralive/          first-party patches with no upstream counterpart
+patches/           the git-am series — GENERATED from both, never hand-edit
 overlays/          the rkvenc/MPP device-tree overlay
 rebase/            per-kernel-tag context re-anchor rules
 scripts/           preflight · build-series · verify-payload-parity · apply
 kernel-pin.env     every pinned coordinate, in one sourceable file
 docs/              provenance audit · rebase ledger · preflight derivation
 ```
+
+Both source lanes run through the same converter, so `patches/` stays 100 %
+generated and `verify-payload-parity.py` holds every patch — first-party included
+— to byte-identical added/removed lines against its own source file.
 
 ---
 
@@ -56,7 +63,7 @@ scripts/apply.sh
 ```
 
 That clones the pinned kernel tag into `.work/linux`, verifies the series is
-generated and payload-identical to upstream, applies it with `git am`, runs
+generated and payload-identical to its sources, applies it with `git am`, runs
 post-apply checks, and cleans up. Roughly 2 GB of clone; use `KEEP_TREE=1` to keep
 the tree, or pass your own:
 
@@ -160,18 +167,29 @@ see [`docs/REBASE-v7.1.5.md`](docs/REBASE-v7.1.5.md).
 with no mail headers at all, so `git am` rejects them before it reads a single
 hunk. Two of them additionally carry macOS `.DS_Store` `Binary files … differ`
 stanzas, which `git apply` refuses even once headers exist. Fixing that is the
-main reason this fork exists — `patches/` is generated from `upstream/` by
-`scripts/build-series.py`, which adds mailbox headers and drops the `.DS_Store`
-noise.
+main reason this fork exists — `patches/` is generated from `upstream/` and
+`ceralive/` by `scripts/build-series.py`, which adds mailbox headers and drops the
+`.DS_Store` noise.
 
 **The series is re-anchored for `v7.1.5`.** Upstream targeted `v6.19-rc8`. Two
 context anchors drifted in between; both were re-anchored, and both are documented
 hunk by hunk in [`docs/REBASE-v7.1.5.md`](docs/REBASE-v7.1.5.md).
 
 **Nothing the patches do was changed.** `scripts/verify-payload-parity.py` proves
-that the set of added and removed lines in `patches/` is byte-identical to
-`upstream/`, and it runs in CI. If a rebase rule ever overstepped, that check
-fails.
+that the set of added and removed lines in `patches/` is byte-identical to the
+patch's source lane, and it runs in CI. If a rebase rule ever overstepped, that
+check fails.
+
+**There is one first-party patch upstream does not have.** `0006` adds the
+device-tree sound card that turns upstream's `0005` HDMI-RX audio codec into a
+capturable ALSA card. Upstream `0005` is driver-only; on a Rock 5B+ running the
+full series the codec device is bound with no cable attached
+(`/sys/devices/platform/fdee0000.hdmi_receiver/hdmi-audio-codec.7.auto`) while
+`/proc/asound/cards` shows no HDMI-RX capture card, because nothing in the device
+tree binds that codec to a DAI. `0006` adds `#sound-dai-cells` to
+`hdmi_receiver`, adds an `hdmirx-sound` `simple-audio-card`, and enables it plus
+`i2s7_8ch` on the two CeraLive boards. It lives in `ceralive/`, is clearly marked
+first-party in its own mail header, and carries no upstream attribution.
 
 ### Why not the `sfqr0414` fork
 
@@ -231,7 +249,14 @@ questions.
 
 ## Credits
 
-All patch content is the work of **Ross Cawston**
+`0001`–`0005` are the work of **Ross Cawston**
 ([`rcawston`](https://github.com/rcawston)), ported from Rockchip's BSP MPP
-driver. This fork contributes packaging, pinning, auditing, and CI — no patch
-content.
+driver, and are carried here byte-for-byte. This fork contributes packaging,
+pinning, auditing, and CI.
+
+`0006` is first-party CeraLive work with no upstream counterpart: a device-tree
+change modelled on the Rockchip BSP's own `hdmiin-sound` wiring
+(`rockchip,cpu = <&i2s7_8ch>`, receiver as clock master), expressed with mainline's
+`simple-audio-card` instead of the BSP's `rockchip,hdmi` machine driver. It is
+kept in a separate `ceralive/` directory precisely so the credit line above stays
+true.

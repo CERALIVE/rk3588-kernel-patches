@@ -1,0 +1,139 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: CeraLive <dev@ceralive.tv>
+Date: Sun, 2 Aug 2026 12:00:00 -0500
+Subject: [PATCH 6/6] arm64: dts: rockchip: rk3588: bind the HDMI-RX audio codec to a sound card
+
+0005 gives snps_hdmirx its driver-side audio half: it registers an ASoC
+hdmi-audio-codec child device under hdmi_receiver@fdee0000 and drives the
+receiver's audio FIFO, ACR-derived sample rate and recovered audio clock.
+It touches no device tree, and ALSA does not instantiate a card for a bare
+codec. On a Rock 5B+ running the full series the codec device is bound with
+no cable attached --
+
+  /sys/devices/platform/fdee0000.hdmi_receiver/hdmi-audio-codec.7.auto
+
+-- while /proc/asound/cards lists only the USB dongle, the onboard es8316
+and hdmi0/hdmi1, which are the two HDMI *transmitters*. There is no
+hdmirx-sound node, so HDMI-IN embedded audio cannot be captured at all.
+
+Three DT facts are missing, all of them here:
+
+  1. hdmi_receiver has no #sound-dai-cells, so it cannot be named as a DAI
+     provider. simple-audio-card resolves sound-dai through
+     of_parse_phandle_with_args(..., "#sound-dai-cells", ...), and ASoC's
+     soc_component_to_node() falls back to a component's parent of_node --
+     which is exactly how &hdmi0 already stands in for its own
+     hdmi-audio-codec child. With zero cells the first DAI is selected,
+     i2s-hifi, since hdmi_codec_probe() registers i2s before spdif.
+  2. There is no card node binding that codec to a CPU DAI.
+  3. i2s7_8ch -- the capture-only I2S the RK3588 receiver feeds, per the
+     Rockchip BSP's own hdmiin-sound wiring -- is left disabled on both
+     boards.
+
+Add the card as a disabled-by-default simple-audio-card next to the existing
+hdmi0/hdmi1 ones and enable it, with i2s7_8ch, on the two boards that already
+enable hdmi_receiver: rk3588-rock-5b.dtsi (Rock 5B, 5B+, 5T) and
+rk3588-orangepi-5-plus.dts.
+
+The receiver recovers its audio clock from the incoming stream, so the codec
+is bitclock and frame master and i2s7_8ch runs as consumer; mclk-fs = 128
+matches the BSP and the fs*128 rate 0005 programs on the "audio" clock.
+i2s7_8ch declares only a "rx" DMA, so rockchip_i2s_tdm_init_dai() marks it
+capture-only and the link resolves to a single capture stream.
+
+First-party: authored by CeraLive against v7.1.5, with no upstream
+counterpart in rockchip-rk3588-mainline-patches. The source of record is
+ceralive/0006-rk3588-hdmirx-audio-sound-card.patch; patches/ is generated from it by
+scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the
+same added/removed-line parity the upstream lane gets.
+
+NOT upstream-bound: this targets the CeraLive device tree only and is not a
+submission to linux-media, linux-rockchip or the fork parent. No Signed-off-by
+is added, because a DCO assertion belongs to whoever actually submits it.
+
+---
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588-extra.dtsi b/arch/arm64/boot/dts/rockchip/rk3588-extra.dtsi
+--- a/arch/arm64/boot/dts/rockchip/rk3588-extra.dtsi
++++ b/arch/arm64/boot/dts/rockchip/rk3588-extra.dtsi
+@@ -23,6 +23,30 @@
+ 		};
+ 	};
+ 
++	hdmirx_sound: hdmirx-sound {
++		compatible = "simple-audio-card";
++		simple-audio-card,bitclock-master = <&hdmirx_codec_dai>;
++		simple-audio-card,format = "i2s";
++		simple-audio-card,frame-master = <&hdmirx_codec_dai>;
++		simple-audio-card,mclk-fs = <128>;
++		simple-audio-card,name = "hdmirx";
++		status = "disabled";
++
++		/*
++		 * The receiver recovers the audio clock from the incoming
++		 * stream, so it drives both BCLK and LRCK and i2s7_8ch is the
++		 * consumer. sound-dai resolves to the hdmi-audio-codec child
++		 * device that snps_hdmirx registers under this node.
++		 */
++		hdmirx_codec_dai: simple-audio-card,codec {
++			sound-dai = <&hdmi_receiver>;
++		};
++
++		simple-audio-card,cpu {
++			sound-dai = <&i2s7_8ch>;
++		};
++	};
++
+ 	reserved-memory {
+ 		#address-cells = <2>;
+ 		#size-cells = <2>;
+@@ -338,6 +362,7 @@
+ 		reset-names = "axi", "apb", "ref", "biu";
+ 		rockchip,grf = <&sys_grf>;
+ 		rockchip,vo1-grf = <&vo1_grf>;
++		#sound-dai-cells = <0>;
+ 		status = "disabled";
+ 	};
+ 
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dts b/arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dts
+--- a/arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dts
+@@ -171,6 +171,10 @@
+ 	status = "okay";
+ };
+ 
++&hdmirx_sound {
++	status = "okay";
++};
++
+ &hdptxphy0 {
+ 	status = "okay";
+ };
+@@ -247,6 +251,10 @@
+ 	status = "okay";
+ };
+ 
++&i2s7_8ch {
++	status = "okay";
++};
++
+ &led_blue_gpio {
+ 	gpios = <&gpio3 RK_PA6 GPIO_ACTIVE_HIGH>;
+ 	status = "okay";
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588-rock-5b.dtsi b/arch/arm64/boot/dts/rockchip/rk3588-rock-5b.dtsi
+--- a/arch/arm64/boot/dts/rockchip/rk3588-rock-5b.dtsi
++++ b/arch/arm64/boot/dts/rockchip/rk3588-rock-5b.dtsi
+@@ -48,6 +48,14 @@
+ 	status = "okay";
+ };
+ 
++&hdmirx_sound {
++	status = "okay";
++};
++
++&i2s7_8ch {
++	status = "okay";
++};
++
+ &pinctrl {
+ 	hdmirx {
+ 		hdmirx_hpd: hdmirx-5v-detection {

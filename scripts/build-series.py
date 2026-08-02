@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Turn the verbatim upstream/ patches into a git-am-able mailbox series.
+"""Turn the raw patch sources into a git-am-able mailbox series.
 
 Why this exists
 ---------------
@@ -14,13 +14,23 @@ On top of that, upstream targeted v6.19-rc8 and we target the tag in kernel-pin.
 so a few context anchors have drifted. Those are re-anchored from an explicit,
 reviewable table (rebase/<tag>.rules) -- never inline in this file.
 
+Two lanes, one pipeline
+-----------------------
+``upstream/`` holds Ross Cawston's files verbatim. ``ceralive/`` holds first-party
+patches this project authored, which have no upstream counterpart. Both lanes go
+through the same converter so that ``patches/`` stays fully generated -- the whole
+point of the ANTI-PATTERN "don't hand-edit patches/". The lane only changes the
+mail header the converter writes and which directory parity is proven against;
+every other guarantee is shared.
+
 Guarantees
 ----------
 * Deterministic: same inputs -> byte-identical output. ``--check`` relies on it.
 * Behaviour-preserving by construction: a rule may only touch a CONTEXT line.
   Attempting to rewrite a '+'/'-' line raises. scripts/verify-payload-parity.py
-  proves the result independently.
+  proves the result independently, per lane.
 * Upstream numbering (0001/0002/0003/0005, gap at 0004) is never renumbered.
+  First-party patches continue the same counter from 0006.
 
 Usage
 -----
@@ -40,17 +50,25 @@ from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-UPSTREAM_DIR = ROOT / "upstream"
 PATCHES_DIR = ROOT / "patches"
 REBASE_DIR = ROOT / "rebase"
 PIN_FILE = ROOT / "kernel-pin.env"
 
-# Upstream's slot count. 0004 was never published; we keep the gap so our files
-# line up 1:1 with theirs, hence Subject ordinals 1/5, 2/5, 3/5, 5/5.
-SERIES_TOTAL = 5
+UPSTREAM = "upstream"
+CERALIVE = "ceralive"
+SOURCE_DIRS = {UPSTREAM: ROOT / UPSTREAM, CERALIVE: ROOT / CERALIVE}
+
+# Slot count, not member count. 0004 was never published upstream and we keep the
+# gap so our files line up 1:1 with theirs, hence ordinals 1/6, 2/6, 3/6, 5/6, 6/6.
+SERIES_TOTAL = 6
 
 DS_STORE_RE = re.compile(r"^Binary files .*\.DS_Store .* differ$")
 HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
+
+
+# A first-party patch has no originating commit anywhere, so the mbox delimiter
+# carries the null object id rather than a borrowed or invented one.
+NULL_OID = "0" * 40
 
 
 @dataclass(frozen=True)
@@ -60,9 +78,11 @@ class Patch:
     filename: str
     ordinal: int
     subject: str
-    provenance: str  # upstream commit that last touched `filename`
+    provenance: str  # upstream commit that last touched `filename`, or NULL_OID
     author: str
     date: str
+    origin: str = UPSTREAM
+    rationale: tuple[str, ...] = ()  # first-party lane only: why this patch exists
 
 
 SERIES: tuple[Patch, ...] = (
@@ -100,6 +120,54 @@ SERIES: tuple[Patch, ...] = (
         provenance="e13a311d8ee5e8ed92ec3d4a57c21f766c61d660",
         author="Ross Cawston <rcawston@users.noreply.github.com>",
         date="Wed, 1 Jul 2026 14:19:29 -0700",
+    ),
+    Patch(
+        filename="0006-rk3588-hdmirx-audio-sound-card.patch",
+        ordinal=6,
+        subject="arm64: dts: rockchip: rk3588: bind the HDMI-RX audio codec to a sound card",
+        provenance=NULL_OID,
+        author="CeraLive <dev@ceralive.tv>",
+        date="Sun, 2 Aug 2026 12:00:00 -0500",
+        origin=CERALIVE,
+        rationale=(
+            "0005 gives snps_hdmirx its driver-side audio half: it registers an ASoC",
+            "hdmi-audio-codec child device under hdmi_receiver@fdee0000 and drives the",
+            "receiver's audio FIFO, ACR-derived sample rate and recovered audio clock.",
+            "It touches no device tree, and ALSA does not instantiate a card for a bare",
+            "codec. On a Rock 5B+ running the full series the codec device is bound with",
+            "no cable attached --",
+            "",
+            "  /sys/devices/platform/fdee0000.hdmi_receiver/hdmi-audio-codec.7.auto",
+            "",
+            "-- while /proc/asound/cards lists only the USB dongle, the onboard es8316",
+            "and hdmi0/hdmi1, which are the two HDMI *transmitters*. There is no",
+            "hdmirx-sound node, so HDMI-IN embedded audio cannot be captured at all.",
+            "",
+            "Three DT facts are missing, all of them here:",
+            "",
+            "  1. hdmi_receiver has no #sound-dai-cells, so it cannot be named as a DAI",
+            "     provider. simple-audio-card resolves sound-dai through",
+            "     of_parse_phandle_with_args(..., \"#sound-dai-cells\", ...), and ASoC's",
+            "     soc_component_to_node() falls back to a component's parent of_node --",
+            "     which is exactly how &hdmi0 already stands in for its own",
+            "     hdmi-audio-codec child. With zero cells the first DAI is selected,",
+            "     i2s-hifi, since hdmi_codec_probe() registers i2s before spdif.",
+            "  2. There is no card node binding that codec to a CPU DAI.",
+            "  3. i2s7_8ch -- the capture-only I2S the RK3588 receiver feeds, per the",
+            "     Rockchip BSP's own hdmiin-sound wiring -- is left disabled on both",
+            "     boards.",
+            "",
+            "Add the card as a disabled-by-default simple-audio-card next to the existing",
+            "hdmi0/hdmi1 ones and enable it, with i2s7_8ch, on the two boards that already",
+            "enable hdmi_receiver: rk3588-rock-5b.dtsi (Rock 5B, 5B+, 5T) and",
+            "rk3588-orangepi-5-plus.dts.",
+            "",
+            "The receiver recovers its audio clock from the incoming stream, so the codec",
+            "is bitclock and frame master and i2s7_8ch runs as consumer; mclk-fs = 128",
+            "matches the BSP and the fs*128 rate 0005 programs on the \"audio\" clock.",
+            "i2s7_8ch declares only a \"rx\" DMA, so rockchip_i2s_tdm_init_dai() marks it",
+            "capture-only and the link resolves to a single capture stream.",
+        ),
     ),
 )
 
@@ -229,10 +297,14 @@ def apply_rule(lines: list[str], rule: Rule) -> list[str]:
     return out
 
 
+def source_path(patch: Patch) -> Path:
+    return SOURCE_DIRS[patch.origin] / patch.filename
+
+
 def build_patch(patch: Patch, rules: list[Rule], pin: dict[str, str]) -> str:
-    src = UPSTREAM_DIR / patch.filename
+    src = source_path(patch)
     if not src.is_file():
-        raise RebaseError(f"missing upstream patch: {src}")
+        raise RebaseError(f"missing {patch.origin} patch: {src}")
 
     body = src.read_text(encoding="utf-8", errors="surrogateescape").splitlines()
 
@@ -249,21 +321,37 @@ def build_patch(patch: Patch, rules: list[Rule], pin: dict[str, str]) -> str:
     tested = pin["UPSTREAM_TESTED_KERNEL"]
 
     header: list[str] = [
-        # mbox delimiter. The hex is the upstream commit that last touched this
-        # file, so provenance is machine-readable rather than decorative.
+        # mbox delimiter. For the upstream lane the hex is the upstream commit that
+        # last touched this file, so provenance is machine-readable rather than
+        # decorative; the first-party lane has no such commit and uses NULL_OID.
         f"From {patch.provenance} Mon Sep 17 00:00:00 2001",
         f"From: {patch.author}",
         f"Date: {patch.date}",
         f"Subject: [PATCH {patch.ordinal}/{SERIES_TOTAL}] {patch.subject}",
         "",
-        f"Imported from {upstream_repo}",
-        f"at {upstream_rev}, file {patch.filename}.",
-        "",
-        "Authored by Ross Cawston. This CeraLive copy re-packages the file as a git",
-        "mailbox so it can be applied with `git am`. Every added and removed line is",
-        "byte-identical to upstream's; scripts/verify-payload-parity.py enforces that.",
-        "",
     ]
+
+    if patch.origin == UPSTREAM:
+        header += [
+            f"Imported from {upstream_repo}",
+            f"at {upstream_rev}, file {patch.filename}.",
+            "",
+            "Authored by Ross Cawston. This CeraLive copy re-packages the file as a git",
+            "mailbox so it can be applied with `git am`. Every added and removed line is",
+            "byte-identical to upstream's; scripts/verify-payload-parity.py enforces that.",
+            "",
+        ]
+    else:
+        header += [
+            *patch.rationale,
+            "",
+            f"First-party: authored by CeraLive against {tag}, with no upstream",
+            f"counterpart in {upstream_repo.rsplit('/', 1)[-1]}. The source of record is",
+            f"{patch.origin}/{patch.filename}; patches/ is generated from it by",
+            "scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the",
+            "same added/removed-line parity the upstream lane gets.",
+            "",
+        ]
 
     if dropped:
         header += [
@@ -289,10 +377,20 @@ def build_patch(patch: Patch, rules: list[Rule], pin: dict[str, str]) -> str:
             "",
         ]
 
+    if patch.origin == UPSTREAM:
+        header += [
+            "NOT upstream-bound: this is a CeraLive-maintained adaptation, not a submission",
+            f"to {upstream_repo.rsplit('/', 1)[-1]}. No Signed-off-by is added, because none",
+            "was given upstream and inventing one would misattribute a DCO assertion.",
+        ]
+    else:
+        header += [
+            "NOT upstream-bound: this targets the CeraLive device tree only and is not a",
+            "submission to linux-media, linux-rockchip or the fork parent. No Signed-off-by",
+            "is added, because a DCO assertion belongs to whoever actually submits it.",
+        ]
+
     header += [
-        "NOT upstream-bound: this is a CeraLive-maintained adaptation, not a submission",
-        f"to {upstream_repo.rsplit('/', 1)[-1]}. No Signed-off-by is added, because none",
-        "was given upstream and inventing one would misattribute a DCO assertion.",
         "",
         "---",
     ]
@@ -324,6 +422,7 @@ def write_series(out_dir: Path, pin: dict[str, str]) -> None:
         "# git-am order for the CeraLive RK3588 series.",
         "# Upstream numbering is preserved verbatim -- 0004 was never published,",
         "# so the gap is intentional. Do not renumber to close it.",
+        "# 0006 onwards is first-party (ceralive/), continuing the same counter.",
         f"# Target kernel: {pin['KERNEL_TAG']} ({pin['KERNEL_COMMIT']})",
         *(p.filename for p in SERIES),
     ]

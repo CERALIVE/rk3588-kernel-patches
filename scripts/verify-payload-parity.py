@@ -1,18 +1,21 @@
 #!/usr/bin/env python3
-"""Prove that patches/ changes nothing upstream/ did not already change.
+"""Prove that patches/ changes nothing its source lane did not already change.
 
 This is the safety interlock behind rebase/<tag>.rules. Re-anchoring a hunk to a
 newer kernel means editing CONTEXT, and the whole question a reviewer has is
 "did that edit quietly change what the patch does?".
 
 The check: for every patch, extract the ordered list of added ('+') and removed
-('-') lines from upstream/ and from patches/, and require them to be identical.
-Context lines and @@ headers are deliberately ignored -- those are exactly what a
-re-anchor is allowed to move.
+('-') lines from its source (upstream/ or ceralive/) and from patches/, and
+require them to be identical. Context lines and @@ headers are deliberately
+ignored -- those are exactly what a re-anchor is allowed to move.
 
-If this passes, the series is a repackaging of upstream's work, not a fork of its
-behaviour. If it fails, a rule overstepped and the conflict belongs in
-docs/REBASE-<tag>.md as a stop, not in a rule.
+If this passes, patches/ is a repackaging of its source, not a fork of its
+behaviour: for the upstream lane that means "still Ross Cawston's work", and for
+the first-party lane it means "still exactly what ceralive/ says", so patches/
+cannot be hand-edited into carrying a change no reviewable source file shows. If
+it fails, a rule overstepped and the conflict belongs in docs/REBASE-<tag>.md as
+a stop, not in a rule.
 
 Usage:  scripts/verify-payload-parity.py
 Exit:   0 identical, 1 divergent, 2 structural problem
@@ -25,8 +28,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-UPSTREAM_DIR = ROOT / "upstream"
 PATCHES_DIR = ROOT / "patches"
+# Deliberately NOT imported from build-series.py: this checker is the second,
+# independent opinion, so it re-derives a patch's lane from the filesystem.
+SOURCE_DIRS = (ROOT / "upstream", ROOT / "ceralive")
 
 # File-header lines share the '+'/'-' prefix with real payload but are metadata.
 FILE_HEADER_RE = re.compile(r"^(\+\+\+|---) ")
@@ -59,6 +64,12 @@ def dropped_ds_store(path: Path) -> int:
     return sum(1 for line in lines if DS_STORE_RE.match(line))
 
 
+def find_source(name: str) -> Path | None:
+    """The one lane directory holding `name`. Two hits is ambiguous provenance."""
+    hits = [d / name for d in SOURCE_DIRS if (d / name).is_file()]
+    return hits[0] if len(hits) == 1 else None
+
+
 def main() -> int:
     patch_files = sorted(PATCHES_DIR.glob("*.patch"))
     if not patch_files:
@@ -67,28 +78,36 @@ def main() -> int:
 
     failures = 0
     for converted in patch_files:
-        original = UPSTREAM_DIR / converted.name
-        if not original.is_file():
-            print(f"FAIL {converted.name}: no upstream counterpart", file=sys.stderr)
+        original = find_source(converted.name)
+        if original is None:
+            lanes = ", ".join(d.name + "/" for d in SOURCE_DIRS)
+            print(
+                f"FAIL {converted.name}: needs exactly one source in {lanes}",
+                file=sys.stderr,
+            )
             failures += 1
             continue
 
+        lane = original.parent.name
         want = payload(original)
         got = payload(converted)
 
         if want == got:
             noise = dropped_ds_store(original)
             note = f", dropped {noise} .DS_Store stanza(s)" if noise else ""
-            print(f"OK   {converted.name}: {len(got)} payload lines identical{note}")
+            print(
+                f"OK   {converted.name}: {len(got)} payload lines "
+                f"identical to {lane}/{note}"
+            )
             continue
 
         failures += 1
-        print(f"FAIL {converted.name}: payload diverges from upstream", file=sys.stderr)
-        print(f"     upstream {len(want)} lines, converted {len(got)}", file=sys.stderr)
+        print(f"FAIL {converted.name}: payload diverges from {lane}/", file=sys.stderr)
+        print(f"     {lane} {len(want)} lines, converted {len(got)}", file=sys.stderr)
         for i, (a, b) in enumerate(zip(want, got)):
             if a != b:
                 print(f"     first divergence at payload line {i}:", file=sys.stderr)
-                print(f"       upstream : {a!r}", file=sys.stderr)
+                print(f"       {lane:<9}: {a!r}", file=sys.stderr)
                 print(f"       converted: {b!r}", file=sys.stderr)
                 break
 
@@ -100,7 +119,7 @@ def main() -> int:
         )
         return 1
 
-    print(f"\nall {len(patch_files)} patches: payload byte-identical to upstream.")
+    print(f"\nall {len(patch_files)} patches: payload byte-identical to their source.")
     return 0
 
 
