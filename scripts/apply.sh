@@ -106,7 +106,8 @@ git diff --stat "${KERNEL_TAG}..HEAD"
 
 # ---------------------------------------------------------------------------
 # 4. Post-conditions worth asserting: the encoder driver and its UAPI header
-#    actually landed, and the DT overlay's node labels exist to bind against.
+#    actually landed, the DT overlay's node labels exist to bind against, and
+#    the HDMI-RX audio card is wired on every board that enables the receiver.
 # ---------------------------------------------------------------------------
 log "Post-apply checks"
 fail=0
@@ -138,6 +139,50 @@ else
 	echo "  MISSING ${RKVENC_CONFIG_SYMBOL} in rkvenc/Kconfig" >&2
 	fail=1
 fi
+
+# 0005 registers the ASoC codec; 0006 is what turns it into an ALSA card. Assert
+# both halves, and assert them per board: enabling hdmi_receiver without also
+# enabling hdmirx_sound + i2s7_8ch is precisely the silent no-capture-card state
+# that shipped before, and it is invisible until someone runs arecord on hardware.
+DTS_DIR="arch/arm64/boot/dts/rockchip"
+
+if grep -q "HDMI_CODEC_DRV_NAME" \
+	drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c; then
+	echo "  ok      hdmirx registers an ASoC codec device"
+else
+	echo "  MISSING hdmi-audio-codec registration in snps_hdmirx.c" >&2
+	fail=1
+fi
+
+for label in hdmirx_sound hdmirx_codec_dai; do
+	if grep -q "${label}" "${DTS_DIR}/rk3588-extra.dtsi"; then
+		echo "  ok      dts node ${label}"
+	else
+		echo "  MISSING dts node ${label} in rk3588-extra.dtsi" >&2
+		fail=1
+	fi
+done
+
+if awk '/^\thdmi_receiver: /,/^\t};/' "${DTS_DIR}/rk3588-extra.dtsi" |
+	grep -q '#sound-dai-cells = <0>;'; then
+	echo "  ok      hdmi_receiver is a sound-dai provider"
+else
+	echo "  MISSING #sound-dai-cells on hdmi_receiver" >&2
+	fail=1
+fi
+
+# The two CeraLive boards (ARMBIAN_BOARDS in kernel-pin.env) must enable both
+# halves. Other mainline boards are none of this series' business.
+for board in rk3588-rock-5b.dtsi rk3588-orangepi-5-plus.dts; do
+	for ref in hdmirx_sound i2s7_8ch; do
+		if grep -qE "^&${ref} \{" "${DTS_DIR}/${board}"; then
+			echo "  ok      ${board} enables &${ref}"
+		else
+			echo "  MISSING &${ref} in ${board}" >&2
+			fail=1
+		fi
+	done
+done
 
 (( fail == 0 )) || exit 1
 

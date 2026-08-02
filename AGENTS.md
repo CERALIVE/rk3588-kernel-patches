@@ -3,8 +3,9 @@
 ## ROLE IN THE GROUP
 
 Holds the **mainline-track RK3588 kernel patch series** for CeraLive: VEPU580
-hardware encoder plus three HDMI-RX fixes, converted to a `git am` mailbox series
-and pinned to an exact kernel tag.
+hardware encoder plus three HDMI-RX fixes imported from upstream, plus the
+first-party device-tree patch that makes HDMI-RX audio actually capturable —
+converted to a `git am` mailbox series and pinned to an exact kernel tag.
 
 Produces **patch text only** — no `.deb`, no kernel, no image artifact. It is
 therefore **NOT in the device image `REPOS` array** and has **no `versions.yaml`
@@ -28,6 +29,7 @@ imported at `e13a311` (2026-07-01).
 rk3588-kernel-patches/
 ├── kernel-pin.env             # SINGLE SOURCE OF TRUTH for every pinned coordinate
 ├── upstream/                  # Ross Cawston's raw diff -ruN files, VERBATIM + README.MD
+├── ceralive/                  # FIRST-PARTY raw diffs with no upstream counterpart
 ├── patches/                   # GENERATED git-am series + series file — NEVER hand-edit
 ├── overlays/                  # rockchip-rk3588-rkvenc-mpp.dts, verbatim
 ├── rebase/<tag>.rules         # per-kernel-tag context re-anchors (context lines ONLY)
@@ -48,6 +50,8 @@ rk3588-kernel-patches/
 | Task | Location |
 |------|----------|
 | Change the target kernel | [`kernel-pin.env`](kernel-pin.env) + a new `rebase/<tag>.rules` + a new `docs/REBASE-<tag>.md` |
+| Add a CeraLive-authored patch | `ceralive/<NNNN>-*.patch` + a `SERIES` entry with `origin=CERALIVE` in `scripts/build-series.py`, then regenerate |
+| Why HDMI-RX audio needs a DT patch at all | [`docs/PROVENANCE.md`](docs/PROVENANCE.md) §8 and `patches/0006-*`'s own mail header |
 | Check whether Armbian moved `edge` | `scripts/preflight.sh --head` |
 | Understand the 7.1 derivation | [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md) |
 | Apply the series | `scripts/apply.sh` — see [`README.md`](README.md) |
@@ -58,9 +62,19 @@ rk3588-kernel-patches/
 ## KEY FACTS
 
 **`patches/` is generated. Editing it by hand is a bug, and CI catches it.**
-`scripts/build-series.py --check` regenerates from `upstream/` into a temp dir and
-byte-compares. Change `upstream/` or `rebase/<tag>.rules`, then regenerate — never
-the other way round.
+`scripts/build-series.py --check` regenerates from `upstream/` + `ceralive/` into a
+temp dir and byte-compares. Change a source lane or `rebase/<tag>.rules`, then
+regenerate — never the other way round.
+
+**Two source lanes, one pipeline: `upstream/` is imported, `ceralive/` is ours.**
+`upstream/` must stay byte-identical to Ross Cawston's published files forever —
+that is what makes the credit line, the licence audit and the parity claim
+checkable. A patch CeraLive authors goes in `ceralive/` and continues the same
+numbering (`0006` and up). Both lanes run through `build-series.py`, get the same
+context-only rebase discipline, and are held to the same added/removed-line parity
+by `verify-payload-parity.py` — the lane only changes which mail header is written
+and which directory parity is proven against. **Never put first-party content in
+`upstream/`.**
 
 **Upstream's `git am` instruction has never worked — that is why this fork exists.**
 The upstream files are raw `diff -ruN aa/ bb/` output with **no mail headers**, so
@@ -72,8 +86,29 @@ verbatim by CI, so it cannot rot the same way.
 
 **Upstream numbering is preserved, gap included: `0001`, `0002`, `0003`, `0005`.**
 There is no `0004` upstream. **Do NOT renumber to close the gap** — the 1:1 filename
-correspondence with upstream is what makes the import auditable. Subject ordinals
-read `1/5`, `2/5`, `3/5`, `5/5` for the same reason.
+correspondence with upstream is what makes the import auditable. First-party patches
+continue the same counter (`0006` …), so the ordinals read `1/6`, `2/6`, `3/6`,
+`5/6`, `6/6` — the gap at 4 stays visible, which is the whole point.
+
+**`0005` is driver-only; `0006` is what makes HDMI-RX audio reachable.** Upstream's
+`0005` registers an ASoC `hdmi-audio-codec` child under `hdmi_receiver@fdee0000`
+and drives the receiver's audio FIFO/ACR/clock, but touches no device tree, and
+ALSA does not create a card for a bare codec. On a Rock 5B+ running only `0001`–
+`0005` the codec device is *bound* with no cable attached while `/proc/asound/cards`
+shows no HDMI-RX capture card at all. `0006` supplies the three missing DT facts:
+`#sound-dai-cells` on `hdmi_receiver`, an `hdmirx-sound` `simple-audio-card`, and
+`&i2s7_8ch` + `&hdmirx_sound` enabled on the two CeraLive boards. `apply.sh` asserts
+all of them post-apply, per board, because the failure mode is silent — everything
+probes, nothing errors, there is simply no capture device.
+
+**The `78c67d98f221` HDMI-codec regression does NOT apply to this tree.** An
+`armbian/linux-rockchip` commit zeroes `capture.channels_min/max` for every
+`hdmi-audio-codec` instance with no TX/RX discrimination, which breaks HDMI-RX
+capture on the **vendor** BSP (`rk-6.1-rkr6.1`). Mainline — including the pinned
+`v7.1.5` — already carries the upstream `no_i2s_playback` / `no_i2s_capture` /
+`no_spdif_*` pdata flags and only clears a direction when the registering driver
+asks. There is nothing to fix here, and a backport of that vendor-side fix would
+not even apply. Do not add one.
 
 **The conflict rule is machine-enforced, not a convention.** A `rebase/*.rules`
 entry may only re-anchor **context** lines. `build-series.py` raises if a rule's
@@ -146,7 +181,7 @@ pinned to latest stable major; the ~2 GB kernel clone cached. Jobs:
 
 | Job | Asserts |
 |-----|---------|
-| `series-integrity` | `patches/` is generated and payload-identical to `upstream/`; no Python needed beyond stdlib |
+| `series-integrity` | `patches/` is generated and payload-identical to its source lane (`upstream/` or `ceralive/`); no Python needed beyond stdlib |
 | `preflight` | `kernel-pin.env` still matches `armbian/build` — non-blocking on schedule, blocking on PR |
 | `apply` | `scripts/apply.sh` — the real `git am` against the pinned tag |
 
@@ -158,7 +193,10 @@ defconfig, and a 30-minute job to prove something the image pipeline proves bett
 
 ## ANTI-PATTERNS
 
-- Don't hand-edit `patches/` — regenerate from `upstream/` + `rebase/`
+- Don't hand-edit `patches/` — regenerate from `upstream/` / `ceralive/` + `rebase/`
+- Don't put CeraLive-authored content in `upstream/`, or upstream content in `ceralive/`
+- Don't make `verify-payload-parity.py` import from `build-series.py` — it is
+  deliberately the second, independent opinion
 - Don't renumber the series to close the `0004` gap
 - Don't put a behavioural fix in `rebase/*.rules` — that is what the stop ledger is for
 - Don't add a `+`/`-` line anywhere in this repo's patch pipeline; payload parity must hold

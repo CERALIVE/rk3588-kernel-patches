@@ -15,7 +15,8 @@ uncertain it is written down as uncertain.
 | Kind | Where | What it is |
 |------|-------|-----------|
 | Unified diffs, verbatim | `upstream/*.patch` | Ross Cawston's original `diff -ruN` files, byte-for-byte as published |
-| Unified diffs, repackaged | `patches/*.patch` | The same diffs wrapped in git mailbox headers, with context re-anchored for `v7.1.5`. Every added/removed line is byte-identical to `upstream/` — enforced by `scripts/verify-payload-parity.py` |
+| Unified diffs, first-party | `ceralive/*.patch` | CeraLive-authored patches with no upstream counterpart — see §8 |
+| Unified diffs, repackaged | `patches/*.patch` | Both lanes wrapped in git mailbox headers, with context re-anchored for `v7.1.5`. Every added/removed line is byte-identical to the patch's own source lane — enforced by `scripts/verify-payload-parity.py` |
 | Device-tree overlay | `overlays/rockchip-rk3588-rkvenc-mpp.dts` | Ross Cawston's overlay, verbatim |
 | CeraLive-authored | `scripts/`, `docs/`, `rebase/`, `kernel-pin.env`, `.github/` | CeraLive packaging, tooling, and documentation |
 
@@ -177,9 +178,10 @@ derivation audit and legal review. This document is not that.
 
 ## 6. What this fork does and does not change
 
-- Patch behaviour is **not** modified. `patches/` is a repackaging of
-  `upstream/`; every added and removed line is byte-identical, mechanically
-  enforced by `scripts/verify-payload-parity.py` in CI.
+- **Upstream** patch behaviour is **not** modified. For `0001`–`0005`, `patches/`
+  is a repackaging of `upstream/`; every added and removed line is byte-identical,
+  mechanically enforced by `scripts/verify-payload-parity.py` in CI. First-party
+  patches are held to the same parity against `ceralive/` — see §8.
 - No SPDX identifier, copyright line, or `MODULE_LICENSE` value is added,
   removed, or altered.
 - Nothing is relicensed. `LICENSE` in this repository describes the terms the
@@ -207,3 +209,47 @@ derivation audit and legal review. This document is not that.
    the (absent) collection licence. Not fixed here, because fixing it would mean
    editing patch content — see §6.
 4. No legal review. None requested, none obtained, none implied.
+
+---
+
+## 8. First-party patches (`ceralive/`)
+
+Added: 2026-08-02, with `0006-rk3588-hdmirx-audio-sound-card.patch`.
+
+**Why a separate lane exists.** Everything above rests on one sentence — "this
+fork contributes packaging, no patch content". The moment CeraLive authors a
+patch, that sentence stops being true unless first-party work is physically
+separated from the imported work. `ceralive/` is that separation: `upstream/`
+remains exactly Ross Cawston's six blobs, and the credit and parity claims in §1,
+§5 and §6 stay literally checkable rather than needing a caveat.
+
+**What `0006` is.** A device-tree-only change to three existing mainline files:
+
+| File | Change |
+|------|--------|
+| `arch/arm64/boot/dts/rockchip/rk3588-extra.dtsi` | adds `#sound-dai-cells = <0>` to `hdmi_receiver`; adds a disabled-by-default `hdmirx-sound` `simple-audio-card` |
+| `arch/arm64/boot/dts/rockchip/rk3588-rock-5b.dtsi` | enables `&hdmirx_sound` and `&i2s7_8ch` |
+| `arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dts` | enables `&hdmirx_sound` and `&i2s7_8ch` |
+
+It adds no new source file, no new SPDX header, and no `MODULE_LICENSE`. The three
+files it edits all carry `SPDX-License-Identifier: (GPL-2.0+ OR MIT)` upstream in
+the Linux tree; that is unchanged, and this repository makes no MIT claim for the
+lines it contributes either — §5.1 applies unchanged.
+
+**Derivation, stated honestly.** The wiring it expresses — HDMI-RX audio consumed
+by `i2s7_8ch` with the receiver as bit-clock and frame-clock master at
+`mclk-fs = 128` — is the same wiring the Rockchip BSP ships as its `hdmiin-sound`
+node (`armbian/linux-rockchip`, `rk-6.1-rkr6.1`,
+`arch/arm64/boot/dts/rockchip/rk3588-rock-5b-plus.dts`, and the `rockchip,capture-only`
+`i2s7_8ch` node in `rk3588.dtsi`). Those are **hardware facts about the SoC**,
+consulted to establish which DAI the receiver feeds and which end drives the
+clocks. No BSP text was copied: the BSP uses Rockchip's out-of-tree
+`compatible = "rockchip,hdmi"` machine driver with `rockchip,cpu` / `rockchip,codec`
+properties, which does not exist in mainline; `0006` is written against mainline's
+`simple-audio-card` binding instead, and models the codec side on the
+`hdmi0-sound` / `hdmi1-sound` nodes already in `rk3588-base.dtsi` /
+`rk3588-extra.dtsi`.
+
+**Not upstream-bound, and not offered.** No `Signed-off-by` is attached, because a
+DCO assertion belongs to whoever actually submits a patch upstream; nobody has.
+The mail header `scripts/build-series.py` generates says so in the patch itself.
