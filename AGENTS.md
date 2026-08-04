@@ -108,7 +108,10 @@ capture on the **vendor** BSP (`rk-6.1-rkr6.1`). Mainline — including the pinn
 `v7.1.5` — already carries the upstream `no_i2s_playback` / `no_i2s_capture` /
 `no_spdif_*` pdata flags and only clears a direction when the registering driver
 asks. There is nothing to fix here, and a backport of that vendor-side fix would
-not even apply. Do not add one.
+not even apply. Do not add one — the vendor-side fix lives in its own sibling
+repo, [`CERALIVE/rk3588-vendor-kernel-patches`](https://github.com/CERALIVE/rk3588-vendor-kernel-patches),
+pinned to `rk-6.1-rkr5.1` (the vendor branch the shipped image actually runs).
+Send anyone who lands here looking for it there, and do not duplicate it here.
 
 **The conflict rule is machine-enforced, not a convention.** A `rebase/*.rules`
 entry may only re-anchor **context** lines. `build-series.py` raises if a rule's
