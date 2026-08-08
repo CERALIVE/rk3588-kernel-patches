@@ -30,6 +30,10 @@ continue the same counter from `0006`:
 Plus [`overlays/rockchip-rk3588-rkvenc-mpp.dts`](overlays/rockchip-rk3588-rkvenc-mpp.dts),
 the device-tree overlay the encoder needs, carried verbatim.
 
+Which of these have an upstream counterpart, how far along it is, and what would
+have to be true before a patch can be dropped, is tracked per patch in
+[`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md).
+
 ## Layout
 
 ```
@@ -42,7 +46,7 @@ overlays/          the rkvenc/MPP device-tree overlay
 rebase/            per-kernel-tag context re-anchor rules
 scripts/           preflight · build-series · verify-payload-parity · apply
 kernel-pin.env     every pinned coordinate, in one sourceable file
-docs/              provenance audit · rebase ledger · preflight derivation
+docs/              provenance audit · rebase ledger · preflight derivation · upstream status
 ```
 
 All three source lanes run through the same converter, so `patches/` stays 100 %
@@ -55,7 +59,9 @@ no-op.
 **A source file is never deleted.** Dropping a patch from the series moves it into
 [`retired/`](retired/REGISTRY.md) byte-unchanged and records a row in the registry
 there. That is what keeps "`upstream/` is exactly what was imported" checkable even
-after the series stops carrying one of those files.
+after the series stops carrying one of those files. The *precondition* for dropping
+a given patch — "upstream merged it, so drop when the base reaches vX.Y" — is
+recorded per patch in [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md).
 
 ---
 

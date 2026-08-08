@@ -42,6 +42,7 @@ rk3588-kernel-patches/
 │   ├── verify-payload-parity.py  # proves patches/ changes nothing its source lane didn't
 │   └── apply.sh               # the gate: verify -> clone pinned tag -> git am -> assert
 ├── docs/
+│   ├── UPSTREAM-STATUS.md     # per-patch upstream status + retire-on-merge triggers
 │   ├── PROVENANCE.md          # licence/provenance audit incl. the MIT-claim caveat
 │   ├── PREFLIGHT.md           # how the Armbian edge -> 7.1 mapping was derived
 │   ├── REBASE-v7.1.7.md       # hunk-by-hunk rebase ledger — CURRENT base, all 5 members
@@ -56,6 +57,7 @@ rk3588-kernel-patches/
 | Change the target kernel | [`kernel-pin.env`](kernel-pin.env) + a new `rebase/<tag>.rules` + a new `docs/REBASE-<tag>.md` |
 | Add a CeraLive-authored patch | `ceralive/<NNNN>-*.patch` + a `SERIES` entry with `origin=CERALIVE` in `scripts/build-series.py`, then regenerate |
 | Add a patch taken from mainline / lore | `backports/<NNNN>-*.patch` + a `SERIES` entry with `origin=BACKPORTS` **and** a `Backport(...)` — see [`backports/README.md`](backports/README.md) |
+| Whether a patch has an upstream counterpart / can be dropped yet | [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) |
 | Stop carrying a patch | **Never `git rm` it.** Move it to `retired/` and add a row — see [`retired/REGISTRY.md`](retired/REGISTRY.md) |
 | Why HDMI-RX audio needs a DT patch at all | [`docs/PROVENANCE.md`](docs/PROVENANCE.md) §8 and `patches/0006-*`'s own mail header |
 | Check whether Armbian moved `edge` | `scripts/preflight.sh --head` |
@@ -105,6 +107,28 @@ the machine input at once, the same choice `rebase/*.rules` makes, so there is n
 second copy to drift. Reinstating is the reverse: move back, restore the entry with
 its **original** ordinal, drop the row. Retired ordinals are never reused, exactly
 as the `0004` gap is never closed.
+
+**Every patch's upstream position is tracked, and the retire trigger is written
+down before it fires.** [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) holds
+one row per series member and per pending import candidate: origin, upstream status
+(`merged@<version>` / `sent-vN` / `WIP` / no-counterpart), the precondition for
+dropping it, and the date that was last verified. Two traps it exists to prevent.
+First, **a patch that still applies proves nothing** — upstream may already have
+fixed the same thing, and only a content check says so. Second, **the trigger is a
+precondition, not a licence to delete**: when it fires the patch still goes through
+[`retired/REGISTRY.md`](retired/REGISTRY.md). Every lore reference in that file uses
+`https://lore.kernel.org/r/<message-id>`, which resolves regardless of list; do not
+record list-scoped URLs. Its Collabora source table sits behind an Anubis
+proof-of-work gate, so re-capturing it needs a real browser, not `curl`.
+
+**`0002` has TWO upstream answers in play and the question is open.** `7dd27810eea0`
+("hdmirx: Fix HPD lane hold time", in the base since `v7.1.6`, `Reported-by` `0002`'s
+own author against the *same* symptom) lengthens one delay; the 7.2-rc1 "HDMI-RX EDID
+fix" is separate, later work. Neither conflicts with `0002` — it applies at `v7.1.7`
+with offsets only — but whether `0002` is still *needed* is a behavioural judgement
+that needs an RK3588 board and an HDMI source. Do not resolve it from the source
+alone. See [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) § `0002` and
+[`docs/REBASE-v7.1.7.md`](docs/REBASE-v7.1.7.md) § Stable overlap.
 
 **Membership is exactly-once, both directions, and the build enforces it.**
 `build-series.py` used to walk a hard-coded `SERIES` table and never look at the
@@ -253,6 +277,10 @@ defconfig, and a 30-minute job to prove something the image pipeline proves bett
   deliberately the second, independent opinion
 - Don't `git rm` a source-lane patch — move it to `retired/` and register it
 - Don't add a `backports/` patch without its own commit sha and lore Message-ID
+- Don't add, import or retire a patch without updating its `docs/UPSTREAM-STATUS.md`
+  row — including the **Last checked** date; a status change with a stale date is not a check
+- Don't record a list-scoped lore URL, and don't re-capture the Collabora status
+  table with `curl` — it is Anubis-gated and needs a real browser
 - Don't renumber the series to close the `0004` gap, or reuse a retired ordinal
 - Don't restate a pinned coordinate in a workflow — read it from `kernel-pin.env`
 - Don't strip quotes off a `kernel-pin.env` value by hand; `read_pin()` parses it
