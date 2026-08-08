@@ -4,7 +4,7 @@ Date: Mon, 9 Feb 2026 14:35:17 -0800
 Subject: [PATCH 3/6] media: synopsys: hdmirx: fix buffer overflow on repeated HDMI-RX replug
 
 Imported from https://github.com/rcawston/rockchip-rk3588-mainline-patches
-at e13a311d8ee5e8ed92ec3d4a57c21f766c61d660"   # main @ 2026-07-01, file 0003-rockchip-rk3588-hdmirx-plugout-fix-v1.patch.
+at e13a311d8ee5e8ed92ec3d4a57c21f766c61d660, file 0003-rockchip-rk3588-hdmirx-plugout-fix-v1.patch.
 
 Authored by Ross Cawston. This CeraLive copy re-packages the file as a git
 mailbox so it can be applied with `git am`. Every added and removed line is

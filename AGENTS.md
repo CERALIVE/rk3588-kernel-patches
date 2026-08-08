@@ -28,15 +28,18 @@ imported at `e13a311` (2026-07-01).
 ```
 rk3588-kernel-patches/
 ├── kernel-pin.env             # SINGLE SOURCE OF TRUTH for every pinned coordinate
-├── upstream/                  # Ross Cawston's raw diff -ruN files, VERBATIM + README.MD
-├── ceralive/                  # FIRST-PARTY raw diffs with no upstream counterpart
+├── upstream/                  # SOURCE LANE — Ross Cawston's raw diff -ruN files, VERBATIM + README.MD
+├── ceralive/                  # SOURCE LANE — FIRST-PARTY raw diffs with no upstream counterpart
+├── backports/                 # SOURCE LANE — externally-sourced patches, each carrying its OWN provenance
+├── retired/                   # ARCHIVE — patches moved out of the series, byte-unchanged
+│   └── REGISTRY.md            # the RETIRED registry: state machine + the retirement table
 ├── patches/                   # GENERATED git-am series + series file — NEVER hand-edit
 ├── overlays/                  # rockchip-rk3588-rkvenc-mpp.dts, verbatim
 ├── rebase/<tag>.rules         # per-kernel-tag context re-anchors (context lines ONLY)
 ├── scripts/
 │   ├── preflight.sh           # re-resolve the Armbian edge mapping; --head for live check
-│   ├── build-series.py        # upstream/ -> patches/ ; --check asserts in-sync
-│   ├── verify-payload-parity.py  # proves patches/ changes nothing upstream/ didn't
+│   ├── build-series.py        # source lanes -> patches/ ; --check asserts in-sync; orphan check
+│   ├── verify-payload-parity.py  # proves patches/ changes nothing its source lane didn't
 │   └── apply.sh               # the gate: verify -> clone pinned tag -> git am -> assert
 ├── docs/
 │   ├── PROVENANCE.md          # licence/provenance audit incl. the MIT-claim caveat
@@ -51,6 +54,8 @@ rk3588-kernel-patches/
 |------|----------|
 | Change the target kernel | [`kernel-pin.env`](kernel-pin.env) + a new `rebase/<tag>.rules` + a new `docs/REBASE-<tag>.md` |
 | Add a CeraLive-authored patch | `ceralive/<NNNN>-*.patch` + a `SERIES` entry with `origin=CERALIVE` in `scripts/build-series.py`, then regenerate |
+| Add a patch taken from mainline / lore | `backports/<NNNN>-*.patch` + a `SERIES` entry with `origin=BACKPORTS` **and** a `Backport(...)` — see [`backports/README.md`](backports/README.md) |
+| Stop carrying a patch | **Never `git rm` it.** Move it to `retired/` and add a row — see [`retired/REGISTRY.md`](retired/REGISTRY.md) |
 | Why HDMI-RX audio needs a DT patch at all | [`docs/PROVENANCE.md`](docs/PROVENANCE.md) §8 and `patches/0006-*`'s own mail header |
 | Check whether Armbian moved `edge` | `scripts/preflight.sh --head` |
 | Understand the 7.1 derivation | [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md) |
@@ -66,15 +71,49 @@ rk3588-kernel-patches/
 temp dir and byte-compares. Change a source lane or `rebase/<tag>.rules`, then
 regenerate — never the other way round.
 
-**Two source lanes, one pipeline: `upstream/` is imported, `ceralive/` is ours.**
-`upstream/` must stay byte-identical to Ross Cawston's published files forever —
-that is what makes the credit line, the licence audit and the parity claim
-checkable. A patch CeraLive authors goes in `ceralive/` and continues the same
-numbering (`0006` and up). Both lanes run through `build-series.py`, get the same
-context-only rebase discipline, and are held to the same added/removed-line parity
-by `verify-payload-parity.py` — the lane only changes which mail header is written
-and which directory parity is proven against. **Never put first-party content in
-`upstream/`.**
+**Three source lanes, one pipeline: `upstream/` is imported, `ceralive/` is ours,
+`backports/` is everyone else's.** `upstream/` must stay byte-identical to Ross
+Cawston's published files forever — that is what makes the credit line, the licence
+audit and the parity claim checkable. A patch CeraLive authors goes in `ceralive/`
+and continues the same numbering (`0006` and up). A patch lifted from mainline, a
+stable tree or a lore posting goes in `backports/`. All three lanes run through
+`build-series.py`, get the same context-only rebase discipline, and are held to the
+same added/removed-line parity by `verify-payload-parity.py` — the lane only changes
+which mail header is written and which directory parity is proven against. **Never
+put first-party or backported content in `upstream/`.**
+
+**`backports/` carries provenance per patch, because it cannot inherit one.** The
+`upstream/` lane hard-codes a single credit block — *"Imported from
+`UPSTREAM_PATCHES_REPO` at `UPSTREAM_PATCHES_REV` … Authored by Ross Cawston"* —
+which is true of every file in that directory and of nothing else. So every
+`backports/` member must name its own origin: `provenance` is the 40-hex commit it
+is backported from (never `NULL_OID`, which is 40 hex digits and would otherwise
+pass the shape test), and a `Backport(upstream_subject=…, lore_msgid=…, note=…)`
+supplies the rest. The generated header emits the stable-tree
+`commit <sha> upstream.` marker plus a `https://lore.kernel.org/r/<msgid>` link.
+The build refuses a `backports/` entry that lacks any of it.
+Details: [`backports/README.md`](backports/README.md).
+
+**Retirement, not deletion — `retired/` + a registry row is the ONLY way out.**
+Deleting a source file would make "`upstream/` is byte-identical to what was
+imported" unfalsifiable: a reviewer cannot tell "upstream published four" from
+"someone quietly dropped the fifth". So a patch that stops being carried is **moved
+byte-unchanged** into `retired/` and gains a row in
+[`retired/REGISTRY.md`](retired/REGISTRY.md) — a Markdown table that is the doc and
+the machine input at once, the same choice `rebase/*.rules` makes, so there is no
+second copy to drift. Reinstating is the reverse: move back, restore the entry with
+its **original** ordinal, drop the row. Retired ordinals are never reused, exactly
+as the `0004` gap is never closed.
+
+**Membership is exactly-once, both directions, and the build enforces it.**
+`build-series.py` used to walk a hard-coded `SERIES` table and never look at the
+directories, so a new file dropped into `upstream/` or `backports/` was a silent
+no-op. Now every `*.patch` under a source lane must be **either** an active `SERIES`
+member **or** a registered retirement — never both, never neither. A registry row
+with no archived file, an archived file with no row, a file present in two lanes,
+a duplicate `SERIES` entry, and a reused ordinal all fail the build.
+`verify-payload-parity.py` re-derives the same orphan check from the filesystem
+alone, so the two opinions stay independent.
 
 **Upstream's `git am` instruction has never worked — that is why this fork exists.**
 The upstream files are raw `diff -ruN aa/ bb/` output with **no mail headers**, so
@@ -184,23 +223,38 @@ pinned to latest stable major; the ~2 GB kernel clone cached. Jobs:
 
 | Job | Asserts |
 |-----|---------|
-| `series-integrity` | `patches/` is generated and payload-identical to its source lane (`upstream/` or `ceralive/`); no Python needed beyond stdlib |
+| `series-integrity` | `patches/` is generated, payload-identical to its source lane (`upstream/`, `ceralive/` or `backports/`), and every lane file is accounted for exactly once; no Python needed beyond stdlib |
+| `pin` | nothing — it *reads* `KERNEL_TAG` out of `kernel-pin.env` and emits the `apply` matrix |
 | `preflight` | `kernel-pin.env` still matches `armbian/build` — non-blocking on schedule, blocking on PR |
 | `apply` | `scripts/apply.sh` — the real `git am` against the pinned tag |
 
 `apply` is the gate. It runs the same script the README tells humans to run, so a
 broken instruction is a red build.
 
+**No workflow restates a pinned coordinate.** The `apply` matrix used to be
+`tag: [v7.1.5]`, which meant a `KERNEL_TAG` bump left CI proving the series against
+a kernel nobody ships — and doing it *green*, which is the worst kind of failure.
+The `pin` job now reads the tag from `kernel-pin.env` and the matrix is
+`fromJSON(needs.pin.outputs.tags)`. There is no literal kernel tag anywhere in
+`.github/`, and adding one back is a regression. `apply` still cross-checks its
+matrix entry against `KERNEL_TAG`, because the cached commit it verifies against is
+`KERNEL_COMMIT` and that is the commit of `KERNEL_TAG` and of nothing else.
+
 There is **no build job**, deliberately. Adding one means a cross-compiler, a
 defconfig, and a 30-minute job to prove something the image pipeline proves better.
 
 ## ANTI-PATTERNS
 
-- Don't hand-edit `patches/` — regenerate from `upstream/` / `ceralive/` + `rebase/`
-- Don't put CeraLive-authored content in `upstream/`, or upstream content in `ceralive/`
+- Don't hand-edit `patches/` — regenerate from `upstream/` / `ceralive/` / `backports/` + `rebase/`
+- Don't put CeraLive-authored or backported content in `upstream/`, or upstream content in the other lanes
 - Don't make `verify-payload-parity.py` import from `build-series.py` — it is
   deliberately the second, independent opinion
-- Don't renumber the series to close the `0004` gap
+- Don't `git rm` a source-lane patch — move it to `retired/` and register it
+- Don't add a `backports/` patch without its own commit sha and lore Message-ID
+- Don't renumber the series to close the `0004` gap, or reuse a retired ordinal
+- Don't restate a pinned coordinate in a workflow — read it from `kernel-pin.env`
+- Don't strip quotes off a `kernel-pin.env` value by hand; `read_pin()` parses it
+  the way bash does, inline `#` comments included
 - Don't put a behavioural fix in `rebase/*.rules` — that is what the stop ledger is for
 - Don't add a `+`/`-` line anywhere in this repo's patch pipeline; payload parity must hold
 - Don't follow `linux-7.1.y` downstream — pin `KERNEL_TAG`

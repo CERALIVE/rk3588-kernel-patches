@@ -16,7 +16,9 @@ uncertain it is written down as uncertain.
 |------|-------|-----------|
 | Unified diffs, verbatim | `upstream/*.patch` | Ross Cawston's original `diff -ruN` files, byte-for-byte as published |
 | Unified diffs, first-party | `ceralive/*.patch` | CeraLive-authored patches with no upstream counterpart — see §8 |
-| Unified diffs, repackaged | `patches/*.patch` | Both lanes wrapped in git mailbox headers, with context re-anchored for `v7.1.5`. Every added/removed line is byte-identical to the patch's own source lane — enforced by `scripts/verify-payload-parity.py` |
+| Unified diffs, backported | `backports/*.patch` | Patches taken from mainline, a stable tree or a lore posting, each carrying its own commit sha and Message-ID — see §9. **Empty at this revision** |
+| Unified diffs, repackaged | `patches/*.patch` | All lanes wrapped in git mailbox headers, with context re-anchored for `v7.1.5`. Every added/removed line is byte-identical to the patch's own source lane — enforced by `scripts/verify-payload-parity.py` |
+| Unified diffs, archived | `retired/*.patch` | Patches moved out of the series, byte-unchanged, with a row in `retired/REGISTRY.md` — see §9. **Empty at this revision** |
 | Device-tree overlay | `overlays/rockchip-rk3588-rkvenc-mpp.dts` | Ross Cawston's overlay, verbatim |
 | CeraLive-authored | `scripts/`, `docs/`, `rebase/`, `kernel-pin.env`, `.github/` | CeraLive packaging, tooling, and documentation |
 
@@ -181,7 +183,11 @@ derivation audit and legal review. This document is not that.
 - **Upstream** patch behaviour is **not** modified. For `0001`–`0005`, `patches/`
   is a repackaging of `upstream/`; every added and removed line is byte-identical,
   mechanically enforced by `scripts/verify-payload-parity.py` in CI. First-party
-  patches are held to the same parity against `ceralive/` — see §8.
+  and backported patches are held to the same parity against `ceralive/` and
+  `backports/` — see §8 and §9.
+- **Nothing leaves `upstream/` by deletion.** A patch that stops being carried is
+  moved into `retired/` byte-unchanged with a registry row, so the byte-identity
+  claim above stays checkable rather than becoming a matter of trust — §9.
 - No SPDX identifier, copyright line, or `MODULE_LICENSE` value is added,
   removed, or altered.
 - Nothing is relicensed. `LICENSE` in this repository describes the terms the
@@ -253,3 +259,52 @@ properties, which does not exist in mainline; `0006` is written against mainline
 **Not upstream-bound, and not offered.** No `Signed-off-by` is attached, because a
 DCO assertion belongs to whoever actually submits a patch upstream; nobody has.
 The mail header `scripts/build-series.py` generates says so in the patch itself.
+
+---
+
+## 9. Backported patches (`backports/`) and retirement (`retired/`)
+
+Added: 2026-08-08. Both directories are **empty of patches at this revision** —
+they are structure, not content, and this section records what will be true of
+their first occupant.
+
+### 9.1 Why `backports/` is a third lane
+
+§1 and §8 rest on being able to say exactly who wrote what. `upstream/` supports one
+blanket credit line — *"Imported from `rcawston/rockchip-rk3588-mainline-patches` at
+`e13a311…`, authored by Ross Cawston"* — because that is true of every file in it.
+A patch lifted from mainline or from a lore posting has a different author, a
+different tree and a different licence trail, so putting it in `upstream/` would
+make that credit line false and the byte-identity claim in §6 unverifiable.
+
+Every `backports/` member therefore carries its own provenance, and
+`scripts/build-series.py` refuses the lane without it:
+
+| Field | Recorded as |
+|-------|-------------|
+| Originating commit | 40-hex sha; becomes the mbox delimiter and the header's `commit <sha> upstream.` line. `NULL_OID` is explicitly rejected |
+| Upstream subject | the originating commit's own subject |
+| List posting | Message-ID, rendered `https://lore.kernel.org/r/<msgid>` |
+| Why it is carried | a free-text note in the generated header |
+
+Licence position is unchanged and unchanged-by-design: a backport is redistributed
+under the licence of the tree it came from, its own SPDX headers travel with it in
+the diff, and nothing in this repository adds, removes or reinterprets them (§6).
+Adding the first backport means extending §3's per-file table for whatever files it
+touches.
+
+### 9.2 Why nothing is deleted
+
+The audit above is only checkable while the evidence is present. If a patch could be
+`git rm`'d, a reviewer looking at a four-file `upstream/` could not distinguish
+"upstream published four" from "someone quietly dropped the fifth" without walking
+history — and the §1 claim would become a matter of trust.
+
+So retirement is a **move**: the source file goes to `retired/` byte-unchanged and a
+row goes into `retired/REGISTRY.md` recording the lane it left, the ordinal it held,
+the date, the kernel tag at the time, and why. `scripts/build-series.py` fails the
+build on an archived file with no row, a row with no archived file, a patch that is
+both active and retired, or a reused ordinal. The full state machine, including
+reinstatement, is documented in that registry.
+
+This is the same discipline as the `0004` gap: holes stay visible on purpose.

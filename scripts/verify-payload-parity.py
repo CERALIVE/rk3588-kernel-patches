@@ -6,9 +6,17 @@ newer kernel means editing CONTEXT, and the whole question a reviewer has is
 "did that edit quietly change what the patch does?".
 
 The check: for every patch, extract the ordered list of added ('+') and removed
-('-') lines from its source (upstream/ or ceralive/) and from patches/, and
-require them to be identical. Context lines and @@ headers are deliberately
-ignored -- those are exactly what a re-anchor is allowed to move.
+('-') lines from its source (upstream/, ceralive/ or backports/) and from
+patches/, and require them to be identical. Context lines and @@ headers are
+deliberately ignored -- those are exactly what a re-anchor is allowed to move.
+
+It also checks the reverse direction: every *.patch sitting in a source lane must
+have a counterpart in patches/. That is the orphan check build-series.py performs
+from its SERIES table, re-derived here purely from the filesystem so the two
+opinions stay independent -- a lane file that never reaches the series is invisible
+otherwise. A retired patch is not an orphan: retirement MOVES the file into
+retired/, which is not a source lane, so it drops out of this check by construction
+(see retired/REGISTRY.md).
 
 If this passes, patches/ is a repackaging of its source, not a fork of its
 behaviour: for the upstream lane that means "still Ross Cawston's work", and for
@@ -31,7 +39,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PATCHES_DIR = ROOT / "patches"
 # Deliberately NOT imported from build-series.py: this checker is the second,
 # independent opinion, so it re-derives a patch's lane from the filesystem.
-SOURCE_DIRS = (ROOT / "upstream", ROOT / "ceralive")
+SOURCE_DIRS = (ROOT / "upstream", ROOT / "ceralive", ROOT / "backports")
 
 # File-header lines share the '+'/'-' prefix with real payload but are metadata.
 FILE_HEADER_RE = re.compile(r"^(\+\+\+|---) ")
@@ -76,7 +84,20 @@ def main() -> int:
         print("no patches found; run scripts/build-series.py first", file=sys.stderr)
         return 2
 
+    converted_names = {p.name for p in patch_files}
     failures = 0
+
+    for directory in SOURCE_DIRS:
+        for source in sorted(directory.glob("*.patch")):
+            if source.name not in converted_names:
+                print(
+                    f"FAIL {directory.name}/{source.name}: source lane patch with no "
+                    "patches/ counterpart. Add it to SERIES in "
+                    "scripts/build-series.py, or retire it per retired/REGISTRY.md.",
+                    file=sys.stderr,
+                )
+                failures += 1
+
     for converted in patch_files:
         original = find_source(converted.name)
         if original is None:
@@ -113,8 +134,10 @@ def main() -> int:
 
     if failures:
         print(
-            f"\n{failures} patch(es) diverge. A rebase rule changed behaviour; "
-            "that belongs in the stop ledger, not in rebase/*.rules.",
+            f"\n{failures} problem(s). A payload divergence means a rebase rule "
+            "changed behaviour, and that belongs in the stop ledger, not in "
+            "rebase/*.rules. An unconverted source means a lane file the series "
+            "does not carry.",
             file=sys.stderr,
         )
         return 1

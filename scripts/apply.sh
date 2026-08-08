@@ -30,12 +30,12 @@ log() { printf '\n== %s\n' "$*"; }
 
 # ---------------------------------------------------------------------------
 # 1. Series integrity — patches/ must be exactly what the converter produces
-#    from upstream/, and it must not have changed what upstream's patches do.
+#    from its source lanes, and it must not have changed what those patches do.
 # ---------------------------------------------------------------------------
 log "Verifying patches/ is generated, not hand-edited"
 python3 "${HERE}/build-series.py" --check
 
-log "Verifying the series changes nothing upstream/ did not already change"
+log "Verifying the series changes nothing its source lanes did not already change"
 python3 "${HERE}/verify-payload-parity.py"
 
 # ---------------------------------------------------------------------------

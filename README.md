@@ -35,7 +35,9 @@ the device-tree overlay the encoder needs, carried verbatim.
 ```
 upstream/          Ross Cawston's original diff -ruN files, byte-for-byte
 ceralive/          first-party patches with no upstream counterpart
-patches/           the git-am series — GENERATED from both, never hand-edit
+backports/         patches taken from mainline / a stable tree / lore
+retired/           patches moved out of the series, byte-unchanged, + REGISTRY.md
+patches/           the git-am series — GENERATED from the lanes, never hand-edit
 overlays/          the rkvenc/MPP device-tree overlay
 rebase/            per-kernel-tag context re-anchor rules
 scripts/           preflight · build-series · verify-payload-parity · apply
@@ -43,9 +45,17 @@ kernel-pin.env     every pinned coordinate, in one sourceable file
 docs/              provenance audit · rebase ledger · preflight derivation
 ```
 
-Both source lanes run through the same converter, so `patches/` stays 100 %
-generated and `verify-payload-parity.py` holds every patch — first-party included
-— to byte-identical added/removed lines against its own source file.
+All three source lanes run through the same converter, so `patches/` stays 100 %
+generated and `verify-payload-parity.py` holds every patch — first-party and
+backported included — to byte-identical added/removed lines against its own source
+file. The build also refuses to run if any lane file is not accounted for exactly
+once, so a patch dropped into a lane and forgotten is an error rather than a silent
+no-op.
+
+**A source file is never deleted.** Dropping a patch from the series moves it into
+[`retired/`](retired/REGISTRY.md) byte-unchanged and records a row in the registry
+there. That is what keeps "`upstream/` is exactly what was imported" checkable even
+after the series stops carrying one of those files.
 
 ---
 

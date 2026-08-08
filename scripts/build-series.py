@@ -14,14 +14,26 @@ On top of that, upstream targeted v6.19-rc8 and we target the tag in kernel-pin.
 so a few context anchors have drifted. Those are re-anchored from an explicit,
 reviewable table (rebase/<tag>.rules) -- never inline in this file.
 
-Two lanes, one pipeline
------------------------
+Three lanes, one pipeline
+-------------------------
 ``upstream/`` holds Ross Cawston's files verbatim. ``ceralive/`` holds first-party
-patches this project authored, which have no upstream counterpart. Both lanes go
-through the same converter so that ``patches/`` stays fully generated -- the whole
-point of the ANTI-PATTERN "don't hand-edit patches/". The lane only changes the
-mail header the converter writes and which directory parity is proven against;
-every other guarantee is shared.
+patches this project authored, which have no upstream counterpart. ``backports/``
+holds patches taken from somewhere else entirely -- mainline, a stable tree, or a
+posting on lore -- which is why every member of that lane must name its own origin
+(the mainline commit it is a backport of, and the lore Message-ID it was posted
+under) instead of inheriting one blanket credit line the way ``upstream/`` does.
+All three lanes go through the same converter so that ``patches/`` stays fully
+generated -- the whole point of the ANTI-PATTERN "don't hand-edit patches/". The
+lane only changes the mail header the converter writes and which directory parity
+is proven against; every other guarantee is shared.
+
+Retirement, not deletion
+------------------------
+A source file is never deleted. Dropping a patch from the series MOVES it into
+``retired/`` byte-unchanged and records a row in ``retired/REGISTRY.md``; that is
+what keeps "``upstream/`` is byte-identical to what was imported" checkable even
+after the series stops carrying one of those files. The membership check below
+enforces the resulting invariant.
 
 Guarantees
 ----------
@@ -29,8 +41,15 @@ Guarantees
 * Behaviour-preserving by construction: a rule may only touch a CONTEXT line.
   Attempting to rewrite a '+'/'-' line raises. scripts/verify-payload-parity.py
   proves the result independently, per lane.
-* Upstream numbering (0001/0002/0003/0005, gap at 0004) is never renumbered.
-  First-party patches continue the same counter from 0006.
+* Exactly-once membership, both directions: every ``*.patch`` under a source lane
+  is either an active SERIES member or a registered retirement -- never both, and
+  never neither. A new file dropped into a lane and forgotten is an ERROR, not a
+  silent no-op.
+* Upstream numbering (0001/0002/0003/0005, gap at 0004) is never renumbered, and a
+  retired ordinal is never reused. First-party patches continue the same counter
+  from 0006.
+* kernel-pin.env is parsed the way bash reads it, inline ``#`` comments included,
+  so a pinned coordinate cannot leak a comment fragment into generated metadata.
 
 Usage
 -----
@@ -53,10 +72,25 @@ ROOT = Path(__file__).resolve().parent.parent
 PATCHES_DIR = ROOT / "patches"
 REBASE_DIR = ROOT / "rebase"
 PIN_FILE = ROOT / "kernel-pin.env"
+RETIRED_DIR = ROOT / "retired"
+REGISTRY_FILE = RETIRED_DIR / "REGISTRY.md"
 
 UPSTREAM = "upstream"
 CERALIVE = "ceralive"
-SOURCE_DIRS = {UPSTREAM: ROOT / UPSTREAM, CERALIVE: ROOT / CERALIVE}
+BACKPORTS = "backports"
+SOURCE_DIRS = {
+    UPSTREAM: ROOT / UPSTREAM,
+    CERALIVE: ROOT / CERALIVE,
+    BACKPORTS: ROOT / BACKPORTS,
+}
+
+# Only *.patch is a series candidate. Both upstream/README.MD and the per-lane
+# READMEs live beside the patches and are not part of any lane's membership.
+LANE_GLOB = "*.patch"
+
+REGISTRY_COLUMNS = ("Patch", "Lane", "Ordinal", "Retired", "Kernel tag", "Reason")
+REGISTRY_RULE_RE = re.compile(r"^:?-{3,}:?$")
+SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 
 # Slot count, not member count. 0004 was never published upstream and we keep the
 # gap so our files line up 1:1 with theirs, hence ordinals 1/6, 2/6, 3/6, 5/6, 6/6.
@@ -72,17 +106,32 @@ NULL_OID = "0" * 40
 
 
 @dataclass(frozen=True)
+class Backport:
+    """Where a backports/ patch actually came from.
+
+    The upstream/ lane can hard-code one credit line because every file in it has
+    the same origin. A backport does not: each one is lifted from its own commit
+    and its own list posting, so the origin travels with the patch.
+    """
+
+    upstream_subject: str
+    lore_msgid: str  # Message-ID as it appears in a lore URL, no angle brackets
+    note: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class Patch:
     """One member of the series."""
 
     filename: str
     ordinal: int
     subject: str
-    provenance: str  # upstream commit that last touched `filename`, or NULL_OID
+    provenance: str  # commit of origin: upstream's, the backported one, or NULL_OID
     author: str
     date: str
     origin: str = UPSTREAM
     rationale: tuple[str, ...] = ()  # first-party lane only: why this patch exists
+    backport: Backport | None = None  # backports lane only, and mandatory there
 
 
 SERIES: tuple[Patch, ...] = (
@@ -172,20 +221,288 @@ SERIES: tuple[Patch, ...] = (
 )
 
 
-class RebaseError(RuntimeError):
+class SeriesError(RuntimeError):
+    """Anything this converter refuses to guess its way past."""
+
+
+class RebaseError(SeriesError):
     """A rule could not be applied safely. Never resolved silently."""
+
+
+class PinError(SeriesError):
+    """kernel-pin.env does not parse the way bash would read it."""
+
+
+class LaneError(SeriesError):
+    """A source file is not accounted for exactly once."""
+
+
+ASSIGNMENT_RE = re.compile(r"^(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
+
+
+def parse_pin_value(rhs: str, where: str) -> str:
+    """Read one right-hand side of KEY=... the way bash sources it.
+
+    kernel-pin.env annotates most pins with a trailing ``# what this is`` comment.
+    Stripping quotes alone leaves that comment glued to the value, which then gets
+    written verbatim into generated metadata -- patches/series carried
+    ``155b42be..."          # v7.1.5^{commit}`` for exactly that reason.
+    """
+    rest = rhs.lstrip()
+    if not rest or rest.startswith("#"):
+        return ""
+
+    if rest[0] in ("'", '"'):
+        quote = rest[0]
+        end = rest.find(quote, 1)
+        if end == -1:
+            raise PinError(f"{where}: unterminated {quote} in value")
+        value, trailer = rest[1:end], rest[end + 1 :]
+    else:
+        # Unquoted: bash ends the word at whitespace, and only treats '#' as a
+        # comment when it STARTS a word -- so FOO=bar#baz really is "bar#baz".
+        value = rest.split(maxsplit=1)[0]
+        trailer = rest[len(value) :]
+
+    trailer = trailer.strip()
+    if trailer and not trailer.startswith("#"):
+        raise PinError(f"{where}: unparsed text after the value: {trailer!r}")
+    return value
 
 
 def read_pin() -> dict[str, str]:
     """Parse the shell-ish kernel-pin.env into a plain dict."""
     pin: dict[str, str] = {}
-    for raw in PIN_FILE.read_text(encoding="utf-8").splitlines():
+    for lineno, raw in enumerate(PIN_FILE.read_text(encoding="utf-8").splitlines(), 1):
         line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
+        if not line or line.startswith("#"):
             continue
-        key, _, value = line.partition("=")
-        pin[key.strip()] = value.strip().strip('"')
+        match = ASSIGNMENT_RE.match(line)
+        if not match:
+            continue
+        key, rhs = match.groups()
+        pin[key] = parse_pin_value(rhs, f"{PIN_FILE.name}:{lineno}")
     return pin
+
+
+@dataclass(frozen=True)
+class Retired:
+    filename: str
+    lane: str
+    ordinal: int
+    retired: str
+    kernel_tag: str
+    reason: str
+    lineno: int
+
+
+def load_retired() -> dict[str, Retired]:
+    """Parse the retirement registry table out of retired/REGISTRY.md.
+
+    A Markdown table, because the repo already parses '|'-delimited state files
+    (rebase/*.rules) and a table is the one format that is both the doc and the
+    machine input -- there is no second copy to drift.
+    """
+    if not REGISTRY_FILE.is_file():
+        raise LaneError(f"missing retirement registry: {REGISTRY_FILE}")
+
+    # Anchor on the header row and take only its contiguous run, so the file is
+    # free to carry other Markdown tables (the column legend) around it.
+    rows: list[tuple[int, list[str]]] = []
+    started = False
+    for lineno, raw in enumerate(
+        REGISTRY_FILE.read_text(encoding="utf-8").splitlines(), 1
+    ):
+        line = raw.strip()
+        if not line.startswith("|"):
+            if started:
+                break
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if not started:
+            if tuple(cells) != REGISTRY_COLUMNS:
+                continue
+            started = True
+        rows.append((lineno, cells))
+
+    if len(rows) < 2:
+        raise LaneError(
+            f"{REGISTRY_FILE.name}: expected a table headed {REGISTRY_COLUMNS} with "
+            "its ---- rule. Both rows are mandatory even when nothing is retired -- "
+            "they are the shape the parser validates against"
+        )
+
+    rule_lineno, rule = rows[1]
+    if not all(REGISTRY_RULE_RE.match(c) for c in rule):
+        raise LaneError(f"{REGISTRY_FILE.name}:{rule_lineno}: expected the ---- rule")
+
+    entries: dict[str, Retired] = {}
+    for lineno, cells in rows[2:]:
+        if len(cells) != len(REGISTRY_COLUMNS):
+            raise LaneError(
+                f"{REGISTRY_FILE.name}:{lineno}: {len(cells)} cells, "
+                f"expected {len(REGISTRY_COLUMNS)}"
+            )
+        name, lane, ordinal, retired, tag, reason = (c.strip("`") for c in cells)
+        if lane not in SOURCE_DIRS:
+            raise LaneError(
+                f"{REGISTRY_FILE.name}:{lineno}: lane {lane!r} is not one of "
+                f"{sorted(SOURCE_DIRS)}"
+            )
+        if not ordinal.isdigit():
+            raise LaneError(
+                f"{REGISTRY_FILE.name}:{lineno}: ordinal {ordinal!r} is not a number"
+            )
+        if not (retired and tag and reason):
+            raise LaneError(
+                f"{REGISTRY_FILE.name}:{lineno}: Retired, Kernel tag and Reason "
+                "are all mandatory -- a retirement with no recorded why is a deletion"
+            )
+        if name in entries:
+            raise LaneError(
+                f"{REGISTRY_FILE.name}:{lineno}: {name} is registered twice "
+                f"(first at line {entries[name].lineno})"
+            )
+        entries[name] = Retired(
+            filename=name,
+            lane=lane,
+            ordinal=int(ordinal),
+            retired=retired,
+            kernel_tag=tag,
+            reason=reason,
+            lineno=lineno,
+        )
+    return entries
+
+
+def validate_series() -> list[str]:
+    """Per-entry lane invariants: what each lane obliges a SERIES member to carry."""
+    problems: list[str] = []
+    for patch in SERIES:
+        where = f"SERIES entry {patch.filename}"
+        if patch.origin not in SOURCE_DIRS:
+            problems.append(f"{where}: unknown origin {patch.origin!r}")
+            continue
+        if patch.ordinal > SERIES_TOTAL:
+            problems.append(
+                f"{where}: ordinal {patch.ordinal} exceeds SERIES_TOTAL "
+                f"{SERIES_TOTAL}, so the N/{SERIES_TOTAL} subject would lie"
+            )
+        if patch.origin == BACKPORTS:
+            if patch.backport is None:
+                problems.append(
+                    f"{where}: the {BACKPORTS}/ lane must name its own origin; "
+                    "give it a Backport(upstream_subject=..., lore_msgid=...)"
+                )
+            # NULL_OID is 40 hex digits, so the shape test alone would let a
+            # provenance-less backport through -- and "no originating commit" is
+            # the one thing a backport cannot be.
+            if patch.provenance == NULL_OID or not SHA1_RE.match(patch.provenance):
+                problems.append(
+                    f"{where}: a backport's provenance must be the 40-hex commit "
+                    f"it is backported from, not {patch.provenance!r}"
+                )
+        elif patch.backport is not None:
+            problems.append(f"{where}: only the {BACKPORTS}/ lane carries a Backport")
+        if patch.origin == CERALIVE and not patch.rationale:
+            problems.append(f"{where}: a first-party patch must state why it exists")
+    return problems
+
+
+def check_membership(retired: dict[str, Retired]) -> None:
+    """Every source-lane patch is active OR retired -- exactly once, never neither.
+
+    This is the check that makes a forgotten file loud. Dropping a patch into
+    upstream/ or backports/ without a SERIES entry used to be a silent no-op: the
+    converter walked its hard-coded list and never looked at the directory.
+    """
+    problems: list[str] = []
+
+    active: dict[str, Patch] = {}
+    ordinals: dict[int, str] = {}
+    for patch in SERIES:
+        if patch.filename in active:
+            problems.append(
+                f"SERIES lists {patch.filename} more than once; membership is "
+                "exactly once"
+            )
+            continue
+        active[patch.filename] = patch
+        if patch.ordinal in ordinals:
+            problems.append(
+                f"ordinal {patch.ordinal} is claimed by both "
+                f"{ordinals[patch.ordinal]} and {patch.filename}"
+            )
+        ordinals[patch.ordinal] = patch.filename
+
+    for patch in active.values():
+        src = SOURCE_DIRS[patch.origin] / patch.filename
+        if not src.is_file():
+            problems.append(
+                f"{patch.filename} is in SERIES as {patch.origin}/ but "
+                f"{patch.origin}/{patch.filename} does not exist"
+            )
+        duplicated = [
+            lane
+            for lane, directory in SOURCE_DIRS.items()
+            if lane != patch.origin and (directory / patch.filename).is_file()
+        ]
+        if duplicated:
+            problems.append(
+                f"{patch.filename} exists in {patch.origin}/ and also in "
+                f"{', '.join(sorted(duplicated))}/; provenance must be unambiguous"
+            )
+
+    for lane, directory in SOURCE_DIRS.items():
+        if not directory.is_dir():
+            continue
+        for path in sorted(directory.glob(LANE_GLOB)):
+            if path.name in active:
+                continue
+            if path.name in retired:
+                problems.append(
+                    f"{lane}/{path.name} is registered as retired but still sits in "
+                    f"{lane}/; retirement MOVES the file into retired/"
+                )
+                continue
+            problems.append(
+                f"orphan source: {lane}/{path.name} is in no SERIES entry and no "
+                "retirement registry row. Add it to SERIES in "
+                "scripts/build-series.py, or retire it per retired/REGISTRY.md"
+            )
+
+    archived = (
+        {p.name for p in RETIRED_DIR.glob(LANE_GLOB)} if RETIRED_DIR.is_dir() else set()
+    )
+    for name in sorted(archived - set(retired)):
+        problems.append(
+            f"retired/{name} is archived but has no row in {REGISTRY_FILE.name}"
+        )
+    for name, entry in sorted(retired.items()):
+        if name not in archived:
+            problems.append(
+                f"{REGISTRY_FILE.name}:{entry.lineno} retires {name} but "
+                f"retired/{name} is missing; retiring MOVES the file, and deleting "
+                "a source file is never legal"
+            )
+        if name in active:
+            problems.append(
+                f"{name} is both an active SERIES member and retired at "
+                f"{REGISTRY_FILE.name}:{entry.lineno}; it must be exactly one"
+            )
+        holder = ordinals.get(entry.ordinal)
+        if holder and holder != name:
+            problems.append(
+                f"ordinal {entry.ordinal} was retired with {name} but is reused by "
+                f"{holder}; slots are never renumbered or reused"
+            )
+
+    problems += validate_series()
+
+    if problems:
+        raise LaneError(
+            "source lanes are not accounted for:\n  - " + "\n  - ".join(problems)
+        )
 
 
 @dataclass(frozen=True)
@@ -322,8 +639,9 @@ def build_patch(patch: Patch, rules: list[Rule], pin: dict[str, str]) -> str:
 
     header: list[str] = [
         # mbox delimiter. For the upstream lane the hex is the upstream commit that
-        # last touched this file, so provenance is machine-readable rather than
-        # decorative; the first-party lane has no such commit and uses NULL_OID.
+        # last touched this file, and for a backport it is the commit being
+        # backported, so provenance is machine-readable rather than decorative; the
+        # first-party lane has no such commit and uses NULL_OID.
         f"From {patch.provenance} Mon Sep 17 00:00:00 2001",
         f"From: {patch.author}",
         f"Date: {patch.date}",
@@ -339,6 +657,28 @@ def build_patch(patch: Patch, rules: list[Rule], pin: dict[str, str]) -> str:
             "Authored by Ross Cawston. This CeraLive copy re-packages the file as a git",
             "mailbox so it can be applied with `git am`. Every added and removed line is",
             "byte-identical to upstream's; scripts/verify-payload-parity.py enforces that.",
+            "",
+        ]
+    elif patch.origin == BACKPORTS:
+        backport = patch.backport
+        if backport is None:
+            raise LaneError(
+                f"{patch.filename}: the {BACKPORTS}/ lane must name its own origin"
+            )
+        header += [
+            f"commit {patch.provenance} upstream.",
+            "",
+            backport.upstream_subject,
+            "",
+            *backport.note,
+            *([""] if backport.note else []),
+            f"Backported into the CeraLive series for {tag}. Posted at",
+            f"https://lore.kernel.org/r/{backport.lore_msgid}",
+            "",
+            f"The source of record is {patch.origin}/{patch.filename}; patches/ is",
+            "generated from it by scripts/build-series.py, and",
+            "scripts/verify-payload-parity.py holds it to the same added/removed-line",
+            "parity the imported and first-party lanes get.",
             "",
         ]
     else:
@@ -383,6 +723,12 @@ def build_patch(patch: Patch, rules: list[Rule], pin: dict[str, str]) -> str:
             f"to {upstream_repo.rsplit('/', 1)[-1]}. No Signed-off-by is added, because none",
             "was given upstream and inventing one would misattribute a DCO assertion.",
         ]
+    elif patch.origin == BACKPORTS:
+        header += [
+            "ALREADY upstream: this is a backport, not a submission. No Signed-off-by is",
+            "added here, because the DCO chain belongs to the original author and to",
+            "whoever lands it on a stable tree -- the lore link above has the real one.",
+        ]
     else:
         header += [
             "NOT upstream-bound: this targets the CeraLive device tree only and is not a",
@@ -399,6 +745,9 @@ def build_patch(patch: Patch, rules: list[Rule], pin: dict[str, str]) -> str:
 
 
 def write_series(out_dir: Path, pin: dict[str, str]) -> None:
+    retired = load_retired()
+    check_membership(retired)
+
     rules = load_rules(pin["KERNEL_TAG"])
 
     known = {p.filename for p in SERIES}
@@ -424,6 +773,10 @@ def write_series(out_dir: Path, pin: dict[str, str]) -> None:
         "# so the gap is intentional. Do not renumber to close it.",
         "# 0006 onwards is first-party (ceralive/), continuing the same counter.",
         f"# Target kernel: {pin['KERNEL_TAG']} ({pin['KERNEL_COMMIT']})",
+        *(
+            f"# Retired slot {e.ordinal}: {e.filename} -- see retired/REGISTRY.md"
+            for e in sorted(retired.values(), key=lambda e: e.ordinal)
+        ),
         *(p.filename for p in SERIES),
     ]
     (out_dir / "series").write_text("\n".join(series_lines) + "\n", encoding="utf-8")
@@ -474,6 +827,6 @@ def main() -> int:
 if __name__ == "__main__":
     try:
         sys.exit(main())
-    except RebaseError as exc:
+    except SeriesError as exc:
         print(f"error: {exc}", file=sys.stderr)
         sys.exit(2)
