@@ -43,6 +43,7 @@ rk3588-kernel-patches/
 │   └── apply.sh               # the gate: verify -> clone pinned tag -> git am -> assert
 ├── docs/
 │   ├── UPSTREAM-STATUS.md     # per-patch upstream status + retire-on-merge triggers
+│   ├── EVAL-0002-EDID.md      # verdict: keep 0002; the 7.2-rc1 fix is already in the base
 │   ├── PROVENANCE.md          # licence/provenance audit incl. the MIT-claim caveat
 │   ├── PREFLIGHT.md           # how the Armbian edge -> 7.1 mapping was derived
 │   ├── REBASE-v7.1.7.md       # hunk-by-hunk rebase ledger — CURRENT base, all 5 members
@@ -58,6 +59,7 @@ rk3588-kernel-patches/
 | Add a CeraLive-authored patch | `ceralive/<NNNN>-*.patch` + a `SERIES` entry with `origin=CERALIVE` in `scripts/build-series.py`, then regenerate |
 | Add a patch taken from mainline / lore | `backports/<NNNN>-*.patch` + a `SERIES` entry with `origin=BACKPORTS` **and** a `Backport(...)` — see [`backports/README.md`](backports/README.md) |
 | Whether a patch has an upstream counterpart / can be dropped yet | [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) |
+| Why `0002` was kept instead of taking the upstream EDID fix | [`docs/EVAL-0002-EDID.md`](docs/EVAL-0002-EDID.md) |
 | Stop carrying a patch | **Never `git rm` it.** Move it to `retired/` and add a row — see [`retired/REGISTRY.md`](retired/REGISTRY.md) |
 | Why HDMI-RX audio needs a DT patch at all | [`docs/PROVENANCE.md`](docs/PROVENANCE.md) §8 and `patches/0006-*`'s own mail header |
 | Check whether Armbian moved `edge` | `scripts/preflight.sh --head` |
@@ -121,14 +123,28 @@ precondition, not a licence to delete**: when it fires the patch still goes thro
 record list-scoped URLs. Its Collabora source table sits behind an Anubis
 proof-of-work gate, so re-capturing it needs a real browser, not `curl`.
 
-**`0002` has TWO upstream answers in play and the question is open.** `7dd27810eea0`
-("hdmirx: Fix HPD lane hold time", in the base since `v7.1.6`, `Reported-by` `0002`'s
-own author against the *same* symptom) lengthens one delay; the 7.2-rc1 "HDMI-RX EDID
-fix" is separate, later work. Neither conflicts with `0002` — it applies at `v7.1.7`
-with offsets only — but whether `0002` is still *needed* is a behavioural judgement
-that needs an RK3588 board and an HDMI source. Do not resolve it from the source
-alone. See [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) § `0002` and
+**`0002` has exactly ONE upstream answer, we already ship it, and it is not a
+replacement.** `7dd27810eea0` ("hdmirx: Fix HPD lane hold time", in the base since
+`v7.1.6`) **is** the 7.2-rc1 "HDMI-RX EDID fix" — it is the stable backport of
+mainline `d1162a5adbb5`, which is what the Collabora table's EDID row actually
+points at. They are not two efforts; the table names the symptom while the patch
+names the mechanism. It applies to `v7.1.7` as a **no-op**, and its 2-line HPD-hold
+change shares no mechanism with `0002`'s IRQ masking, lock-loop rework and DMA
+reset, so there is nothing to adopt and nothing to retire. Whether `0002` is still
+*needed* on top of it remains a behavioural judgement that needs an RK3588 board
+and an HDMI source — do not resolve that from the source alone. Verdict and
+evidence: [`docs/EVAL-0002-EDID.md`](docs/EVAL-0002-EDID.md); see also
+[`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) § `0002` and
 [`docs/REBASE-v7.1.7.md`](docs/REBASE-v7.1.7.md) § Stable overlap.
+
+**Resolving a lore Message-ID does not need a browser.** `lore.kernel.org` is
+Anubis-gated (`curl` gets 403 or a proof-of-work page), but
+`patchwork.kernel.org` is not: `…/api/patches/?msgid=<msgid>` returns the real
+subject, submitter and project as JSON, and `…/patch/<msgid>/mbox/` returns the
+full posting including its changelog. Pair it with the GitHub commit-search API
+over `torvalds/linux` to get the mainline SHA. That is how the `0002` verdict
+resolved its counterpart; the Anubis-vs-browser note above still applies to the
+Collabora **table**, which has no such API.
 
 **Membership is exactly-once, both directions, and the build enforces it.**
 `build-series.py` used to walk a hard-coded `SERIES` table and never look at the

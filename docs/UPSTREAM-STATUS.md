@@ -61,7 +61,7 @@ published one — and is not a row here for the same reason it is not a patch.
 | Patch | Origin | Upstream status | Retire trigger | Last checked | Notes |
 |---|---|---|---|---|---|
 | `0001` vepu580 encoder (v3) | `upstream/` lane — imported from [`rcawston/rockchip-rk3588-mainline-patches`](https://github.com/rcawston/rockchip-rk3588-mainline-patches) @ `e13a311`; ported from the Rockchip BSP MPP driver. Upstream Linux counterpart: **N/A** | `WIP` — Collabora's rkvenc work, tracked at <https://lore.kernel.org/r/082e1141c38205222a91abf13b1a97d9a00e117a.camel@collabora.com> | **None foreseeable — track only.** Do *not* retire when rkvenc lands: see [§ 0001](#0001--do-not-retire-on-rkvenc-landing) | 2026-08-08 | Collabora table: VEPU580 H.264 = `WIP`, H.265 = `TODO` |
-| `0002` hdmirx EDID fix (v1) | `upstream/` lane — Ross Cawston, same import. Upstream counterpart exists and is **different work**: "HDMI-RX EDID fix", PATCHv2, <https://lore.kernel.org/r/20260325105742.63236-1-dmitry.osipenko@collabora.com> | `merged@7.2-rc1` (the counterpart) | Base ≥ `v7.2` **and** a passing content check **and** T10's written verdict. Not automatic | 2026-08-08 | **Read [§ 0002](#0002--two-upstream-answers-one-unresolved-question) before evaluating.** `7dd27810eea0` (in the base since `v7.1.6`) already lands *an* upstream answer to the same symptom |
+| `0002` hdmirx EDID fix (v1) | `upstream/` lane — Ross Cawston, same import. Upstream counterpart is `d1162a5adbb5` "media: synopsys: hdmirx: Fix HPD lane hold time", PATCHv2, <https://lore.kernel.org/r/20260325105742.63236-1-dmitry.osipenko@collabora.com> — **orthogonal work, already in our base** as `7dd27810eea0` | `merged@7.2-rc1` (the counterpart) — **and backported to the base at `v7.1.6`** | **None from this counterpart.** Retire only if the hardware-gated question below is answered "150 ms hold suffices"; base version is irrelevant to it | 2026-08-08 | **Upstream version rejected: nothing to adopt** — `7dd27810eea0` *is* the 7.2-rc1 fix (stable backport of `d1162a5adbb5`), it is already applied, and it is a 2-line HPD-hold change that shares no mechanism with `0002`. Verdict: [`EVAL-0002-EDID.md`](EVAL-0002-EDID.md). Read [§ 0002](#0002--one-upstream-answer-already-in-the-base) |
 | `0003` hdmirx plugout fix (v1) | `upstream/` lane — Ross Cawston, same import. Upstream counterpart: **N/A** — none found (see [§ Sources](#sources-checked-for-this-sweep)) | `fork-carried-no-upstream` | None defined. Re-check at every base bump via the content check in [`REBASE-v7.1.7.md` § Patch-ID / content check](REBASE-v7.1.7.md#patch-id--content-check-against-the-new-base); retire only if a tree absorbs the `vb2_queue_error` plugout fix | 2026-08-08 | Content check at `v7.1.7`: `vb2_queue_error` still absent under `synopsys/hdmirx/` |
 | `0005` hdmirx audio | `upstream/` lane — Ross Cawston, same import. Upstream counterpart: "HDMI Input → Audio", PATCHv4, <https://lore.kernel.org/r/20260721064115.64809-1-royalnet026@gmail.com> | `sent-v4` — posted, **not merged** | Counterpart merges **and** base reaches that version **and** T11's verdict adopts it **and** the `0006` pairing is resolved. All four | 2026-08-08 | Collabora table row "HDMI Input – Audio" = `sent`. Retiring `0005` without settling `0006` produces a bound codec and no ALSA card |
 | `0006` hdmirx audio sound card | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Upstream counterpart: **N/A** | `first-party-no-upstream` | Only if an upstream HDMI-RX audio series lands its **own** DT sound card for Rock 5B+ *and* Orange Pi 5+. T11 must answer this explicitly | 2026-08-08 | Modelled on the BSP's `hdmiin-sound` wiring, expressed with mainline `simple-audio-card`; no BSP text copied |
@@ -79,17 +79,26 @@ The condition that would matter is a mainline encoder that CeraLive's userspace
 can actually drive — and that is a judgement about the whole engine stack, not a
 version comparison. Hence: track only.
 
-### `0002` — two upstream answers, one unresolved question
+### `0002` — one upstream answer, already in the base
 
 This is the one row that must not be read quickly.
+
+> **Corrected 2026-08-08 by T10.** An earlier revision of this row called the
+> 7.2-rc1 counterpart *"different work"* from `7dd27810eea0`. **It is not — they
+> are the same commit in two trees.** The correction, with sources, is in
+> [§ Resolution](#resolution--they-are-the-same-commit) below and in full in
+> [`EVAL-0002-EDID.md`](EVAL-0002-EDID.md).
 
 **Fact 1 — an upstream EDID fix is merged for 7.2-rc1.** The Collabora capture
 lists "HDMI-RX EDID fix (7.2-rc1)", PATCHv2 by Dmitry Osipenko:
 <https://lore.kernel.org/r/20260325105742.63236-1-dmitry.osipenko@collabora.com>.
-That is the counterpart T10 is chartered to evaluate `0002` against.
+That is the counterpart T10 was chartered to evaluate `0002` against. Note that
+"HDMI-RX EDID fix" is the Collabora table's own label — it names the *symptom*.
+The patch's actual subject is *"media: synopsys: hdmirx: Fix HPD lane hold time"*,
+and that mismatch is where the confusion below came from.
 
-**Fact 2 — stable *already* shipped a different fix for the same symptom, and it
-is in our base.** The T7 rebase found exactly one commit in the whole 744-commit
+**Fact 2 — stable already shipped a fix for the same symptom, and it is in our
+base.** The T7 rebase found exactly one commit in the whole 744-commit
 `v7.1.5..v7.1.7` window touching anything this series touches:
 
 ```
@@ -123,15 +132,39 @@ Nobody has answered it, because answering it needs a real HDMI source and an
 RK3588 board, and this repository gates patch application only. The full write-up
 is [`REBASE-v7.1.7.md` § Stable overlap](REBASE-v7.1.7.md#stable-overlap--7dd27810eea0-and-why-it-is-not-a-conflict).
 
-**Consequence for T10.** T10 evaluates `0002` against the 7.2-rc1 counterpart —
-but there are now *two* upstream answers in play, and they have not been shown to
-be the same work: `7dd27810eea0` / `d1162a5adbb5` is an HPD-hold-time change
-reported in February, while the 7.2-rc1 series is Osipenko's March posting. T10's
-evaluation therefore has to disambiguate them before comparing anything, and it
-inherits the hardware gate on the "+50 ms is enough" question — a KEEP verdict
-reached without a board is the honest outcome, not a failure. The standing bar
-also applies: the in-house `0002` is reported to work well, so the threshold for
-replacing it is high and the verdict must say so.
+### Resolution — they are the same commit
+
+T10 disambiguated this on 2026-08-08. There are **not** two upstream answers.
+There is one, and it has been in our base since `v7.1.6`:
+
+- The Message-ID `20260325105742.63236-1-dmitry.osipenko@collabora.com` resolves
+  (patchwork id `14494411`, project `linux-rockchip`) to
+  **`[v2] media: synopsys: hdmirx: Fix HPD lane hold time`** — not to a separately
+  titled EDID series.
+- That posting is mainline **`d1162a5adbb5`** (author date `2026-03-25T10:57:42Z`
+  matches the posting to the second; committed by Hans Verkuil 2026-05-05).
+  Containment check against mainline: `v7.2-rc1` contains it, `v7.1` does not.
+- `7dd27810eea0`'s own second line reads `commit d1162a5adbb5… upstream.` — the
+  stable-backport marker. It **is** that commit, picked up via `Cc: stable`.
+
+So "the 7.2-rc1 EDID fix" and "the stable HPD-hold-time fix" are one two-line
+change in two trees, and we already carry it. The February/March gap that looked
+like two efforts is simply report-then-fix: Ross Cawston reported the symptom on
+2026-02-09, Collabora fixed it in March.
+
+**Consequence — evaluated, and the answer is KEEP.** Adoption is not merely
+rejected, it is impossible: the counterpart applies to `v7.1.7` as a **no-op**
+(forward `git apply --check` fails, reverse succeeds, `--3way` yields an empty
+diff). It also does not overlap `0002` — 2 lines of HPD-hold duration versus
+`0002`'s 8 hunks of IRQ masking, lock-loop rework, phy retry and DMA reset. The
+full verdict, against all five criteria, is [`EVAL-0002-EDID.md`](EVAL-0002-EDID.md).
+
+**What this does not resolve.** The hardware-gated question above is unchanged.
+Knowing the +50 ms hold is the *only* upstream answer narrows it; it does not
+settle it. No board was involved in this evaluation, and none of it is
+board-verified. The standing bar applies and is quoted in the verdict doc: the
+in-house `0002` "is already working very well", so the threshold for replacing it
+is high — and nothing came close to it.
 
 ---
 
@@ -143,7 +176,7 @@ and a documented *skip* is a valid outcome for every one of them.
 
 | Candidate | Owning task | Origin | Upstream status | Retire trigger | Last checked | Notes |
 |---|---|---|---|---|---|---|
-| HDMI-RX EDID fix (upstream counterpart to `0002`) | T10 | <https://lore.kernel.org/r/20260325105742.63236-1-dmitry.osipenko@collabora.com> (PATCHv2) — mainline commit SHA **not yet resolved** | `merged@7.2-rc1` | If adopted: retire the backport when base ≥ `v7.2`. If not adopted: row records the rejection reason | 2026-08-08 | Adoption *replaces* `0002`. Must first disambiguate from `7dd27810eea0` — see [§ 0002](#0002--two-upstream-answers-one-unresolved-question) |
+| ~~HDMI-RX EDID fix (upstream counterpart to `0002`)~~ — **NOT IMPORTED** | T10 — **done** | <https://lore.kernel.org/r/20260325105742.63236-1-dmitry.osipenko@collabora.com> (PATCHv2) = mainline **`d1162a5adbb5e95953d460b5bde3a04cd4473fe9`** | `merged@7.2-rc1` — **and already in the base** as `7dd27810eea0` (`v7.1.6`) | n/a — nothing was imported | 2026-08-08 | **Upstream version rejected: already applied, and orthogonal.** It is the *same commit* as `7dd27810eea0`, not a second fix; it applies to `v7.1.7` as a no-op (reverse-apply check passes, `--3way` diff empty); and its 2-line HPD-hold change shares no mechanism with `0002`. `0002` is KEPT. Verdict: [`EVAL-0002-EDID.md`](EVAL-0002-EDID.md) |
 | HDMI Input Audio PATCHv4 (upstream counterpart to `0005`) | T11 | <https://lore.kernel.org/r/20260721064115.64809-1-royalnet026@gmail.com> | `sent-v4` — not merged; claims-quality, thread review status to be recorded | If adopted: retire when merged upstream **and** base reaches that version | 2026-08-08 | Verdict MUST state whether `0006` stays required, needs adaptation, or is superseded |
 | IOMMU "disable fetch dte time limit" | T12 | <https://lore.kernel.org/r/20260428-spu-iommudtefix-v2-1-f592f579e508@pengutronix.de> (PATCHv2) — mainline commit SHA to be resolved at import | `merged@7.2-rc1` | **Drop when base ≥ `v7.2`** | 2026-08-08 | `backports/` lane, `commit <sha> upstream.` provenance required. Skip-and-record if `7.1.y` already absorbed it, or if the prereq chain exceeds 2 commits |
 | I2S MCLK output gate clocks | T12 | <https://lore.kernel.org/r/20260320-rk3588-mclk-gate-grf-v3-0-980338eacd2c@superkali.me> (PATCHv3) — mainline commit SHA to be resolved at import | `merged@7.2-rc1` | **Drop when base ≥ `v7.2`** | 2026-08-08 | Same lane and same skip conditions as the row above |

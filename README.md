@@ -34,6 +34,12 @@ Which of these have an upstream counterpart, how far along it is, and what would
 have to be true before a patch can be dropped, is tracked per patch in
 [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md).
 
+Where an upstream counterpart was evaluated as a replacement and the answer was
+written down, the verdict gets its own document — so far
+[`docs/EVAL-0002-EDID.md`](docs/EVAL-0002-EDID.md), which keeps `0002` and
+explains why the 7.2-rc1 EDID fix is not a substitute for it (it is already in the
+base, and it fixes something else).
+
 ## Layout
 
 ```
@@ -46,7 +52,7 @@ overlays/          the rkvenc/MPP device-tree overlay
 rebase/            per-kernel-tag context re-anchor rules
 scripts/           preflight · build-series · verify-payload-parity · apply
 kernel-pin.env     every pinned coordinate, in one sourceable file
-docs/              provenance audit · rebase ledger · preflight derivation · upstream status
+docs/              provenance audit · rebase ledger · preflight derivation · upstream status · adopt-or-keep verdicts
 ```
 
 All three source lanes run through the same converter, so `patches/` stays 100 %
