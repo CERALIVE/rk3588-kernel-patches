@@ -2,7 +2,7 @@
 # Upstream numbering is preserved verbatim -- 0004 was never published,
 # so the gap is intentional. Do not renumber to close it.
 # 0006 onwards is first-party (ceralive/), continuing the same counter.
-# Target kernel: v7.1.5 (155b42bec9cbb6b8cdc47dd9bd09503a81fbe493)
+# Target kernel: v7.1.7 (c7ba9d6de43e9d9bd755b1f3c19501a38898c6b6)
 0001-rockchip-rk3588-vepu580-encoder-support-v3.patch
 0002-rockchip-rk3588-hdmirx-edid-fix-v1.patch
 0003-rockchip-rk3588-hdmirx-plugout-fix-v1.patch

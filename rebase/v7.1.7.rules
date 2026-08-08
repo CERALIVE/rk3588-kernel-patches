@@ -1,0 +1,92 @@
+# rebase/v7.1.7.rules — context re-anchors for KERNEL_TAG=v7.1.7
+#
+# WHAT THIS FILE IS ALLOWED TO DO
+# ------------------------------
+# Upstream authored these patches against v6.19-rc8 (see upstream/README.MD). We
+# apply them to v7.1.7. In between, mainline moved some CONTEXT lines the patches
+# rely on as anchors. A rule here edits ONLY context lines (' '-prefixed) so a hunk
+# can find its home again.
+#
+# It is STRUCTURALLY INCAPABLE of changing behaviour:
+#   * `replace` and `insert-before` refuse to touch a '+' or '-' line — the tool
+#     raises if the matched line is not a context line.
+#   * scripts/build-series.py recomputes the affected @@ counts so the hunk stays
+#     well-formed.
+#   * scripts/verify-payload-parity.py then proves, byte for byte, that the set of
+#     '+' and '-' lines in patches/ is IDENTICAL to the patch's source lane. If a
+#     rule ever changed what a patch does, that check fails.
+#
+# WHAT IT IS NOT ALLOWED TO DO
+# ----------------------------
+# Anything requiring a judgement about what the driver should DO. If a hunk cannot
+# be re-anchored by context alone, it does NOT get a rule — it gets an entry in
+# docs/REBASE-v7.1.7.md under "stopped", and the series is reported as not applying.
+# See that document for the full hunk-by-hunk ledger over all FIVE series members.
+#
+# WHY THIS IS NOT A COPY OF rebase/v7.1.5.rules
+# ---------------------------------------------
+# Rules are per-tag on purpose: docs/REBASE-v7.1.5.md warns that a rule right for
+# one tag can be wrong for the next, so each one was re-decided against v7.1.7
+# rather than carried over on faith. Both survive, and both were re-proven at the
+# new base — the two anchors below were read out of the v7.1.7 tree, and the
+# raw source-lane files (no rules at all) were applied to v7.1.7 to confirm that
+# exactly these two hunks, and no others, still fail without them. That
+# counterfactual is recorded in docs/REBASE-v7.1.7.md § Non-vacuity.
+#
+# The one stable commit that landed in the window, 7dd27810eea0 ("media: synopsys:
+# hdmirx: Fix HPD lane hold time", v7.1.6), is net zero lines and sits inside
+# hdmirx_hpd_ctrl(), which no hunk of ours modifies. It therefore produced no new
+# anchor drift and needs no rule — but it does overlap 0002 in INTENT, which is
+# ledgered in docs/REBASE-v7.1.7.md § Stable overlap.
+#
+# FORMAT
+#   <patch-file>|<op>|<anchor-line>|<payload-line>
+#
+#   op=replace         anchor is an existing context line; it becomes payload.
+#                      Hunk counts unchanged.
+#   op=insert-before   payload becomes a NEW context line immediately before the
+#                      first matching context line `anchor`. Hunk old/new counts
+#                      each +1.
+#
+#   Literal '\t' in a field is a TAB (kernel source is tab-indented).
+#   The anchor must match exactly once within the target patch; ambiguity is fatal.
+
+# --- R1 -------------------------------------------------------------------
+# 0001, arch/arm64/boot/dts/rockchip/rk3588-base.dtsi, hunk @@ -1351,6 +1353,92 @@
+#
+# The hunk inserts the mpp-service / rkvenc0 / rkvenc1 nodes just before `av1d`.
+# Its leading anchor is the tail of the NEIGHBOURING `vdec1_mmu` node, which the
+# patch never modifies. Mainline re-pointed that node's power domain from the
+# shared VDPU domain to its own RKVDEC1 domain, so the anchor text drifted.
+#
+# Still required and still correct at v7.1.7. Re-verified against the v7.1.7 tree,
+# not inherited: no commit in v7.1.5..v7.1.7 touches rk3588-base.dtsi at all, and
+# `vdec1_mmu: iommu@fdc40700` still reads `power-domains = <&power
+# RK3588_PD_RKVDEC1>;` (rk3588-base.dtsi:1410,1416). Nothing the patch adds
+# references RK3588_PD_VDPU. Also confirmed at v7.1.7: RK3588_PD_VENC0/VENC1,
+# ACLK/HCLK/CLK_RKVENC{0,1}_CORE and SRST_{A,H}_RKVENC{0,1}(_CORE) all still exist,
+# and neither `rkvenc0:`/`rkvenc1:` nor drivers/media/platform/rockchip/rkvenc/ nor
+# include/uapi/linux/rkvenc.h exists upstream — so this is anchor drift on a
+# neighbour, not a collision with the encoder work.
+0001-rockchip-rk3588-vepu580-encoder-support-v3.patch|replace|\t\tpower-domains = <&power RK3588_PD_VDPU>;|\t\tpower-domains = <&power RK3588_PD_RKVDEC1>;
+
+# --- R2 -------------------------------------------------------------------
+# 0005, drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c, hunk @@ -135,7 +148,13 @@
+#
+# The hunk adds audio members to `struct snps_hdmirx_dev`, anchored between
+# `cec` and `stream_lock`. Mainline added `phy_rw_lock` in exactly that gap, so
+# the anchor no longer matches. Re-adding it as context restores the match.
+#
+# Still required and still correct at v7.1.7. Re-verified against the v7.1.7 tree:
+# `struct mutex phy_rw_lock; /* to protect phy r/w configuration */` still sits
+# between `struct hdmirx_cec *cec;` and `struct mutex stream_lock;`, byte for byte,
+# and the one stable commit that touched this file in the window (7dd27810eea0)
+# changed only hdmirx_hpd_ctrl(), not the struct.
+#
+# This is the ONE placement decision in this file: the new members stay where the
+# patch put them (immediately after `cec`), and `phy_rw_lock` follows them. The
+# alternative ordering is equivalent — `struct snps_hdmirx_dev` is a private
+# driver struct: not UAPI, not packed, never serialised, and no member is reached
+# by offset. Member order therefore has no observable effect. Ledgered in
+# docs/REBASE-v7.1.7.md §R2.
+0005-rockchip-rk3588-hdmirx-audio.patch|insert-before|\tstruct mutex stream_lock; /* to lock video stream capture */|\tstruct mutex phy_rw_lock; /* to protect phy r/w configuration */

@@ -8,7 +8,7 @@ imported at `e13a311` (2026-07-01) with full history and authorship preserved.
 
 | | |
 |---|---|
-| **Target kernel** | `v7.1.5` (`155b42bec9cbb6b8cdc47dd9bd09503a81fbe493`) |
+| **Target kernel** | `v7.1.7` (`c7ba9d6de43e9d9bd755b1f3c19501a38898c6b6`) |
 | **Why that kernel** | Armbian rk3588 `edge` → `KERNEL_MAJOR_MINOR=7.1` — derived in [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md) |
 | **Boards** | Radxa Rock 5B+, Orange Pi 5+ (both `BOARDFAMILY=rockchip-rk3588`) |
 | **Status** | Applies cleanly. **Not built, not run on hardware, not upstream-bound.** |
@@ -158,7 +158,7 @@ as a patch.
 ```bash
 scripts/preflight.sh --head     # has Armbian moved edge?
 # edit KERNEL_TAG / KERNEL_TAG_OBJECT / KERNEL_COMMIT together
-cp rebase/v7.1.5.rules rebase/<new-tag>.rules
+cp rebase/v7.1.7.rules rebase/<new-tag>.rules   # seed, then re-decide every rule
 scripts/apply.sh                # resolve conflicts per the rule below
 ```
 
@@ -166,7 +166,7 @@ scripts/apply.sh                # resolve conflicts per the rule below
 entry **only** if the fix changes how a patch *applies*, never what it *does*.
 Anything else gets written up in a new `docs/REBASE-<tag>.md` and the series is
 reported as not applying. That boundary is machine-enforced, not a convention —
-see [`docs/REBASE-v7.1.5.md`](docs/REBASE-v7.1.5.md).
+see [`docs/REBASE-v7.1.7.md`](docs/REBASE-v7.1.7.md).
 
 ---
 
@@ -181,9 +181,12 @@ main reason this fork exists — `patches/` is generated from `upstream/` and
 `ceralive/` by `scripts/build-series.py`, which adds mailbox headers and drops the
 `.DS_Store` noise.
 
-**The series is re-anchored for `v7.1.5`.** Upstream targeted `v6.19-rc8`. Two
-context anchors drifted in between; both were re-anchored, and both are documented
-hunk by hunk in [`docs/REBASE-v7.1.5.md`](docs/REBASE-v7.1.5.md).
+**The series is re-anchored for `v7.1.7`.** Upstream targeted `v6.19-rc8`. Two
+context anchors drifted in between; both were re-anchored, and all five series
+members are documented hunk by hunk in
+[`docs/REBASE-v7.1.7.md`](docs/REBASE-v7.1.7.md). The earlier
+[`docs/REBASE-v7.1.5.md`](docs/REBASE-v7.1.5.md) is kept as the record of the
+previous base.
 
 **Nothing the patches do was changed.** `scripts/verify-payload-parity.py` proves
 that the set of added and removed lines in `patches/` is byte-identical to the

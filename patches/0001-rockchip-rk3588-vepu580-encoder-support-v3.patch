@@ -14,9 +14,9 @@ Dropped 8 payload-free "Binary files .../.DS_Store ... differ"
 stanza(s) that macOS left in the original `diff -ruN` output. They carry
 no data, and git apply refuses a binary stanza with no index line.
 
-Re-anchored for v7.1.5 (upstream developed this against v6.19-rc8):
+Re-anchored for v7.1.7 (upstream developed this against v6.19-rc8):
   - replaced context line `power-domains = <&power RK3588_PD_VDPU>;`
-Context lines only -- see rebase/v7.1.5.rules and docs/REBASE-v7.1.5.md for the
+Context lines only -- see rebase/v7.1.7.rules and docs/REBASE-v7.1.7.md for the
 hunk-by-hunk ledger.
 
 NOT upstream-bound: this is a CeraLive-maintained adaptation, not a submission

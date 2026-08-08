@@ -17,7 +17,7 @@ uncertain it is written down as uncertain.
 | Unified diffs, verbatim | `upstream/*.patch` | Ross Cawston's original `diff -ruN` files, byte-for-byte as published |
 | Unified diffs, first-party | `ceralive/*.patch` | CeraLive-authored patches with no upstream counterpart — see §8 |
 | Unified diffs, backported | `backports/*.patch` | Patches taken from mainline, a stable tree or a lore posting, each carrying its own commit sha and Message-ID — see §9. **Empty at this revision** |
-| Unified diffs, repackaged | `patches/*.patch` | All lanes wrapped in git mailbox headers, with context re-anchored for `v7.1.5`. Every added/removed line is byte-identical to the patch's own source lane — enforced by `scripts/verify-payload-parity.py` |
+| Unified diffs, repackaged | `patches/*.patch` | All lanes wrapped in git mailbox headers, with context re-anchored for `v7.1.7`. Every added/removed line is byte-identical to the patch's own source lane — enforced by `scripts/verify-payload-parity.py` |
 | Unified diffs, archived | `retired/*.patch` | Patches moved out of the series, byte-unchanged, with a row in `retired/REGISTRY.md` — see §9. **Empty at this revision** |
 | Device-tree overlay | `overlays/rockchip-rk3588-rkvenc-mpp.dts` | Ross Cawston's overlay, verbatim |
 | CeraLive-authored | `scripts/`, `docs/`, `rebase/`, `kernel-pin.env`, `.github/` | CeraLive packaging, tooling, and documentation |
@@ -70,10 +70,12 @@ the kernel and it may use `EXPORT_SYMBOL_GPL` symbols.
 
 `overlays/rockchip-rk3588-rkvenc-mpp.dts` also carries `SPDX-License-Identifier: (GPL-2.0+ OR MIT)`.
 
-### 3.2 Files modified by `0001`, `0002`, `0003`, `0005`
+### 3.2 Files modified by `0001`, `0002`, `0003`, `0005`, `0006`
 
 Every other file the series touches already exists in mainline and keeps its own
-mainline licence. Nothing in the series alters an SPDX line. Verified at `v7.1.5`:
+mainline licence. Nothing in the series alters an SPDX line. Re-verified at
+`v7.1.7` — every marker below was read out of that tree, and none changed from
+`v7.1.5`:
 
 | File | Existing mainline SPDX | Touched by |
 |------|------------------------|-----------|
@@ -84,9 +86,12 @@ mainline licence. Nothing in the series alters an SPDX line. Verified at `v7.1.5
 | `drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c` | `GPL-2.0` | 0002, 0003, 0005 |
 | `drivers/media/platform/synopsys/hdmirx/snps_hdmirx.h` | `GPL-2.0` | 0005 |
 | `drivers/media/platform/synopsys/hdmirx/Kconfig` | `GPL-2.0` | 0005 |
+| `arch/arm64/boot/dts/rockchip/rk3588-extra.dtsi` | `(GPL-2.0+ OR MIT)` | 0006 |
+| `arch/arm64/boot/dts/rockchip/rk3588-rock-5b.dtsi` | `(GPL-2.0+ OR MIT)` | 0006 |
+| `arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dts` | `(GPL-2.0+ OR MIT)` | 0006 |
 
-Patches `0002`, `0003` and `0005` add **no new files** and introduce no new
-licence claim of any kind. They are ordinary modifications to GPL-2.0 mainline
+Patches `0002`, `0003`, `0005` and `0006` add **no new files** and introduce no new
+licence claim of any kind. They are ordinary modifications to existing mainline
 files, and the licensing question below concerns `0001` only.
 
 ---

@@ -44,7 +44,8 @@ rk3588-kernel-patches/
 ├── docs/
 │   ├── PROVENANCE.md          # licence/provenance audit incl. the MIT-claim caveat
 │   ├── PREFLIGHT.md           # how the Armbian edge -> 7.1 mapping was derived
-│   └── REBASE-v7.1.5.md       # hunk-by-hunk rebase ledger
+│   ├── REBASE-v7.1.7.md       # hunk-by-hunk rebase ledger — CURRENT base, all 5 members
+│   └── REBASE-v7.1.5.md       # ledger for the previous base, kept for the record
 └── .github/workflows/patch-apply.yml
 ```
 
@@ -60,7 +61,7 @@ rk3588-kernel-patches/
 | Check whether Armbian moved `edge` | `scripts/preflight.sh --head` |
 | Understand the 7.1 derivation | [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md) |
 | Apply the series | `scripts/apply.sh` — see [`README.md`](README.md) |
-| Why a hunk was re-anchored | [`docs/REBASE-v7.1.5.md`](docs/REBASE-v7.1.5.md) |
+| Why a hunk was re-anchored | [`docs/REBASE-v7.1.7.md`](docs/REBASE-v7.1.7.md) |
 | Licence / redistribution facts | [`docs/PROVENANCE.md`](docs/PROVENANCE.md) |
 | Why not the `sfqr0414` fork | [`README.md`](README.md) → "Why not the `sfqr0414` fork" |
 
@@ -144,7 +145,7 @@ probes, nothing errors, there is simply no capture device.
 `armbian/linux-rockchip` commit zeroes `capture.channels_min/max` for every
 `hdmi-audio-codec` instance with no TX/RX discrimination, which breaks HDMI-RX
 capture on the **vendor** BSP (`rk-6.1-rkr6.1`). Mainline — including the pinned
-`v7.1.5` — already carries the upstream `no_i2s_playback` / `no_i2s_capture` /
+`v7.1.7` — already carries the upstream `no_i2s_playback` / `no_i2s_capture` /
 `no_spdif_*` pdata flags and only clears a direction when the registering driver
 asks. There is nothing to fix here, and a backport of that vendor-side fix would
 not even apply. Do not add one — the vendor-side fix lives in its own sibling
@@ -164,10 +165,11 @@ conflicts need someone who can test on RK3588 hardware.
 
 **This repo pins a TAG; Armbian tracks a BRANCH.** Armbian's `edge` resolves to
 `KERNELBRANCH="branch:linux-7.1.y"`, a rolling stable branch. This repo pins
-`v7.1.5` = `155b42bec9cbb6b8cdc47dd9bd09503a81fbe493`, the tip of that branch at
-import. `apply.sh` refuses to run if the tag in the tree does not resolve to the
-pinned commit, so a moved tag fails loudly instead of going green against the wrong
-source. **Downstream consumers must pin the same tag**, not follow `linux-7.1.y`.
+`v7.1.7` = `c7ba9d6de43e9d9bd755b1f3c19501a38898c6b6`, the tip of that branch when
+the pin was last taken. `apply.sh` refuses to run if the tag in the tree does not
+resolve to the pinned commit *and* the pinned tag object, so a moved or re-created
+tag fails loudly instead of going green against the wrong source. **Downstream
+consumers must pin the same tag**, not follow `linux-7.1.y`.
 
 **The `edge` mapping was verified fresh, and the family config is a trap.**
 `config/sources/families/rockchip-rk3588.conf` handles only `legacy` and `vendor`

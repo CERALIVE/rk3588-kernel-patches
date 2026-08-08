@@ -41,7 +41,7 @@ matches the BSP and the fs*128 rate 0005 programs on the "audio" clock.
 i2s7_8ch declares only a "rx" DMA, so rockchip_i2s_tdm_init_dai() marks it
 capture-only and the link resolves to a single capture stream.
 
-First-party: authored by CeraLive against v7.1.5, with no upstream
+First-party: authored by CeraLive against v7.1.7, with no upstream
 counterpart in rockchip-rk3588-mainline-patches. The source of record is
 ceralive/0006-rk3588-hdmirx-audio-sound-card.patch; patches/ is generated from it by
 scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the
