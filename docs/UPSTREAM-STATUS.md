@@ -315,16 +315,24 @@ Seeded 2026-08-08 from the Collabora capture and the plan text. **These are
 candidates, not commitments** — each row is filled in by the task that owns it,
 and a documented *skip* is a valid outcome for every one of them.
 
+**T13 imported none of its four.** That is the outcome, not a shortfall: all four
+are *unmerged* postings, so unlike T12 there is no mainline SHA to resolve and no
+`Fixes:` sweep to run — the questions are prerequisite depth and what the review
+threads actually say. Three failed on depth (4, 6 and 3 against a ceiling of 2);
+the fourth passed every mechanical test and was declined because its payload is a
+userspace ABI whose key names upstream has already agreed to change. The series
+is unchanged and `patches/` regenerates byte-identically.
+
 | Candidate | Owning task | Origin | Upstream status | Retire trigger | Last checked | Notes |
 |---|---|---|---|---|---|---|
 | ~~HDMI-RX EDID fix (upstream counterpart to `0002`)~~ — **NOT IMPORTED** | T10 — **done** | <https://lore.kernel.org/r/20260325105742.63236-1-dmitry.osipenko@collabora.com> (PATCHv2) = mainline **`d1162a5adbb5e95953d460b5bde3a04cd4473fe9`** | `merged@7.2-rc1` — **and already in the base** as `7dd27810eea0` (`v7.1.6`) | n/a — nothing was imported | 2026-08-08 | **Upstream version rejected: already applied, and orthogonal.** It is the *same commit* as `7dd27810eea0`, not a second fix; it applies to `v7.1.7` as a no-op (reverse-apply check passes, `--3way` diff empty); and its 2-line HPD-hold change shares no mechanism with `0002`. `0002` is KEPT. Verdict: [`EVAL-0002-EDID.md`](EVAL-0002-EDID.md) |
 | ~~HDMI Input Audio PATCHv4 (upstream counterpart to `0005`)~~ — **NOT IMPORTED** | T11 — **done** | <https://lore.kernel.org/r/20260721064115.64809-1-royalnet026@gmail.com> — `[PATCH v4 0/4] media: synopsys: hdmirx: add HDMI audio capture support`, Igor Paunovic, 4 patches | `sent-v4` — **not merged.** `Reviewed-by` Sebastian Reichel, Krzysztof Kozlowski and Dmitry Osipenko; `Tested-by` Dmitry on 2/4. Author pinged for media-tree pickup 2026-08-05, unanswered as of 2026-08-08 | n/a — nothing was imported | 2026-08-08 | **Upstream version rejected: adoptable, but not strictly better.** Applies clean to `v7.1.7` (all four, forward, no fuzz), so this is a merit rejection not a mechanical one. Drops multichannel, jack reporting, `hdmirx_plugout()` teardown and pre-capture clock lock; adds suspend support, capture-only DAI flags and an accepted binding. **`0006` answer: NOT superseded** — v4 4/4 enables the card on Orange Pi 5 Plus only, leaving Rock 5B+ with a bound codec and no ALSA card. Verdict: [`EVAL-0005-AUDIO.md`](EVAL-0005-AUDIO.md) |
 | IOMMU "disable fetch dte time limit" — **IMPORTED as `0007`** | T12 — **done** | <https://lore.kernel.org/r/20260428-spu-iommudtefix-v2-1-f592f579e508@pengutronix.de> (PATCHv2) = mainline **`8d4346ecd4950ae08cc76a6de327c264e846758c`** | `merged@7.2-rc1` — **not in the base.** No `Fixes:` tag and no `Cc: stable`, so `7.1.y` will not pick it up on its own | **Drop when base ≥ `v7.2`** | 2026-08-08 | Now a series member — see the `0007` row in [§ Current series members](#current-series-members) |
 | ~~I2S MCLK output gate clocks~~ — **NOT IMPORTED** | T12 — **done** | <https://lore.kernel.org/r/20260320-rk3588-mclk-gate-grf-v3-0-980338eacd2c@superkali.me> is **v3**; the version that merged is **v4**, <https://lore.kernel.org/r/20260419-rk3588-mclk-gate-grf-v4-0-513a42dd1dcc@superkali.me> — **5** commits: `56c2ca0ae7cb`, `28820fc7983b`, `32d1d88c4165`, `06c990bffdbe`, `02b9b0bb6269` | `merged@7.2-rc1` (all five; none in the base) | n/a — nothing was imported | 2026-08-08 | **Skipped on both stop conditions at once.** (1) **Prereq chain is 4 deep, over the 2-commit ceiling**: the payload `02b9b0bb6269` needs the clock IDs, the `grf_type_sys` lookup, `rockchip_clk_add_grf()` *and* the `SOC_CON6` offset, none of which `v7.1.7` has. (2) **The merged version is known-buggy and its fix has not landed** — see [§ MCLK](#i2s-mclk-gate-clocks--skipped-known-regression-on-rock-5b) |
-| V4L2 HW usage stats (fdinfo) for rkvdec + hantro | T13 | <https://lore.kernel.org/r/20260617-v4l2-add-fdinfo-v2-0-d298e98ce06a@collabora.com> (PATCHv2) | `sent-v2` — not merged | Drop when merged upstream **and** base reaches that version | 2026-08-08 | Collabora "Improvements (pending)". Encode/decode observability |
-| V4L2 stateless codec tracepoints | T13 | <https://lore.kernel.org/r/20260212162328.192217-1-detlev.casanova@collabora.com> (PATCHv1) | `sent-v1` — not merged | Drop when merged upstream **and** base reaches that version | 2026-08-08 | Collabora "Improvements (pending)" |
-| PCIe System PM support | T13 | <https://lore.kernel.org/r/20260316-rockchip-pcie-system-suspend-v5-0-5bb5ad37d643@collabora.com> (PATCHv5) | `sent-v5` — not merged | Drop when merged upstream **and** base reaches that version | 2026-08-08 | Collabora "Improvements (pending)" |
-| SCDC link-health → connector debugfs | T13 — **gated** | <https://lore.kernel.org/r/20260724-scdc-link-health-v9-0-bdda406d016d@collabora.com> (PATCHv9) | `sent-v9` — not merged | Drop when merged upstream **and** base reaches that version | 2026-08-08 | Import **only** if a production-safety evaluation passes (Kconfig deps, runtime overhead, and whether debugfs is even mounted on the shipped image). The verdict is recorded here either way |
+| ~~V4L2 HW usage stats (fdinfo) for rkvdec + hantro~~ — **NOT IMPORTED** | T13 — **done** | <https://lore.kernel.org/r/20260617-v4l2-add-fdinfo-v2-0-d298e98ce06a@collabora.com> (PATCHv2) — 5 patches, Detlev Casanova + Christopher Healy | `sent-v2` — **not merged, and actively under revision.** **Zero** `Reviewed-by`/`Acked-by`/`Tested-by` on any of the five. Hans Verkuil, Mauro Carvalho Chehab and Nicolas Dufresne all filed change requests 2026-06-19; the author agreed to all of them on 2026-06-25. No v3 as of 2026-08-08 | n/a — nothing was imported. Row closes when merged upstream **and** base reaches that version | 2026-08-08 | **Skipped: the payload IS a userspace ABI, and upstream has already agreed to rename every key of it.** Mechanically it was the only one of T13's four that passed — `a01+a03+a04+a05` applies to bare `v7.1.7` with no fuzz and the chain is exactly **2 prerequisites**, *at* the ceiling. It is declined on merit — see [§ fdinfo](#v4l2-hw-usage-stats-fdinfo--skipped-the-key-names-are-already-agreed-to-change) |
+| ~~V4L2 stateless codec tracepoints~~ — **NOT IMPORTED** | T13 — **done** | <https://lore.kernel.org/r/20260212162328.192217-1-detlev.casanova@collabora.com> (PATCHv1) — 11 patches, Detlev Casanova | `sent-v1` — **not merged, stalled.** No `Reviewed-by`/`Acked-by` anywhere. Steven Rostedt (tracing maintainer) filed a design objection on 01/11 on 2026-05-01; Nicolas Dufresne asked for filter granularity + documentation on 2026-04-28 and said of the fdinfo half *"I would hold on that until we have a bigger and robust plan"*. **No respin in the ~6 months since the posting**, and the fdinfo half was split out and re-sent as the row above | n/a — nothing was imported. Row closes when merged upstream **and** base reaches that version | 2026-08-08 | **Skipped on prerequisite depth (4, over the 2-commit ceiling) plus an unanswered maintainer objection.** The useful payload `09/11` needs `01/11` + `03/11` + `07/11` + `08/11`, and `03/11` does not even apply to bare `v7.1.7`. See [§ tracepoints](#v4l2-stateless-codec-tracepoints--skipped-four-deep-and-nakd-by-the-tracing-maintainer) |
+| ~~PCIe System PM support~~ — **NOT IMPORTED** | T13 — **done** | <https://lore.kernel.org/r/20260316-rockchip-pcie-system-suspend-v5-0-5bb5ad37d643@collabora.com> (PATCHv5) — 8 patches (8/8 is `RFC`), Sebastian Reichel | `sent-v5` — **not merged.** No `Reviewed-by`/`Tested-by` on any patch. Shawn Lin (Rockchip PCIe) replied 2026-03-24 that the series *"doesn't cleanly apply to new -rc now so I assume it need a rebase"* **and** that patch 7 — the payload — *"actually put the host and device into D3cold unconditionly … which doesn't follow NVMe's requirement at least"*. No v6 as of 2026-08-08 | n/a — nothing was imported. Row closes when merged upstream **and** base reaches that version | 2026-08-08 | **Skipped on prerequisite depth (6, three times the ceiling) plus an unresolved correctness objection.** The payload `7/8` does not apply to `v7.1.7` even with `1/8`–`6/8` applied first — the series is based on `6de23f81a5e0` (v7.0-rc1). Rock 5B+ ships an M.2 NVMe slot, so the objection is on our hardware. See [§ PCIe PM](#pcie-system-pm--skipped-six-deep-and-the-payload-is-contested) |
+| ~~SCDC link-health → connector debugfs~~ — **NOT IMPORTED** | T13 — **gated, evaluation done** | <https://lore.kernel.org/r/20260724-scdc-link-health-v9-0-bdda406d016d@collabora.com> (PATCHv9) — 5 patches, Nicolas Frattaroli | `sent-v9` — **not merged.** Best-reviewed of T13's four: `1/5` `Reviewed-by` Luca Ceresoli + Hans Verkuil, `3/5` `Reviewed-by` Maxime Ripard, `4/5` `Reviewed-by` Dmitry Baryshkov + `Acked-by` Maxime Ripard, `5/5` `Acked-by` Maxime Ripard. **`2/5` — the debugfs entry itself, i.e. the payload — carries no tag at all.** Jani Nikula's chardev question was resolved in-thread (*"Fair enough, thanks."*, 2026-07-28); `sashiko-bot`'s **1 [High] + 2 [Medium]** on `3/5` are **unanswered** | n/a — nothing was imported. Row closes when merged upstream **and** base reaches that version | 2026-08-08 | **Production-safety verdict: FAILS — but NOT for the reason the gate anticipated.** `debugfs` **IS mounted on the shipped image**, so "dead weight" does not apply. It fails on **relevance**: the series instruments DRM HDMI-**TX**, and CeraLive's HDMI concern is the V4L2 HDMI-**RX** capture driver it does not touch. Depth is **3**, over the ceiling. Full verdict: [§ SCDC](#scdc-link-health-debugfs--production-safety-verdict-fails-on-relevance-not-on-debugfs) |
 | VDPU381 VP9 decode | tracked only — **do not import** | <https://lore.kernel.org/r/20260726-b4-add-rkvdec2-vp9-vdpu381-v1-0-180fb2d1f10c@gmail.com> (PATCHv1) | `sent-v1` — not merged | n/a — not carried | 2026-08-08 | Out of the chosen lane: a decode feature, not metrics/PM. Row exists so a future reader can see it was considered and excluded on purpose |
 | VDPU381 multi-core (H.264/H.265) | tracked only — **do not import** | <https://lore.kernel.org/r/20260409-rkvdec-multicore-v1-0-62b316abf0f7@collabora.com> (PATCHv1) | `sent-v1` — not merged | n/a — not carried | 2026-08-08 | Same exclusion as the row above |
 
@@ -333,6 +341,228 @@ and the `system-uncached` dma-heap port) are added to the **current series** tab
 above by the tasks that author them, T14 and T15. Both will be
 `first-party-no-upstream`, both `UNVALIDATED` on hardware, and the encoder's
 upstream position is the `0001` row's: WIP rkvenc, tracked only.
+
+### V4L2 HW usage stats (fdinfo) — skipped, the key names are already agreed to change
+
+**This one passed every mechanical test, and that is why the skip has to be
+argued rather than asserted.** Recorded as a PASS so nobody re-runs a 2 GB clone
+to rediscover it:
+
+| Check | Result at `v7.1.7` |
+|---|---|
+| `git apply --check` forward, `1/5` `3/5` `4/5` `5/5` | PASS each; reverse FAIL each (⇒ absent from base) |
+| Stacked `a01 → a03 → a04 → a05` on bare `v7.1.7` | **applies, no fuzz, no context adaptation** |
+| Prerequisite depth for either driver patch | **2** — `1/5` (the `show_fdinfo` fop) and `3/5` (the `v4l2_stats` interface). *At* the ceiling, not over |
+| Symbol probe of the base | `show_fdinfo` 0 · `v4l2_show_fdinfo` 0 · `v4l2-stats.c` absent · `v4l2-stats.h` absent · `MEDIA_DEV_TYPE_*` 0 · `fh->stats` 0 · `ktime_t start_time` 0 in both driver ctxs |
+| Target drivers present in base | `drivers/media/platform/rockchip/rkvdec` **and** `drivers/media/platform/verisilicon` both present |
+
+**The disqualifying fact is what the patch set actually is.** `4/5` and `5/5` do
+not add a debug print — they publish a **key namespace in
+`/proc/<pid>/fdinfo/<fd>`**, which is userspace ABI. `2/5` documents exactly five
+keys:
+
+```
+media-driver:           hantro-vpu
+media-type:             decoder
+media-engine-usage:     123456789 ns
+media-maxfreq:          600000000 Hz
+media-curfreq:          600000000 Hz
+```
+
+**All five are already agreed to be renamed**, in-thread, by the author. Hans
+Verkuil, 2026-06-19: the `media-` prefix *"is too generic … it also looks like it
+refers to the /dev/mediaX device"*, `media-engine` is *"Very vague"*,
+`media-type` is a *"Poor name"*, and on `3/5` — *"Poor name, and it conflicts
+with ISP statistics. How about `v4l2_pdinfo`? And `v4l2-fdinfo.h` etc."* plus
+*"I'm a bit unhappy about introducing yet another type. Do we need it?"*. Mauro
+Carvalho Chehab, same day: a `Documentation/ABI/testing/` entry is required
+*"on your next spin"*. The author's reply on 2026-06-25 accepts all of it —
+`v4l2-driver`, `v4l2-driver-type`, `v4l2-core-usage-time-<core_id>`,
+`v4l2-maxfreq-<core_id>`, the struct renamed to *"metrics"*, and the doc
+restructured into generic-plus-per-type sections.
+
+So importing today means shipping an fdinfo key set that upstream has already
+decided is wrong. When v3 lands we would have to break our own userspace, and
+the whole point of the row's retire trigger — base absorbs it, we drop the patch
+— stops working, because the absorbed version would not be what we shipped.
+
+**Second, weaker reason, recorded because it bears on the value side.** The
+series instruments **decoders**: `rkvdec` and `hantro`. CeraLive's data flow is
+capture → **encode** → bond → stream, and none of the 29 patches read for T13
+touches `rkvenc`/VEPU580 — the engine `0001` exists for. The observability this
+would buy on a shipped board today is close to zero.
+
+Re-open when a revision lands with the renamed keys and a
+`Documentation/ABI/testing/` entry, or sooner if an rkvenc fdinfo implementation
+appears.
+
+### V4L2 stateless codec tracepoints — skipped, four deep and NAK'd by the tracing maintainer
+
+**Stop condition 1 — the prerequisite chain is four.** The payload for this
+repository is `09/11` (*"media: hantro: Add v4l2_hw run/done traces"*). It needs:
+
+| Needed by the payload | Supplied by | In `v7.1.7`? |
+|---|---|---|
+| `trace_v4l2_hw_run` / `trace_v4l2_hw_done` | `08/11` | no — 0 hits in `include/trace/events/v4l2.h` |
+| `v4l2_stream_class` (the class `08/11` extends) | `07/11` | no — 0 hits |
+| `ctx->fh.tgid` / `ctx->fh.fd` | `03/11` | no — no `tgid` or `fd` in `include/media/v4l2-fh.h` |
+| the `v4l2-trace.c` context `08/11` patches into | `01/11` | no — `v4l2_ctrl_av1_sequence` 0 hits; `include/trace/events/v4l2_requests.h` absent; visl still owns all nine of its `visl-trace-*` headers |
+
+Four, over the two-commit ceiling. And unlike the MCLK case this is not even a
+build-only chain: `02/11`, `03/11`, `04/11`, `06/11` and `08/11` all **fail**
+`git apply --check` on bare `v7.1.7`, and the stacked attempt stops at `03/11`.
+`01/11` alone is a 1,645-line move of the visl trace headers into
+`include/trace/events/`.
+
+**Stop condition 2 — an unanswered design objection from the tracing
+maintainer.** Steven Rostedt, 2026-05-01, on `01/11`:
+
+> *"What the heck! You are copying an entire structure onto the ring buffer to
+> print just a portion of it? This is really a waste of ring buffer, and also
+> prevents you from doing any real filtering."*
+
+…with a worked example of field-based filtering and pointers to `libtracefs` /
+`libtraceevent`. Nicolas Dufresne (2026-04-28) is broadly positive — *"I like the
+direction"* — but asks for filter granularity and documentation, and on `11/11`
+says of the fdinfo half *"I think overall that this fdinfo implementation is a bit
+limited … I would hold on that until we have a bigger and robust plan."* Nothing
+in the thread answers Rostedt, there is **no `Reviewed-by` or `Acked-by`
+anywhere**, and no revision has been posted since 2026-02-12.
+
+**And it is partly superseded already.** `10/11` and `11/11` are the fdinfo half;
+they were split out and re-sent as the `v2` series in the row above. So this
+posting is the *tracing* half only, stalled on a maintainer objection about ring
+buffer usage that would have to be rewritten before it lands.
+
+### PCIe System PM — skipped, six deep and the payload is contested
+
+**Stop condition 1 — six prerequisites.** The payload is `7/8`
+(*"PCI: dw-rockchip: Add system PM support"*); `1/8` through `6/8` are the
+regulator restore, the `devm_phy_get` move and the four helper extractions it is
+written against. Content probe of `drivers/pci/controller/dwc/pcie-dw-rockchip.c`
+at `v7.1.7` — every helper the payload calls is absent:
+
+```
+rockchip_pcie_get_ltssm_status_reg  0     rockchip_pcie_get_ltssm_state  0
+rockchip_pcie_set_mode              0     rockchip_pcie_enable_ltssm_ctrl 0
+rockchip_pcie_suspend               0     rockchip_pcie_resume            0
+pme_turn_off                        0
+rockchip_pcie_get_ltssm             6     (the OLD name, pre-1/8..5/8)
+```
+
+The DWC core half *is* there — `dw_pcie_suspend_noirq` /
+`dw_pcie_resume_noirq` exist in `pcie-designware-host.c` — so the gap is entirely
+the Rockchip glue. Six is three times the ceiling.
+
+**Stop condition 2 — it does not apply, and upstream said so first.** `7/8` fails
+`git apply --check` on bare `v7.1.7` *and* fails after `1/8`–`6/8` are applied in
+order. The series declares `base-commit: 6de23f81a5e08be8fbf5e8d7e9febc72a5b5f27f`
+(a v7.0-rc1 rebase), and Shawn Lin already recorded the same thing on-list on
+2026-03-24: *"It doesn't cleanly apply to new -rc now so I assume it need a
+rebase."*
+
+**Stop condition 3 — the payload has an unresolved correctness objection, on our
+hardware.** Same message, from the Rockchip PCIe maintainer:
+
+> *"I think patch 7 actually put the host and device into D3cold unconditionly,
+> with reset the controller，power-off 3v3 and deassert perst# which doesn't
+> follow NVMe's requirement at least. Krishna is working on it [1], it would be
+> better to follow the same patten."*
+
+Rock 5B+ ships an M.2 NVMe slot, so "doesn't follow NVMe's requirement" is not a
+distant concern. `8/8` is explicitly `RFC` and its own author writes *"I'm not
+sure about the rationale"*; the only substantive reply to it is Shawn Lin
+confirming the register write is *"not strictly necessary from a functional
+standpoint"*. No patch in the series carries a `Reviewed-by` or `Tested-by`, and
+no v6 exists as of 2026-08-08.
+
+Re-open at v6-or-later, once the D3cold sequence follows whatever pattern the
+referenced `d3cold` series settles on.
+
+### SCDC link-health debugfs — production-safety verdict: FAILS on relevance, not on debugfs
+
+This row was **gated** on a production-safety evaluation, and the brief required
+the verdict be recorded either way. It is recorded here in full, including the
+part that came out the *opposite* way to the gate's own hypothesis.
+
+**Safety question 1 — is `debugfs` even mounted on the shipped image? YES.** The
+gate anticipated that it might not be, in which case the patch would be dead
+weight. It is mounted, on both counts:
+
+```
+image-building-pipeline/v2/mkosi/build/base/usr/lib/systemd/system/
+    sys-kernel-debug.mount                       Type=debugfs  Where=/sys/kernel/debug
+    sysinit.target.wants/sys-kernel-debug.mount  <- pulled into sysinit.target
+```
+
+…and it survives the image's own unit policy: `suppress_unusable_boot_units` in
+`v2/mkosi/customize/postinst.d/services.sh` masks exactly six units
+(`systemd-networkd.service`/`.socket`/`-wait-online.service`,
+`systemd-machine-id-commit.service`, `dnsmasq.service`, `chrony-wait.service`) and
+this is not one of them. Corroborated on real hardware: the pipeline's own
+`AGENTS.md` records reading `/sys/kernel/debug/usb/tcpm-4-0022/log` on a live
+Rock 5B+ while root-causing the Type-C role race. **So the file would be created
+and readable — this is a live interface, not an inert one.** Exposure is bounded
+to root by the kernel's own `0700` on `/sys/kernel/debug`, and the mount is
+`nosuid,nodev,noexec`.
+
+**Safety question 2 — Kconfig dependencies.** `drm_scdc_helper.c` is built under
+the DRM display-helper Kconfig, and `2/5` adds `#include <linux/debugfs.h>` +
+`debugfs_create_file()` with **no `CONFIG_DEBUG_FS` guard**. That is legal — the
+stubs return `ERR_PTR(-ENODEV)` — so there is no build break with `DEBUG_FS=n`,
+but the parsing code and its 256-byte state buffer compile unconditionally. Every
+symbol it needs does exist in the base: `wrapping_add` (`include/linux/overflow.h`),
+`kzalloc_obj` (`include/linux/slab.h`), and the whole `SCDC_ERR_DET_*` /
+`SCDC_CHANNEL_VALID` register set (`include/drm/display/drm_scdc.h`).
+
+**Safety question 3 — runtime overhead.** `scdc_status_show()` takes
+`connector->dev->mode_config.mutex` — the global DRM modeset lock — and then
+performs **two 128-byte I²C DDC reads** per open. The cover letter's stated usage
+is *"To continually poll the link status, userspace can poll the debugfs file."*
+On a device whose job is an uninterrupted live stream, a polling reader would
+serialise against modeset on that lock and put sustained traffic on the same DDC
+bus the display driver uses. Not fatal, but this is a bring-up instrument, not a
+metric to poll.
+
+**Safety question 4 — and this is the one that decides it — relevance. The series
+instruments the wrong HDMI direction for this product.** It is DRM HDMI-**TX**
+only: `drm_scdc_helper.c`, `drm_hdmi_state_helper.c`, `drm_bridge_connector.c`,
+with fixups for sun4i and vc4. On RK3588 the only consumer is `dw_hdmi_qp` — the
+HDMI **output** — confirmed as the sole `drm_hdmi_connector*` user across
+`drivers/gpu/drm/bridge/synopsys/` and `drivers/gpu/drm/rockchip/`. CeraLive's
+HDMI concern is HDMI-**RX** capture, which is
+`drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c` — a **V4L2** driver with
+its own register-level SCDC block (`hdmirx_scdc_init`, `SCDC_CONFIG`,
+`SCDC_REGBANK_CONFIG0`) that this series does not touch. The SCDC facts T10
+identified as the 4K60 gate — `SCDC_Present`, the 1/40 TMDS bit-clock ratio — are
+on the **RX** side. The file would appear on the local-monitor connector and tell
+an operator nothing about the capture link.
+
+**Depth — 3, over the ceiling.** For `scdc_status` to *exist* on a connector, the
+minimal set is `1/5` + `2/5` + `4/5` + `5/5`: `2/5` does not apply to bare
+`v7.1.7` (it needs `1/5`'s `ssize_t`→`int` context), `drm_hdmi_connector_debugfs_init`
+does not exist in the base so `5/5` hard-depends on `4/5`, and without `4/5`+`5/5`
+nothing ever calls `drm_scdc_debugfs_init` — the file is never created. The
+stacked attempt stops at `4/5`, which is a 162-insert/157-delete cross-driver
+refactor moving the HDMI infoframe debugfs machinery out of `drm_debugfs.c` (6
+matches present in the base) and fixing up two drivers we do not ship.
+
+**Review status, recorded fairly — this is the best-reviewed of T13's four.**
+`1/5` `Reviewed-by` Luca Ceresoli + Hans Verkuil; `3/5` `Reviewed-by` Maxime
+Ripard; `4/5` `Reviewed-by` Dmitry Baryshkov + `Acked-by` Maxime Ripard; `5/5`
+`Acked-by` Maxime Ripard. Jani Nikula asked why not a chardev like
+`DRM_DISPLAY_DP_AUX_CHARDEV` and accepted the answer (*"Fair enough, thanks."*,
+2026-07-28). Two things still stand: **`2/5` — the payload — has no review tag at
+all**, and `sashiko-bot`'s 2026-07-24 findings on `3/5` are **unanswered in the
+thread**, including a `[High]` that v9's own change to include the Lane 3
+registers in the zero-sum check breaks SCDC reads on 4-lane FRL *exactly when
+errors are present* — i.e. in the one condition the feature exists to observe.
+
+**Verdict: skipped.** Not because debugfs is absent — it is present — but because
+it instruments HDMI-TX on a device whose HDMI question is RX, at a depth of three
+including a refactor of two unrelated drivers, with an unanswered `[High]` on the
+FRL patch. Re-open only if an equivalent lands for `snps_hdmirx`, or if the DRM
+HDMI-TX link ever becomes something this product diagnoses.
 
 ---
 
@@ -370,6 +600,9 @@ dead ends.
 | The `0005` counterpart thread, **read in full** | `https://lore.kernel.org/all/<message-id>/t.mbox.gz` — the gzipped thread mbox is served to plain `curl`, unlike the HTML views and `/raw` (both 403). `patchwork.kernel.org`'s API returns **zero** results for this Message-ID, so T10's patchwork route does not work here | 34 messages, 4 patches, 3 human reviewers + `sashiko-bot`; every `Reviewed-by`/`Tested-by` quoted in [`EVAL-0005-AUDIO.md`](EVAL-0005-AUDIO.md) |
 | The pinned kernel tree at `v7.1.7` | Path + content checks per patch | [`REBASE-v7.1.7.md` § Patch-ID / content check](REBASE-v7.1.7.md#patch-id--content-check-against-the-new-base) — 0 of 5 absorbed |
 | Both T12 import-candidate threads, **read in full** | Same `t.mbox.gz` route as the `0005` row. `lore.kernel.org`'s *search* endpoint (`/all/?q=…&x=m`) is **also 403** — only a thread fetched by a known Message-ID is served, so a "Fixes: sweep" cannot be run against lore | IOMMU: 3 messages (`Acked-by` Heiko, "Applied, thanks" from Joerg). MCLK: the v3 thread is 9 messages, and the **v4** thread it became is 18, including the post-merge regression report |
+| All four T13 candidate threads, **read in full** | Same `t.mbox.gz` route, one fetch per Message-ID, all HTTP 200 to plain `curl`. Every reply body read, not just the patches — which is where three of the four verdicts came from | fdinfo 12 unique msgs (24 raw) · tracepoints 22 (44) · PCIe PM 11 (22) · SCDC 10 (10). **Zero** `Reviewed-by`/`Acked-by`/`Tested-by` across the first three; five review tags across SCDC, none of them on its payload patch |
+| Applicability + symbol existence for all 29 T13 patches | `git apply --check` forward **and** reverse per patch against a clean `v7.1.7` worktree, then a stacked `git apply` of each candidate's minimal useful set, then an identifier probe of the base for every symbol the payloads name (per T12's "applies ≠ compiles" rule) | 12 of 29 fail even a textual forward apply. Minimal stacks: fdinfo **applies**; tracepoints stops at `03/11`; PCIe PM stops at `7/8`; SCDC stops at `4/5` |
+| Is `debugfs` mounted on the shipped image? (the SCDC gate) | Direct inspection of `image-building-pipeline/v2/mkosi` — the built base layer's systemd unit tree and the image's own unit-masking policy — plus the pipeline's real-hardware notes | **Yes.** `sys-kernel-debug.mount` present *and* in `sysinit.target.wants/`; not among the six units `suppress_unusable_boot_units` masks; `/sys/kernel/debug/...` demonstrably read on a live Rock 5B+ |
 | Mainline commit resolution and the **`Fixes:` sweep** | `api.github.com/search/commits` over `torvalds/linux` for identity (author date matched to the posting, to the second), `…/compare/<sha>…v7.2-rc1` for containment (`status: ahead`, `behind_by: 0`), then `…/commits?path=<file>&since=<merge-date>` per touched file — a bounded per-file sweep, which is what makes "no follow-up exists" a measured claim rather than an absent search hit | 6 SHAs resolved, all contained in `v7.2-rc1`. Sweep over all five touched files: **zero** commits carrying a `Fixes:` tag naming any of them; the only extra commit surfaced was `32d1d88c4165`, which is a *prerequisite* of the MCLK series, not a fix to it |
 
 **The Collabora capture is a snapshot, not a live feed.** Re-capture it — with a

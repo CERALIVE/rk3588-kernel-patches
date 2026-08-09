@@ -65,3 +65,20 @@ already turned a candidate away once:
   search endpoint is 403 to `curl`, so only a thread fetched by Message-ID is
   readable. The I2S MCLK gate series was declined on both counts at once —
   [`docs/UPSTREAM-STATUS.md` § MCLK](../docs/UPSTREAM-STATUS.md#i2s-mclk-gate-clocks--skipped-known-regression-on-rock-5b).
+
+For an **unmerged** posting there is a third check, and it is the one that turned
+away the only T13 candidate that passed everything else:
+
+- **Whether the payload is a userspace-visible interface still under
+  negotiation.** A backport of merged code retires cleanly when the base absorbs
+  it. A backport of a *posting* only retires cleanly if what lands is what you
+  shipped — so if the thread shows the names, keys or ioctl numbers are still
+  being argued about, importing means committing to an ABI upstream has already
+  decided against, and the retire trigger silently stops working. The V4L2 fdinfo
+  series applies to `v7.1.7` with no fuzz at exactly two prerequisites, and was
+  declined because all five of its `/proc/<pid>/fdinfo` keys had already been
+  agreed to be renamed in-thread —
+  [`docs/UPSTREAM-STATUS.md` § fdinfo](../docs/UPSTREAM-STATUS.md#v4l2-hw-usage-stats-fdinfo--skipped-the-key-names-are-already-agreed-to-change).
+  The counter-check is just as important: read the *review tags per patch*, not
+  per series. The SCDC series carries five of them and **none** is on the patch
+  that would have been the payload.
