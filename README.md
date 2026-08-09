@@ -35,10 +35,16 @@ have to be true before a patch can be dropped, is tracked per patch in
 [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md).
 
 Where an upstream counterpart was evaluated as a replacement and the answer was
-written down, the verdict gets its own document — so far
-[`docs/EVAL-0002-EDID.md`](docs/EVAL-0002-EDID.md), which keeps `0002` and
-explains why the 7.2-rc1 EDID fix is not a substitute for it (it is already in the
-base, and it fixes something else).
+written down, the verdict gets its own document. So far:
+
+- [`docs/EVAL-0002-EDID.md`](docs/EVAL-0002-EDID.md) — keeps `0002`, and explains
+  why the 7.2-rc1 EDID fix is not a substitute for it (it is already in the base,
+  and it fixes something else).
+- [`docs/EVAL-0005-AUDIO.md`](docs/EVAL-0005-AUDIO.md) — keeps `0005`+`0006`
+  against a fully-reviewed lore HDMI-audio series that *does* apply cleanly. It is
+  declined because it drops multichannel handling, jack reporting and cable-pull
+  teardown, and because its device-tree half enables the sound card on Orange Pi 5
+  Plus only, which would silently leave Rock 5B+ with no capture card.
 
 ## Layout
 

@@ -44,6 +44,7 @@ rk3588-kernel-patches/
 ├── docs/
 │   ├── UPSTREAM-STATUS.md     # per-patch upstream status + retire-on-merge triggers
 │   ├── EVAL-0002-EDID.md      # verdict: keep 0002; the 7.2-rc1 fix is already in the base
+│   ├── EVAL-0005-AUDIO.md     # verdict: keep 0005+0006; the lore v4 series drops Rock 5B+
 │   ├── PROVENANCE.md          # licence/provenance audit incl. the MIT-claim caveat
 │   ├── PREFLIGHT.md           # how the Armbian edge -> 7.1 mapping was derived
 │   ├── REBASE-v7.1.7.md       # hunk-by-hunk rebase ledger — CURRENT base, all 5 members
@@ -60,6 +61,7 @@ rk3588-kernel-patches/
 | Add a patch taken from mainline / lore | `backports/<NNNN>-*.patch` + a `SERIES` entry with `origin=BACKPORTS` **and** a `Backport(...)` — see [`backports/README.md`](backports/README.md) |
 | Whether a patch has an upstream counterpart / can be dropped yet | [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) |
 | Why `0002` was kept instead of taking the upstream EDID fix | [`docs/EVAL-0002-EDID.md`](docs/EVAL-0002-EDID.md) |
+| Why `0005`+`0006` were kept instead of taking the lore HDMI-audio series | [`docs/EVAL-0005-AUDIO.md`](docs/EVAL-0005-AUDIO.md) |
 | Stop carrying a patch | **Never `git rm` it.** Move it to `retired/` and add a row — see [`retired/REGISTRY.md`](retired/REGISTRY.md) |
 | Why HDMI-RX audio needs a DT patch at all | [`docs/PROVENANCE.md`](docs/PROVENANCE.md) §8 and `patches/0006-*`'s own mail header |
 | Check whether Armbian moved `edge` | `scripts/preflight.sh --head` |
@@ -137,14 +139,28 @@ evidence: [`docs/EVAL-0002-EDID.md`](docs/EVAL-0002-EDID.md); see also
 [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) § `0002` and
 [`docs/REBASE-v7.1.7.md`](docs/REBASE-v7.1.7.md) § Stable overlap.
 
-**Resolving a lore Message-ID does not need a browser.** `lore.kernel.org` is
-Anubis-gated (`curl` gets 403 or a proof-of-work page), but
-`patchwork.kernel.org` is not: `…/api/patches/?msgid=<msgid>` returns the real
-subject, submitter and project as JSON, and `…/patch/<msgid>/mbox/` returns the
-full posting including its changelog. Pair it with the GitHub commit-search API
-over `torvalds/linux` to get the mainline SHA. That is how the `0002` verdict
-resolved its counterpart; the Anubis-vs-browser note above still applies to the
-Collabora **table**, which has no such API.
+**Resolving a lore Message-ID does not need a browser — but try both routes.**
+`lore.kernel.org`'s HTML views and its `/raw` endpoint are Anubis-gated (`curl`
+gets 403 or a proof-of-work page). Two ways through, and neither covers every
+posting on its own:
+
+1. `patchwork.kernel.org` — `…/api/patches/?msgid=<msgid>` returns the real
+   subject, submitter and project as JSON, and `…/patch/<msgid>/mbox/` returns
+   the full posting including its changelog. Pair it with the GitHub
+   commit-search API over `torvalds/linux` to get the mainline SHA. This is how
+   the `0002` verdict resolved its counterpart. **It is not exhaustive:**
+   patchwork returned zero results for the `0005` counterpart's Message-ID.
+2. `https://lore.kernel.org/all/<msgid>/t.mbox.gz` — the gzipped **thread** mbox
+   is served to a plain `curl` with no gate. It is strictly better when what you
+   need is the *review*: it carries every patch in the series plus every reply,
+   so `Reviewed-by` / `Tested-by` trailers, maintainer pushback and bot findings
+   all come down in one fetch. Split it with Python's `mailbox`, dedupe by
+   Message-ID (the archive returns each message twice), and un-escape mboxrd
+   (`^>(>*From )` → `\1`) before feeding anything to `git apply`. This is how the
+   `0005` verdict read its counterpart.
+
+The Anubis-vs-browser note above still applies to the Collabora **table**, which
+has no API of either kind.
 
 **Membership is exactly-once, both directions, and the build enforces it.**
 `build-series.py` used to walk a hard-coded `SERIES` table and never look at the
@@ -180,6 +196,24 @@ shows no HDMI-RX capture card at all. `0006` supplies the three missing DT facts
 `&i2s7_8ch` + `&hdmirx_sound` enabled on the two CeraLive boards. `apply.sh` asserts
 all of them post-apply, per board, because the failure mode is silent — everything
 probes, nothing errors, there is simply no capture device.
+
+**The upstream HDMI-audio series does NOT supersede `0006` — it would break the
+pairing.** There is a real, fully-reviewed lore series
+(<https://lore.kernel.org/r/20260721064115.64809-1-royalnet026@gmail.com>,
+`[PATCH v4 0/4]`, Igor Paunovic) that does what `0005` does *and* carries its own
+DT patches, so it looks at first glance like it retires both of ours. It does not,
+for one blunt reason: its 4/4 is titled *"enable HDMI RX audio capture on Orange
+Pi 5 Plus"* and enables the card on that board **only**. Rock 5B+ — the other
+board in `ARMBIAN_BOARDS` — gets nothing, which is exactly the bound-codec-no-card
+state above. The two DT halves also cannot coexist: `0006` and its 3/4 edit the
+same two regions of `rk3588-extra.dtsi` and disagree on the cell arity
+(`#sound-dai-cells = <0>` vs `<1>`), so `git apply --check` of `0006` onto an
+upstream-applied tree fails outright. The series is otherwise adoptable — all four
+patches apply clean to `v7.1.7` — and it is still declined, because it also drops
+multichannel handling, jack reporting and `hdmirx_plugout()` teardown. Full
+six-criteria verdict: [`docs/EVAL-0005-AUDIO.md`](docs/EVAL-0005-AUDIO.md). Do not
+re-open this on the strength of "but it's upstream-shaped" — re-open it when the
+series is *merged* and Rock 5B+ is covered.
 
 **The `78c67d98f221` HDMI-codec regression does NOT apply to this tree.** An
 `armbian/linux-rockchip` commit zeroes `capture.channels_min/max` for every

@@ -63,8 +63,8 @@ published one — and is not a row here for the same reason it is not a patch.
 | `0001` vepu580 encoder (v3) | `upstream/` lane — imported from [`rcawston/rockchip-rk3588-mainline-patches`](https://github.com/rcawston/rockchip-rk3588-mainline-patches) @ `e13a311`; ported from the Rockchip BSP MPP driver. Upstream Linux counterpart: **N/A** | `WIP` — Collabora's rkvenc work, tracked at <https://lore.kernel.org/r/082e1141c38205222a91abf13b1a97d9a00e117a.camel@collabora.com> | **None foreseeable — track only.** Do *not* retire when rkvenc lands: see [§ 0001](#0001--do-not-retire-on-rkvenc-landing) | 2026-08-08 | Collabora table: VEPU580 H.264 = `WIP`, H.265 = `TODO` |
 | `0002` hdmirx EDID fix (v1) | `upstream/` lane — Ross Cawston, same import. Upstream counterpart is `d1162a5adbb5` "media: synopsys: hdmirx: Fix HPD lane hold time", PATCHv2, <https://lore.kernel.org/r/20260325105742.63236-1-dmitry.osipenko@collabora.com> — **orthogonal work, already in our base** as `7dd27810eea0` | `merged@7.2-rc1` (the counterpart) — **and backported to the base at `v7.1.6`** | **None from this counterpart.** Retire only if the hardware-gated question below is answered "150 ms hold suffices"; base version is irrelevant to it | 2026-08-08 | **Upstream version rejected: nothing to adopt** — `7dd27810eea0` *is* the 7.2-rc1 fix (stable backport of `d1162a5adbb5`), it is already applied, and it is a 2-line HPD-hold change that shares no mechanism with `0002`. Verdict: [`EVAL-0002-EDID.md`](EVAL-0002-EDID.md). Read [§ 0002](#0002--one-upstream-answer-already-in-the-base) |
 | `0003` hdmirx plugout fix (v1) | `upstream/` lane — Ross Cawston, same import. Upstream counterpart: **N/A** — none found (see [§ Sources](#sources-checked-for-this-sweep)) | `fork-carried-no-upstream` | None defined. Re-check at every base bump via the content check in [`REBASE-v7.1.7.md` § Patch-ID / content check](REBASE-v7.1.7.md#patch-id--content-check-against-the-new-base); retire only if a tree absorbs the `vb2_queue_error` plugout fix | 2026-08-08 | Content check at `v7.1.7`: `vb2_queue_error` still absent under `synopsys/hdmirx/` |
-| `0005` hdmirx audio | `upstream/` lane — Ross Cawston, same import. Upstream counterpart: "HDMI Input → Audio", PATCHv4, <https://lore.kernel.org/r/20260721064115.64809-1-royalnet026@gmail.com> | `sent-v4` — posted, **not merged** | Counterpart merges **and** base reaches that version **and** T11's verdict adopts it **and** the `0006` pairing is resolved. All four | 2026-08-08 | Collabora table row "HDMI Input – Audio" = `sent`. Retiring `0005` without settling `0006` produces a bound codec and no ALSA card |
-| `0006` hdmirx audio sound card | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Upstream counterpart: **N/A** | `first-party-no-upstream` | Only if an upstream HDMI-RX audio series lands its **own** DT sound card for Rock 5B+ *and* Orange Pi 5+. T11 must answer this explicitly | 2026-08-08 | Modelled on the BSP's `hdmiin-sound` wiring, expressed with mainline `simple-audio-card`; no BSP text copied |
+| `0005` hdmirx audio | `upstream/` lane — Ross Cawston, same import. Upstream counterpart is the 4-patch series **`[PATCH v4 0/4] media: synopsys: hdmirx: add HDMI audio capture support`** by Igor Paunovic, <https://lore.kernel.org/r/20260721064115.64809-1-royalnet026@gmail.com> — same mechanism, *competing* DT half | `sent-v4` — fully reviewed, **not merged**; author pinged for pickup 2026-08-05, unanswered | Counterpart merges **and** base reaches that version **and** Rock 5B+ enablement exists **and** the multichannel / jack / plugout regressions are closed. All four | 2026-08-08 | **Upstream version rejected: adoptable but not strictly better** — applies cleanly to `v7.1.7`, but drops multichannel, jack reporting, plugout teardown and pre-capture clock lock, and its 4/4 enables the card on **Orange Pi 5 Plus only**. Verdict: [`EVAL-0005-AUDIO.md`](EVAL-0005-AUDIO.md). Read [§ 0005 / 0006](#0005--0006--the-pairing-is-load-bearing-and-upstream-does-not-replace-it) |
+| `0006` hdmirx audio sound card | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Upstream counterpart: **partial only** — v4 3/4 covers the SoC-level card, v4 4/4 covers Orange Pi 5 Plus; **nothing upstream covers Rock 5B+** | `first-party-no-upstream` | Only if an upstream HDMI-RX audio series lands its own DT sound card **and** enables it on Rock 5B+ *and* Orange Pi 5+. As of 2026-08-08 the posted series does not | 2026-08-08 | **T11 answer: NOT superseded, and NOT compatible.** `0006` and v4 3/4 edit the same two regions of `rk3588-extra.dtsi` and disagree on `#sound-dai-cells` (`<0>` vs `<1>`); `git apply --check` of `0006` onto an upstream-applied tree fails. Modelled on the BSP's `hdmiin-sound` wiring, expressed with mainline `simple-audio-card`; no BSP text copied |
 
 ### `0001` — do not retire on rkvenc landing
 
@@ -166,6 +166,70 @@ board-verified. The standing bar applies and is quoted in the verdict doc: the
 in-house `0002` "is already working very well", so the threshold for replacing it
 is high — and nothing came close to it.
 
+### `0005` / `0006` — the pairing is load-bearing, and upstream does not replace it
+
+Read these two rows together or not at all. `0005` registers the ASoC codec;
+`0006` is what turns that codec into an ALSA card. `image-building-pipeline`'s
+own record of the diagnosis states it flatly:
+
+> **HDMI-RX audio needs BOTH patch `0005` and patch `0006` — `0005` alone gives a
+> bound codec and NO ALSA card.**
+
+**Fact 1 — the base has nothing.** Content check across the whole
+`drivers/media/platform/synopsys/hdmirx/` directory at `v7.1.7`:
+`hdmirx_audio_startup`, `plugged_cb`, `HDMI_CODEC_DRV_NAME`, `sound/hdmi-codec.h`,
+`AUDIO_ENABLE`, `SND_SOC_HDMI_CODEC`, `AUDIO_FIFO`, `snd_soc` — **0 hits each**.
+There is no upstream HDMI-RX audio support in the base, in any form.
+
+**Fact 2 — the upstream candidate applies, and is still declined.** All four
+patches `git apply --check` clean on bare `v7.1.7` and on top of `0001`–`0003`,
+and `git am` applies the whole series without conflict. Unlike `0002`'s
+counterpart this one is genuinely importable. It is declined on merit:
+
+- **Coverage regressions.** v4 has no channel-count detection (`hdmirx_audio_ch`,
+  `AUDIO_PROC_CONFIG3`, `PKTDEC_AUDIF` — 0 hits), no jack/plug reporting
+  (`hook_plugged_cb`, `plugged_cb`, `audio_present` — 0 hits), no audio teardown
+  in `hdmirx_plugout()`, and starts its worker only at `hw_params()` so capture
+  begins pre-lock. `0005` has all four.
+- **Coverage gains, recorded fairly.** v4 handles system suspend (`0005` does
+  not — its worker keeps polling gated clocks), sets `no_i2s_playback` /
+  `no_spdif_playback` for a capture-only card, refuses S/PDIF with `-EOPNOTSUPP`,
+  and carries an accepted DT binding.
+
+**Fact 3 — the DT halves are competitors.** `0006` and v4 3/4 edit the same two
+regions of `rk3588-extra.dtsi`, and disagree on the cell arity
+(`#sound-dai-cells = <0>` + `sound-dai = <&hdmi_receiver>` versus `<1>` +
+`<&hdmi_receiver 0>`). `git apply --check` of `0006` onto an upstream-applied tree
+fails at `rk3588-extra.dtsi:338`. They cannot both be carried.
+
+**Fact 4 — and this is the decider — upstream covers ONE of our two boards.**
+v4 4/4 is titled *"enable HDMI RX audio capture on Orange Pi 5 Plus"* and enables
+exactly that board. Measured on the adopted tree:
+
+```
+rk3588-rock-5b.dtsi              hdmi_receiver_sound:0  i2s7_8ch:0
+rk3588-orangepi-5-plus.dts       hdmi_receiver_sound:1  i2s7_8ch:1
+```
+
+`ARMBIAN_BOARDS` is `rock-5b-plus orangepi5-plus`. Adopting the series as posted
+would silently return Rock 5B+ to the bound-codec-no-card state, with no error
+anywhere. `apply.sh`'s post-apply gate catches it —
+`MISSING &i2s7_8ch in rk3588-rock-5b.dtsi` is a genuine failure, not a
+label mismatch.
+
+**Consequence — evaluated, and the answer is KEEP both.** `0006` is **not**
+superseded: v4 3/4 supersedes its SoC-level half only, and nothing upstream
+covers its Rock 5B+ half. Adoption would mean retiring `0006` and authoring a
+replacement, not dropping it. Full verdict against all six criteria:
+[`EVAL-0005-AUDIO.md`](EVAL-0005-AUDIO.md).
+
+**What this does not resolve.** Nothing here is board-verified — no RK3588 board
+is reachable from this repository. The advantages claimed for `0005` are read
+from source, not demonstrated against a 5.1 source or a mid-stream cable pull.
+Two `0005` defects are ledgered and left standing: no suspend handling, and
+playback DAIs registered on a capture-only device. Neither has bitten a
+device that never suspends.
+
 ---
 
 ## Import and evaluation candidates (T10–T13)
@@ -177,7 +241,7 @@ and a documented *skip* is a valid outcome for every one of them.
 | Candidate | Owning task | Origin | Upstream status | Retire trigger | Last checked | Notes |
 |---|---|---|---|---|---|---|
 | ~~HDMI-RX EDID fix (upstream counterpart to `0002`)~~ — **NOT IMPORTED** | T10 — **done** | <https://lore.kernel.org/r/20260325105742.63236-1-dmitry.osipenko@collabora.com> (PATCHv2) = mainline **`d1162a5adbb5e95953d460b5bde3a04cd4473fe9`** | `merged@7.2-rc1` — **and already in the base** as `7dd27810eea0` (`v7.1.6`) | n/a — nothing was imported | 2026-08-08 | **Upstream version rejected: already applied, and orthogonal.** It is the *same commit* as `7dd27810eea0`, not a second fix; it applies to `v7.1.7` as a no-op (reverse-apply check passes, `--3way` diff empty); and its 2-line HPD-hold change shares no mechanism with `0002`. `0002` is KEPT. Verdict: [`EVAL-0002-EDID.md`](EVAL-0002-EDID.md) |
-| HDMI Input Audio PATCHv4 (upstream counterpart to `0005`) | T11 | <https://lore.kernel.org/r/20260721064115.64809-1-royalnet026@gmail.com> | `sent-v4` — not merged; claims-quality, thread review status to be recorded | If adopted: retire when merged upstream **and** base reaches that version | 2026-08-08 | Verdict MUST state whether `0006` stays required, needs adaptation, or is superseded |
+| ~~HDMI Input Audio PATCHv4 (upstream counterpart to `0005`)~~ — **NOT IMPORTED** | T11 — **done** | <https://lore.kernel.org/r/20260721064115.64809-1-royalnet026@gmail.com> — `[PATCH v4 0/4] media: synopsys: hdmirx: add HDMI audio capture support`, Igor Paunovic, 4 patches | `sent-v4` — **not merged.** `Reviewed-by` Sebastian Reichel, Krzysztof Kozlowski and Dmitry Osipenko; `Tested-by` Dmitry on 2/4. Author pinged for media-tree pickup 2026-08-05, unanswered as of 2026-08-08 | n/a — nothing was imported | 2026-08-08 | **Upstream version rejected: adoptable, but not strictly better.** Applies clean to `v7.1.7` (all four, forward, no fuzz), so this is a merit rejection not a mechanical one. Drops multichannel, jack reporting, `hdmirx_plugout()` teardown and pre-capture clock lock; adds suspend support, capture-only DAI flags and an accepted binding. **`0006` answer: NOT superseded** — v4 4/4 enables the card on Orange Pi 5 Plus only, leaving Rock 5B+ with a bound codec and no ALSA card. Verdict: [`EVAL-0005-AUDIO.md`](EVAL-0005-AUDIO.md) |
 | IOMMU "disable fetch dte time limit" | T12 | <https://lore.kernel.org/r/20260428-spu-iommudtefix-v2-1-f592f579e508@pengutronix.de> (PATCHv2) — mainline commit SHA to be resolved at import | `merged@7.2-rc1` | **Drop when base ≥ `v7.2`** | 2026-08-08 | `backports/` lane, `commit <sha> upstream.` provenance required. Skip-and-record if `7.1.y` already absorbed it, or if the prereq chain exceeds 2 commits |
 | I2S MCLK output gate clocks | T12 | <https://lore.kernel.org/r/20260320-rk3588-mclk-gate-grf-v3-0-980338eacd2c@superkali.me> (PATCHv3) — mainline commit SHA to be resolved at import | `merged@7.2-rc1` | **Drop when base ≥ `v7.2`** | 2026-08-08 | Same lane and same skip conditions as the row above |
 | V4L2 HW usage stats (fdinfo) for rkvdec + hantro | T13 | <https://lore.kernel.org/r/20260617-v4l2-add-fdinfo-v2-0-d298e98ce06a@collabora.com> (PATCHv2) | `sent-v2` — not merged | Drop when merged upstream **and** base reaches that version | 2026-08-08 | Collabora "Improvements (pending)". Encode/decode observability |
@@ -226,6 +290,7 @@ dead ends.
 |---|---|---|
 | Collabora `mainline-status.md` | Fetched 2026-08-08 with a real browser (Playwright 1.61.1 / Chromium) — the page sits behind an Anubis proof-of-work gate that a plain `curl` cannot pass | `.omo/evidence/image-pipeline-quality/collabora-mainline-status-2026-08-08.md` (untracked; `.omo/` is gitignored) — sha256 `729b87afb5a4fb097713b79e264a3688e25f3f971a8b9fcbc6c73d49340dccb9` |
 | Every lore thread linked from the rows above | `https://lore.kernel.org/r/<message-id>` resolution check, 2026-08-08 | All 12 Message-IDs resolved (HTTP 302 to `/all/…`); zero 404s |
+| The `0005` counterpart thread, **read in full** | `https://lore.kernel.org/all/<message-id>/t.mbox.gz` — the gzipped thread mbox is served to plain `curl`, unlike the HTML views and `/raw` (both 403). `patchwork.kernel.org`'s API returns **zero** results for this Message-ID, so T10's patchwork route does not work here | 34 messages, 4 patches, 3 human reviewers + `sashiko-bot`; every `Reviewed-by`/`Tested-by` quoted in [`EVAL-0005-AUDIO.md`](EVAL-0005-AUDIO.md) |
 | The pinned kernel tree at `v7.1.7` | Path + content checks per patch | [`REBASE-v7.1.7.md` § Patch-ID / content check](REBASE-v7.1.7.md#patch-id--content-check-against-the-new-base) — 0 of 5 absorbed |
 
 **The Collabora capture is a snapshot, not a live feed.** Re-capture it — with a
