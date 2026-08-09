@@ -15,8 +15,8 @@ imported at `e13a311` (2026-07-01) with full history and authorship preserved.
 
 ## What's in the series
 
-Upstream's numbering is preserved verbatim, gap included. First-party patches
-continue the same counter from `0006`:
+Upstream's numbering is preserved verbatim, gap included. First-party and
+backported patches continue the same counter from `0006`:
 
 | | Patch | Source | What it does |
 |---|---|---|---|
@@ -26,6 +26,7 @@ continue the same counter from `0006`:
 | *0004* | — | — | **Never published upstream.** The gap is intentional; do not renumber to close it. |
 | `0005` | hdmirx audio | `upstream/` | The driver half of HDMI-RX audio capture: registers an ASoC `hdmi-audio-codec` under `hdmi_receiver@fdee0000` and drives the receiver's audio FIFO, ACR-derived sample rate and recovered clock. Adds no device tree. |
 | `0006` | hdmirx audio sound card | `ceralive/` | The device-tree half. Without it `0005`'s codec is bound but ALSA never instantiates a card, so HDMI-IN audio cannot be captured at all. |
+| `0007` | iommu dte-limit fix | `backports/` | Backport of mainline `8d4346ecd495`. Sets `BIT(31)` of the IOMMU's `MMU_AUTO_GATING`, without which a DTE fetch racing a page-table update blocks the IOMMU — a black screen on the VOP, and sporadic RGA3 hangs. Merged for 7.2-rc1, absent from `v7.1.7`. |
 
 Plus [`overlays/rockchip-rk3588-rkvenc-mpp.dts`](overlays/rockchip-rk3588-rkvenc-mpp.dts),
 the device-tree overlay the encoder needs, carried verbatim.
@@ -200,9 +201,10 @@ main reason this fork exists — `patches/` is generated from `upstream/` and
 `.DS_Store` noise.
 
 **The series is re-anchored for `v7.1.7`.** Upstream targeted `v6.19-rc8`. Two
-context anchors drifted in between; both were re-anchored, and all five series
-members are documented hunk by hunk in
-[`docs/REBASE-v7.1.7.md`](docs/REBASE-v7.1.7.md). The earlier
+context anchors drifted in between; both were re-anchored, and the five members
+that existed at the re-anchor are documented hunk by hunk in
+[`docs/REBASE-v7.1.7.md`](docs/REBASE-v7.1.7.md). `0007` was backported straight
+onto `v7.1.7` and needed no re-anchoring, so it has no ledger entry there. The earlier
 [`docs/REBASE-v7.1.5.md`](docs/REBASE-v7.1.5.md) is kept as the record of the
 previous base.
 

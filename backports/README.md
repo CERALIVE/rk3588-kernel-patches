@@ -4,10 +4,11 @@ The third source lane. `upstream/` is Ross Cawston's import, `ceralive/` is
 first-party work, and this is everything else: a patch lifted from mainline, a
 stable tree, or a posting on lore that the pinned kernel does not carry yet.
 
-Empty today. The lane exists so that the first backport does not get dropped into
-`upstream/`, which would break the one claim this repository cannot afford to
-lose — that `upstream/` is byte-identical to what was published at
-`UPSTREAM_PATCHES_REV`.
+One member today, `0007-iommu-rockchip-disable-fetch-dte-time-limit.patch`,
+backported from mainline `8d4346ecd495`. The lane exists so that a backport does
+not get dropped into `upstream/`, which would break the one claim this repository
+cannot afford to lose — that `upstream/` is byte-identical to what was published
+at `UPSTREAM_PATCHES_REV`.
 
 ## Why it cannot share the `upstream/` lane
 
@@ -47,3 +48,20 @@ pinned kernel genuinely does not have.
 Also check it belongs to *this* tree. The vendor 6.1 BSP fixes live in
 [`CERALIVE/rk3588-vendor-kernel-patches`](https://github.com/CERALIVE/rk3588-vendor-kernel-patches)
 and do not apply here; see `AGENTS.md` on the `78c67d98f221` HDMI-codec regression.
+
+Then check two things `git apply --check` cannot tell you, both of which have
+already turned a candidate away once:
+
+- **How deep the prerequisite chain is — as a *build*, not as a text apply.** A
+  commit that references a symbol added by an earlier commit in its own series
+  applies cleanly and then fails to compile. Grep the base for every identifier
+  the patch introduces or calls. **More than two prerequisites and the answer is
+  "not cleanly backportable"** — record it and move on rather than quietly
+  importing a chain.
+- **Whether the merged version has a known bug with no landed fix.** Read the
+  whole thread, replies included, not just the patch. Sweep mainline for
+  follow-ups per touched file
+  (`api.github.com/repos/torvalds/linux/commits?path=<file>&since=<date>`); lore's
+  search endpoint is 403 to `curl`, so only a thread fetched by Message-ID is
+  readable. The I2S MCLK gate series was declined on both counts at once —
+  [`docs/UPSTREAM-STATUS.md` § MCLK](../docs/UPSTREAM-STATUS.md#i2s-mclk-gate-clocks--skipped-known-regression-on-rock-5b).

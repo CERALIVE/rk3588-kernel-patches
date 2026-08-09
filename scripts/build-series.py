@@ -93,8 +93,9 @@ REGISTRY_RULE_RE = re.compile(r"^:?-{3,}:?$")
 SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 
 # Slot count, not member count. 0004 was never published upstream and we keep the
-# gap so our files line up 1:1 with theirs, hence ordinals 1/6, 2/6, 3/6, 5/6, 6/6.
-SERIES_TOTAL = 6
+# gap so our files line up 1:1 with theirs, hence ordinals 1/7, 2/7, 3/7, 5/7, 6/7.
+# 0007 continues the same counter into the backports/ lane.
+SERIES_TOTAL = 7
 
 DS_STORE_RE = re.compile(r"^Binary files .*\.DS_Store .* differ$")
 HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
@@ -216,6 +217,37 @@ SERIES: tuple[Patch, ...] = (
             "matches the BSP and the fs*128 rate 0005 programs on the \"audio\" clock.",
             "i2s7_8ch declares only a \"rx\" DMA, so rockchip_i2s_tdm_init_dai() marks it",
             "capture-only and the link resolves to a single capture stream.",
+        ),
+    ),
+    Patch(
+        filename="0007-iommu-rockchip-disable-fetch-dte-time-limit.patch",
+        ordinal=7,
+        subject="iommu/rockchip: disable fetch dte time limit",
+        provenance="8d4346ecd4950ae08cc76a6de327c264e846758c",
+        author="Simon Xue <xxm@rock-chips.com>",
+        date="Tue, 28 Apr 2026 18:05:31 +0200",
+        origin=BACKPORTS,
+        backport=Backport(
+            upstream_subject="iommu/rockchip: disable fetch dte time limit",
+            lore_msgid="20260428-spu-iommudtefix-v2-1-f592f579e508@pengutronix.de",
+            note=(
+                "RK3588's IOMMU blocks after four consecutive DTE fetches race a CPU-side",
+                "page-table update, which the vendor kernel works around by setting BIT(31)",
+                "of MMU_AUTO_GATING. Upstream carried the bug until 7.2-rc1; the symptom on",
+                "RK356x/RK3588 is a blocked VOP and a black screen, and on RK3588 also",
+                "sporadic RGA3 hangs. Nothing in v7.1.7 sets that bit -- the base has",
+                "RK_MMU_AUTO_GATING but never writes DISABLE_FETCH_DTE_TIME_LIMIT -- so the",
+                "pinned kernel takes the hang, and this series drives exactly the VOP and",
+                "media paths that trip it.",
+                "",
+                "Applied to v7.1.7 with no context adaptation: the payload is byte-identical",
+                "to 8d4346ecd495 and forward-applies with no fuzz. No prerequisite commits;",
+                "RK_MMU_AUTO_GATING and rk_iommu_read/write already exist in the base.",
+                "",
+                "Merged for 7.2-rc1 (Acked-by Heiko Stuebner, applied by Joerg Roedel). It",
+                "carries no Fixes: tag and no Cc: stable, so 7.1.y will not pick it up on its",
+                "own. Retire this backport when the pinned base reaches v7.2.",
+            ),
         ),
     ),
 )
@@ -771,7 +803,8 @@ def write_series(out_dir: Path, pin: dict[str, str]) -> None:
         "# git-am order for the CeraLive RK3588 series.",
         "# Upstream numbering is preserved verbatim -- 0004 was never published,",
         "# so the gap is intentional. Do not renumber to close it.",
-        "# 0006 onwards is first-party (ceralive/), continuing the same counter.",
+        "# 0006 is first-party (ceralive/) and 0007 is a backport (backports/);",
+        "# both continue the same counter.",
         f"# Target kernel: {pin['KERNEL_TAG']} ({pin['KERNEL_COMMIT']})",
         *(
             f"# Retired slot {e.ordinal}: {e.filename} -- see retired/REGISTRY.md"

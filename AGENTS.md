@@ -182,9 +182,10 @@ verbatim by CI, so it cannot rot the same way.
 
 **Upstream numbering is preserved, gap included: `0001`, `0002`, `0003`, `0005`.**
 There is no `0004` upstream. **Do NOT renumber to close the gap** — the 1:1 filename
-correspondence with upstream is what makes the import auditable. First-party patches
-continue the same counter (`0006` …), so the ordinals read `1/6`, `2/6`, `3/6`,
-`5/6`, `6/6` — the gap at 4 stays visible, which is the whole point.
+correspondence with upstream is what makes the import auditable. First-party and
+backported patches continue the same counter (`0006` = `ceralive/`, `0007` =
+`backports/`), so the ordinals read `1/7`, `2/7`, `3/7`, `5/7`, `6/7`, `7/7` — the
+gap at 4 stays visible, which is the whole point.
 
 **`0005` is driver-only; `0006` is what makes HDMI-RX audio reachable.** Upstream's
 `0005` registers an ASoC `hdmi-audio-codec` child under `hdmi_receiver@fdee0000`

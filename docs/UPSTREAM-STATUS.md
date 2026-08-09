@@ -55,7 +55,7 @@ against a source**, not the date the patch was last touched.
 
 ## Current series members
 
-The series has five members. `0004` is a deliberate ordinal gap — upstream never
+The series has six members. `0004` is a deliberate ordinal gap — upstream never
 published one — and is not a row here for the same reason it is not a patch.
 
 | Patch | Origin | Upstream status | Retire trigger | Last checked | Notes |
@@ -65,6 +65,7 @@ published one — and is not a row here for the same reason it is not a patch.
 | `0003` hdmirx plugout fix (v1) | `upstream/` lane — Ross Cawston, same import. Upstream counterpart: **N/A** — none found (see [§ Sources](#sources-checked-for-this-sweep)) | `fork-carried-no-upstream` | None defined. Re-check at every base bump via the content check in [`REBASE-v7.1.7.md` § Patch-ID / content check](REBASE-v7.1.7.md#patch-id--content-check-against-the-new-base); retire only if a tree absorbs the `vb2_queue_error` plugout fix | 2026-08-08 | Content check at `v7.1.7`: `vb2_queue_error` still absent under `synopsys/hdmirx/` |
 | `0005` hdmirx audio | `upstream/` lane — Ross Cawston, same import. Upstream counterpart is the 4-patch series **`[PATCH v4 0/4] media: synopsys: hdmirx: add HDMI audio capture support`** by Igor Paunovic, <https://lore.kernel.org/r/20260721064115.64809-1-royalnet026@gmail.com> — same mechanism, *competing* DT half | `sent-v4` — fully reviewed, **not merged**; author pinged for pickup 2026-08-05, unanswered | Counterpart merges **and** base reaches that version **and** Rock 5B+ enablement exists **and** the multichannel / jack / plugout regressions are closed. All four | 2026-08-08 | **Upstream version rejected: adoptable but not strictly better** — applies cleanly to `v7.1.7`, but drops multichannel, jack reporting, plugout teardown and pre-capture clock lock, and its 4/4 enables the card on **Orange Pi 5 Plus only**. Verdict: [`EVAL-0005-AUDIO.md`](EVAL-0005-AUDIO.md). Read [§ 0005 / 0006](#0005--0006--the-pairing-is-load-bearing-and-upstream-does-not-replace-it) |
 | `0006` hdmirx audio sound card | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Upstream counterpart: **partial only** — v4 3/4 covers the SoC-level card, v4 4/4 covers Orange Pi 5 Plus; **nothing upstream covers Rock 5B+** | `first-party-no-upstream` | Only if an upstream HDMI-RX audio series lands its own DT sound card **and** enables it on Rock 5B+ *and* Orange Pi 5+. As of 2026-08-08 the posted series does not | 2026-08-08 | **T11 answer: NOT superseded, and NOT compatible.** `0006` and v4 3/4 edit the same two regions of `rk3588-extra.dtsi` and disagree on `#sound-dai-cells` (`<0>` vs `<1>`); `git apply --check` of `0006` onto an upstream-applied tree fails. Modelled on the BSP's `hdmiin-sound` wiring, expressed with mainline `simple-audio-card`; no BSP text copied |
+| `0007` iommu dte-limit fix | `backports/` lane — **backported from mainline** `8d4346ecd4950ae08cc76a6de327c264e846758c` "iommu/rockchip: disable fetch dte time limit", Simon Xue via Sven Püschel (Pengutronix), PATCHv2, <https://lore.kernel.org/r/20260428-spu-iommudtefix-v2-1-f592f579e508@pengutronix.de> | `merged@7.2-rc1` — `Acked-by` Heiko Stuebner, applied by Joerg Roedel 2026-06-02. **Absent from the base**: it carries no `Fixes:` tag and no `Cc: stable`, so `7.1.y` never picked it up | **Drop when base ≥ `v7.2`.** The base absorbing it is the whole retire condition — there is no merit question left, it is already mainline | 2026-08-08 | Sets `BIT(31)` of `MMU_AUTO_GATING` in `rk_iommu_enable()`, the vendor workaround for the RK356x/RK3588 blocked-VOP-and-black-screen and RK3588 RGA3 hang. Base check at `v7.1.7`: `DISABLE_FETCH_DTE_TIME_LIMIT` absent, `RK_MMU_AUTO_GATING` present. Applies forward with **no fuzz and no context adaptation**; **zero prerequisite commits**. Fixes:-tag sweep over mainline found **no follow-up** |
 
 ### `0001` — do not retire on rkvenc landing
 
@@ -243,6 +244,69 @@ Two `0005` defects are ledgered and left standing: no suspend handling, and
 playback DAIs registered on a capture-only device. Neither has bitten a
 device that never suspends.
 
+### I2S MCLK gate clocks — skipped, known regression on Rock 5B+
+
+The lore Message-ID this repository tracked is **v3**. The version that reached
+mainline is **v4**, and it is five commits, not four — Heiko asked for the
+`rockchip_clk_add_grf()` helper to be split out, so v4 3/5 exists only in the
+merged form:
+
+| v4 | mainline | file |
+|---|---|---|
+| 1/5 | `56c2ca0ae7cb` | `include/dt-bindings/clock/rockchip,rk3588-cru.h` |
+| 2/5 | `28820fc7983b` | `drivers/clk/rockchip/clk.c` |
+| 3/5 | `32d1d88c4165` | `drivers/clk/rockchip/clk.c` + `clk.h` |
+| 4/5 | `06c990bffdbe` | `include/soc/rockchip/rk3588_grf.h` |
+| 5/5 | `02b9b0bb6269` | `drivers/clk/rockchip/clk-rk3588.c` — **the payload** |
+
+**Stop condition 1 — the prerequisite chain is four deep.** `02b9b0bb6269` alone
+does not build on `v7.1.7`: it names `I2S0_8CH_MCLKOUT_TO_IO` (1/5),
+`RK3588_SYSGRF_SOC_CON6` (4/5), `rockchip_clk_add_grf()` (3/5), and needs 2/5 for
+the `grf_type_sys` branch to resolve through `aux_grf_table` at all. Content check
+at `v7.1.7` — all four absent:
+
+```
+I2S0_8CH_MCLKOUT_TO_IO   0   (rockchip,rk3588-cru.h)
+RK3588_SYSGRF_SOC_CON6   0   (rk3588_grf.h)
+rockchip_clk_add_grf     0   (clk.c)
+```
+
+Every one of the five `git apply --check`s passes forward, so this is a
+*build*-level chain, not a textual one — which is precisely why "it applies" was
+not allowed to be the test. Four is over the two-commit ceiling, so the series is
+recorded as **not cleanly backportable** rather than forced through.
+
+**Stop condition 2 — the merged version regresses one of our two boards, and the
+fix is not in mainline.** After the series landed, Diederik de Haas reported
+(2026-06-23, in the v4 5/5 thread) that analog audio died on his NanoPC-T6 LTS.
+Root cause, agreed by author and maintainer in-thread: the gates reset *open* and
+firmware leaves them open, but once they became managed clocks with no consumer,
+`clk_disable_unused()` closes them at boot. He confirmed it by reading `SOC_CON6`
+at the U-Boot prompt (`md.l 0xfd58c318` → `0x600`, bit 0 clear = gate open) and
+then by testing the proposed fix. Heiko's verdict: *"It is the correct fix, as it
+returns the original way things worked for boards not activly handling that
+clock."*
+
+That fix — `CLK_IGNORE_UNUSED` on the four `_TO_IO` gates — was promised on
+2026-06-24 and, as of 2026-08-08, **has not landed**: `clk-rk3588.c` has exactly
+one commit since 2026-04-19, `02b9b0bb6269` itself. Importing today means
+importing the known-buggy version with no follow-up available.
+
+**And Rock 5B+ is in the blast radius, not adjacent to it.** The reporter's board
+wires its codec to the *mux*, `clocks = <&cru I2S0_8CH_MCLKOUT>`, and no board in
+the tree references `_TO_IO`. Rock 5B/5B+/5T is wired identically:
+
+```
+rk3588-rock-5b-5bp-5t.dtsi:396   es8316: audio-codec@11 {
+                          :399           clocks = <&cru I2S0_8CH_MCLKOUT>;
+rk3588-nanopc-t6.dtsi     :556           clocks = <&cru I2S0_8CH_MCLKOUT>;   <- the board that broke
+```
+
+So the import would trade an IOMMU-class bug we do not have for a silent loss of
+headphone and mic audio on a board we ship. Re-open this row only when the
+`CLK_IGNORE_UNUSED` follow-up is in mainline **and** the base is still below the
+release that carries it.
+
 ---
 
 ## Import and evaluation candidates (T10–T13)
@@ -255,8 +319,8 @@ and a documented *skip* is a valid outcome for every one of them.
 |---|---|---|---|---|---|---|
 | ~~HDMI-RX EDID fix (upstream counterpart to `0002`)~~ — **NOT IMPORTED** | T10 — **done** | <https://lore.kernel.org/r/20260325105742.63236-1-dmitry.osipenko@collabora.com> (PATCHv2) = mainline **`d1162a5adbb5e95953d460b5bde3a04cd4473fe9`** | `merged@7.2-rc1` — **and already in the base** as `7dd27810eea0` (`v7.1.6`) | n/a — nothing was imported | 2026-08-08 | **Upstream version rejected: already applied, and orthogonal.** It is the *same commit* as `7dd27810eea0`, not a second fix; it applies to `v7.1.7` as a no-op (reverse-apply check passes, `--3way` diff empty); and its 2-line HPD-hold change shares no mechanism with `0002`. `0002` is KEPT. Verdict: [`EVAL-0002-EDID.md`](EVAL-0002-EDID.md) |
 | ~~HDMI Input Audio PATCHv4 (upstream counterpart to `0005`)~~ — **NOT IMPORTED** | T11 — **done** | <https://lore.kernel.org/r/20260721064115.64809-1-royalnet026@gmail.com> — `[PATCH v4 0/4] media: synopsys: hdmirx: add HDMI audio capture support`, Igor Paunovic, 4 patches | `sent-v4` — **not merged.** `Reviewed-by` Sebastian Reichel, Krzysztof Kozlowski and Dmitry Osipenko; `Tested-by` Dmitry on 2/4. Author pinged for media-tree pickup 2026-08-05, unanswered as of 2026-08-08 | n/a — nothing was imported | 2026-08-08 | **Upstream version rejected: adoptable, but not strictly better.** Applies clean to `v7.1.7` (all four, forward, no fuzz), so this is a merit rejection not a mechanical one. Drops multichannel, jack reporting, `hdmirx_plugout()` teardown and pre-capture clock lock; adds suspend support, capture-only DAI flags and an accepted binding. **`0006` answer: NOT superseded** — v4 4/4 enables the card on Orange Pi 5 Plus only, leaving Rock 5B+ with a bound codec and no ALSA card. Verdict: [`EVAL-0005-AUDIO.md`](EVAL-0005-AUDIO.md) |
-| IOMMU "disable fetch dte time limit" | T12 | <https://lore.kernel.org/r/20260428-spu-iommudtefix-v2-1-f592f579e508@pengutronix.de> (PATCHv2) — mainline commit SHA to be resolved at import | `merged@7.2-rc1` | **Drop when base ≥ `v7.2`** | 2026-08-08 | `backports/` lane, `commit <sha> upstream.` provenance required. Skip-and-record if `7.1.y` already absorbed it, or if the prereq chain exceeds 2 commits |
-| I2S MCLK output gate clocks | T12 | <https://lore.kernel.org/r/20260320-rk3588-mclk-gate-grf-v3-0-980338eacd2c@superkali.me> (PATCHv3) — mainline commit SHA to be resolved at import | `merged@7.2-rc1` | **Drop when base ≥ `v7.2`** | 2026-08-08 | Same lane and same skip conditions as the row above |
+| IOMMU "disable fetch dte time limit" — **IMPORTED as `0007`** | T12 — **done** | <https://lore.kernel.org/r/20260428-spu-iommudtefix-v2-1-f592f579e508@pengutronix.de> (PATCHv2) = mainline **`8d4346ecd4950ae08cc76a6de327c264e846758c`** | `merged@7.2-rc1` — **not in the base.** No `Fixes:` tag and no `Cc: stable`, so `7.1.y` will not pick it up on its own | **Drop when base ≥ `v7.2`** | 2026-08-08 | Now a series member — see the `0007` row in [§ Current series members](#current-series-members) |
+| ~~I2S MCLK output gate clocks~~ — **NOT IMPORTED** | T12 — **done** | <https://lore.kernel.org/r/20260320-rk3588-mclk-gate-grf-v3-0-980338eacd2c@superkali.me> is **v3**; the version that merged is **v4**, <https://lore.kernel.org/r/20260419-rk3588-mclk-gate-grf-v4-0-513a42dd1dcc@superkali.me> — **5** commits: `56c2ca0ae7cb`, `28820fc7983b`, `32d1d88c4165`, `06c990bffdbe`, `02b9b0bb6269` | `merged@7.2-rc1` (all five; none in the base) | n/a — nothing was imported | 2026-08-08 | **Skipped on both stop conditions at once.** (1) **Prereq chain is 4 deep, over the 2-commit ceiling**: the payload `02b9b0bb6269` needs the clock IDs, the `grf_type_sys` lookup, `rockchip_clk_add_grf()` *and* the `SOC_CON6` offset, none of which `v7.1.7` has. (2) **The merged version is known-buggy and its fix has not landed** — see [§ MCLK](#i2s-mclk-gate-clocks--skipped-known-regression-on-rock-5b) |
 | V4L2 HW usage stats (fdinfo) for rkvdec + hantro | T13 | <https://lore.kernel.org/r/20260617-v4l2-add-fdinfo-v2-0-d298e98ce06a@collabora.com> (PATCHv2) | `sent-v2` — not merged | Drop when merged upstream **and** base reaches that version | 2026-08-08 | Collabora "Improvements (pending)". Encode/decode observability |
 | V4L2 stateless codec tracepoints | T13 | <https://lore.kernel.org/r/20260212162328.192217-1-detlev.casanova@collabora.com> (PATCHv1) | `sent-v1` — not merged | Drop when merged upstream **and** base reaches that version | 2026-08-08 | Collabora "Improvements (pending)" |
 | PCIe System PM support | T13 | <https://lore.kernel.org/r/20260316-rockchip-pcie-system-suspend-v5-0-5bb5ad37d643@collabora.com> (PATCHv5) | `sent-v5` — not merged | Drop when merged upstream **and** base reaches that version | 2026-08-08 | Collabora "Improvements (pending)" |
@@ -305,6 +369,8 @@ dead ends.
 | Every lore thread linked from the rows above | `https://lore.kernel.org/r/<message-id>` resolution check, 2026-08-08 | All 12 Message-IDs resolved (HTTP 302 to `/all/…`); zero 404s |
 | The `0005` counterpart thread, **read in full** | `https://lore.kernel.org/all/<message-id>/t.mbox.gz` — the gzipped thread mbox is served to plain `curl`, unlike the HTML views and `/raw` (both 403). `patchwork.kernel.org`'s API returns **zero** results for this Message-ID, so T10's patchwork route does not work here | 34 messages, 4 patches, 3 human reviewers + `sashiko-bot`; every `Reviewed-by`/`Tested-by` quoted in [`EVAL-0005-AUDIO.md`](EVAL-0005-AUDIO.md) |
 | The pinned kernel tree at `v7.1.7` | Path + content checks per patch | [`REBASE-v7.1.7.md` § Patch-ID / content check](REBASE-v7.1.7.md#patch-id--content-check-against-the-new-base) — 0 of 5 absorbed |
+| Both T12 import-candidate threads, **read in full** | Same `t.mbox.gz` route as the `0005` row. `lore.kernel.org`'s *search* endpoint (`/all/?q=…&x=m`) is **also 403** — only a thread fetched by a known Message-ID is served, so a "Fixes: sweep" cannot be run against lore | IOMMU: 3 messages (`Acked-by` Heiko, "Applied, thanks" from Joerg). MCLK: the v3 thread is 9 messages, and the **v4** thread it became is 18, including the post-merge regression report |
+| Mainline commit resolution and the **`Fixes:` sweep** | `api.github.com/search/commits` over `torvalds/linux` for identity (author date matched to the posting, to the second), `…/compare/<sha>…v7.2-rc1` for containment (`status: ahead`, `behind_by: 0`), then `…/commits?path=<file>&since=<merge-date>` per touched file — a bounded per-file sweep, which is what makes "no follow-up exists" a measured claim rather than an absent search hit | 6 SHAs resolved, all contained in `v7.2-rc1`. Sweep over all five touched files: **zero** commits carrying a `Fixes:` tag naming any of them; the only extra commit surfaced was `32d1d88c4165`, which is a *prerequisite* of the MCLK series, not a fix to it |
 
 **The Collabora capture is a snapshot, not a live feed.** Re-capture it — with a
 browser, not `curl` — at every base bump, and move the "Last checked" dates in the
