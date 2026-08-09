@@ -27,6 +27,7 @@ backported patches continue the same counter from `0006`:
 | `0005` | hdmirx audio | `upstream/` | The driver half of HDMI-RX audio capture: registers an ASoC `hdmi-audio-codec` under `hdmi_receiver@fdee0000` and drives the receiver's audio FIFO, ACR-derived sample rate and recovered clock. Adds no device tree. |
 | `0006` | hdmirx audio sound card | `ceralive/` | The device-tree half. Without it `0005`'s codec is bound but ALSA never instantiates a card, so HDMI-IN audio cannot be captured at all. |
 | `0007` | iommu dte-limit fix | `backports/` | Backport of mainline `8d4346ecd495`. Sets `BIT(31)` of the IOMMU's `MMU_AUTO_GATING`, without which a DTE fetch racing a page-table update blocks the IOMMU — a black screen on the VOP, and sporadic RGA3 hangs. Merged for 7.2-rc1, absent from `v7.1.7`. |
+| `0008` | rkvenc DMA max segment size | `ceralive/` | **`UNVALIDATED` on hardware.** Sets the encoder's DMA max segment size in `rkvenc_hw_probe()`, so an imported dma-buf's recorded length stops being truncated to the `SZ_64K` default. Fixes a bookkeeping defect in `0001`; the IOVA guardrail that catches the symptom is deliberately left alone. |
 
 Plus [`overlays/rockchip-rk3588-rkvenc-mpp.dts`](overlays/rockchip-rk3588-rkvenc-mpp.dts),
 the device-tree overlay the encoder needs, carried verbatim.
@@ -204,7 +205,8 @@ main reason this fork exists — `patches/` is generated from `upstream/` and
 context anchors drifted in between; both were re-anchored, and the five members
 that existed at the re-anchor are documented hunk by hunk in
 [`docs/REBASE-v7.1.7.md`](docs/REBASE-v7.1.7.md). `0007` was backported straight
-onto `v7.1.7` and needed no re-anchoring, so it has no ledger entry there. The earlier
+onto `v7.1.7` and `0008` was authored against it, so neither needed re-anchoring and
+neither has a ledger entry there. The earlier
 [`docs/REBASE-v7.1.5.md`](docs/REBASE-v7.1.5.md) is kept as the record of the
 previous base.
 
@@ -213,7 +215,7 @@ that the set of added and removed lines in `patches/` is byte-identical to the
 patch's source lane, and it runs in CI. If a rebase rule ever overstepped, that
 check fails.
 
-**There is one first-party patch upstream does not have.** `0006` adds the
+**There are two first-party patches upstream does not have.** `0006` adds the
 device-tree sound card that turns upstream's `0005` HDMI-RX audio codec into a
 capturable ALSA card. Upstream `0005` is driver-only; on a Rock 5B+ running the
 full series the codec device is bound with no cable attached
@@ -223,6 +225,19 @@ tree binds that codec to a DAI. `0006` adds `#sound-dai-cells` to
 `hdmi_receiver`, adds an `hdmirx-sound` `simple-audio-card`, and enables it plus
 `i2s7_8ch` on the two CeraLive boards. It lives in `ceralive/`, is clearly marked
 first-party in its own mail header, and carries no upstream attribution.
+
+`0008` is the second, and it repairs `0001` rather than extending it.
+`rkvenc_dma_import_fd()` records an imported dma-buf's length as
+`sg_dma_len(sgt->sgl)` — the first mapped segment only — and `0001` never told the
+DMA layer how long a segment may be, so `dma_get_max_seg_size()` answered the
+`SZ_64K` default, iommu-dma stopped coalescing there, and every import over 64 KiB
+was recorded as exactly `0x10000` bytes. `0008` sets the cap in `rkvenc_hw_probe()`
+and reads it back, failing the probe if it did not take. It leaves the driver's
+IOVA guardrail alone on purpose: the guardrail was correctly rejecting a register
+that pointed outside the (truncated) window, so silencing it would hide the bug
+rather than fix it. It is marked **`UNVALIDATED`** in its own mail header and in
+[`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) — it compiles into a real
+kernel package, and its runtime effect has never been observed on a board.
 
 ### Why not the `sfqr0414` fork
 
@@ -287,9 +302,13 @@ questions.
 driver, and are carried here byte-for-byte. This fork contributes packaging,
 pinning, auditing, and CI.
 
-`0006` is first-party CeraLive work with no upstream counterpart: a device-tree
-change modelled on the Rockchip BSP's own `hdmiin-sound` wiring
-(`rockchip,cpu = <&i2s7_8ch>`, receiver as clock master), expressed with mainline's
-`simple-audio-card` instead of the BSP's `rockchip,hdmi` machine driver. It is
-kept in a separate `ceralive/` directory precisely so the credit line above stays
-true.
+`0006` and `0008` are first-party CeraLive work with no upstream counterpart.
+`0006` is a device-tree change modelled on the Rockchip BSP's own `hdmiin-sound`
+wiring (`rockchip,cpu = <&i2s7_8ch>`, receiver as clock master), expressed with
+mainline's `simple-audio-card` instead of the BSP's `rockchip,hdmi` machine driver.
+`0008` is a three-statement fix to the encoder driver `0001` introduces, written
+against the pinned kernel's own DMA API. Both are kept in a separate `ceralive/`
+directory precisely so the credit line above stays true.
+
+`0007` is neither ours nor Ross Cawston's: it is a straight backport of a mainline
+commit by Simon Xue, carried in `backports/` with its own provenance header.

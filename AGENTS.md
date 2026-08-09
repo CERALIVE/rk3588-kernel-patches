@@ -3,8 +3,9 @@
 ## ROLE IN THE GROUP
 
 Holds the **mainline-track RK3588 kernel patch series** for CeraLive: VEPU580
-hardware encoder plus three HDMI-RX fixes imported from upstream, plus the
-first-party device-tree patch that makes HDMI-RX audio actually capturable —
+hardware encoder plus three HDMI-RX fixes imported from upstream, one backported
+IOMMU fix, and two first-party patches — the device-tree half that makes HDMI-RX
+audio actually capturable, and a DMA segment-size fix to the encoder driver —
 converted to a `git am` mailbox series and pinned to an exact kernel tag.
 
 Produces **patch text only** — no `.deb`, no kernel, no image artifact. It is
@@ -47,7 +48,7 @@ rk3588-kernel-patches/
 │   ├── EVAL-0005-AUDIO.md     # verdict: keep 0005+0006; the lore v4 series drops Rock 5B+
 │   ├── PROVENANCE.md          # licence/provenance audit incl. the MIT-claim caveat
 │   ├── PREFLIGHT.md           # how the Armbian edge -> 7.1 mapping was derived
-│   ├── REBASE-v7.1.7.md       # hunk-by-hunk rebase ledger — CURRENT base, all 5 members
+│   ├── REBASE-v7.1.7.md       # hunk-by-hunk rebase ledger — CURRENT base; the 5 re-anchored members (0007/0008 needed none)
 │   └── REBASE-v7.1.5.md       # ledger for the previous base, kept for the record
 └── .github/workflows/patch-apply.yml
 ```
@@ -64,6 +65,7 @@ rk3588-kernel-patches/
 | Why `0005`+`0006` were kept instead of taking the lore HDMI-audio series | [`docs/EVAL-0005-AUDIO.md`](docs/EVAL-0005-AUDIO.md) |
 | Stop carrying a patch | **Never `git rm` it.** Move it to `retired/` and add a row — see [`retired/REGISTRY.md`](retired/REGISTRY.md) |
 | Why HDMI-RX audio needs a DT patch at all | [`docs/PROVENANCE.md`](docs/PROVENANCE.md) §8 and `patches/0006-*`'s own mail header |
+| Why the rkvenc DMA segment-size fix exists, and why the IOVA guardrail is left alone | [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) § `0008` and `patches/0008-*`'s own mail header |
 | Check whether Armbian moved `edge` | `scripts/preflight.sh --head` |
 | Understand the 7.1 derivation | [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md) |
 | Apply the series | `scripts/apply.sh` — see [`README.md`](README.md) |
@@ -183,9 +185,9 @@ verbatim by CI, so it cannot rot the same way.
 **Upstream numbering is preserved, gap included: `0001`, `0002`, `0003`, `0005`.**
 There is no `0004` upstream. **Do NOT renumber to close the gap** — the 1:1 filename
 correspondence with upstream is what makes the import auditable. First-party and
-backported patches continue the same counter (`0006` = `ceralive/`, `0007` =
-`backports/`), so the ordinals read `1/7`, `2/7`, `3/7`, `5/7`, `6/7`, `7/7` — the
-gap at 4 stays visible, which is the whole point.
+backported patches continue the same counter (`0006` and `0008` = `ceralive/`,
+`0007` = `backports/`), so the ordinals read `1/8`, `2/8`, `3/8`, `5/8`, `6/8`,
+`7/8`, `8/8` — the gap at 4 stays visible, which is the whole point.
 
 **`0005` is driver-only; `0006` is what makes HDMI-RX audio reachable.** Upstream's
 `0005` registers an ASoC `hdmi-audio-codec` child under `hdmi_receiver@fdee0000`
@@ -215,6 +217,32 @@ multichannel handling, jack reporting and `hdmirx_plugout()` teardown. Full
 six-criteria verdict: [`docs/EVAL-0005-AUDIO.md`](docs/EVAL-0005-AUDIO.md). Do not
 re-open this on the strength of "but it's upstream-shaped" — re-open it when the
 series is *merged* and Rock 5B+ is covered.
+
+**`0008` fixes `0001`, is marked `UNVALIDATED`, and does NOT make the edge-track
+encoder work.** `rkvenc_dma_import_fd()` records an imported dma-buf's length as
+`sg_dma_len(sgt->sgl)` — the FIRST mapped segment only — and `0001` never set a max
+segment size, so `dma_get_max_seg_size()` answered the `SZ_64K` default, iommu-dma's
+`__finalise_sg()` stopped coalescing there, and every import over 64 KiB was recorded
+as exactly `0x10000` bytes. `0008` sets the cap in `rkvenc_hw_probe()` and **reads it
+back**, failing the probe with `-EINVAL` if it did not take — at `v7.1.7`
+`dma_set_max_seg_size()` returns `void`, so checking the effect is the only check
+available and is the stronger one anyway.
+
+Two things about it are easy to get wrong:
+
+- **The IOVA guardrail in `rkvenc_service.c` is deliberately NOT touched, and must
+  stay that way.** It was correct every time it fired: with the window truncated to
+  64 KiB, an NV12 chroma-plane offset really is outside `[iova, iova+len)`. Silencing
+  it hides the defect and trades a clean `-EINVAL` for a DMA write past the end of a
+  mapping. `0008` touches exactly one file (`rkvenc_hw.c`).
+- **This is one of THREE stacked defects, and the other two are userspace.**
+  `librockchip-mpp` hard-codes a `system-uncached` dma-heap mainline does not
+  register, and mainline has no uncached heap to fall back to. So `0008` is necessary
+  and nowhere near sufficient — do not describe MPP hardware encode as fixed on the
+  `edge` track. Full three-defect analysis: the CeraLive `image-building-pipeline`
+  `AGENTS.md` KNOWN ISSUE "MPP hardware video encode does not work on the edge
+  kernel". Marker and clearing conditions:
+  [`docs/UPSTREAM-STATUS.md` § `0008`](docs/UPSTREAM-STATUS.md#0008--unvalidated-and-what-that-does-and-does-not-mean).
 
 **The `78c67d98f221` HDMI-codec regression does NOT apply to this tree.** An
 `armbian/linux-rockchip` commit zeroes `capture.channels_min/max` for every

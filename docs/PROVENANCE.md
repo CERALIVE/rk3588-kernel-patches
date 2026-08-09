@@ -16,7 +16,7 @@ uncertain it is written down as uncertain.
 |------|-------|-----------|
 | Unified diffs, verbatim | `upstream/*.patch` | Ross Cawston's original `diff -ruN` files, byte-for-byte as published |
 | Unified diffs, first-party | `ceralive/*.patch` | CeraLive-authored patches with no upstream counterpart — see §8 |
-| Unified diffs, backported | `backports/*.patch` | Patches taken from mainline, a stable tree or a lore posting, each carrying its own commit sha and Message-ID — see §9. **Empty at this revision** |
+| Unified diffs, backported | `backports/*.patch` | Patches taken from mainline, a stable tree or a lore posting, each carrying its own commit sha and Message-ID — see §9. One member at this revision (`0007`) |
 | Unified diffs, repackaged | `patches/*.patch` | All lanes wrapped in git mailbox headers, with context re-anchored for `v7.1.7`. Every added/removed line is byte-identical to the patch's own source lane — enforced by `scripts/verify-payload-parity.py` |
 | Unified diffs, archived | `retired/*.patch` | Patches moved out of the series, byte-unchanged, with a row in `retired/REGISTRY.md` — see §9. **Empty at this revision** |
 | Device-tree overlay | `overlays/rockchip-rk3588-rkvenc-mpp.dts` | Ross Cawston's overlay, verbatim |
@@ -225,7 +225,8 @@ derivation audit and legal review. This document is not that.
 
 ## 8. First-party patches (`ceralive/`)
 
-Added: 2026-08-02, with `0006-rk3588-hdmirx-audio-sound-card.patch`.
+Added: 2026-08-02, with `0006-rk3588-hdmirx-audio-sound-card.patch`. A second
+member, `0008-rkvenc-set-dma-max-segment-size.patch`, was added 2026-08-08 (§8.1).
 
 **Why a separate lane exists.** Everything above rests on one sentence — "this
 fork contributes packaging, no patch content". The moment CeraLive authors a
@@ -265,13 +266,45 @@ properties, which does not exist in mainline; `0006` is written against mainline
 DCO assertion belongs to whoever actually submits a patch upstream; nobody has.
 The mail header `scripts/build-series.py` generates says so in the patch itself.
 
+### 8.1 `0008` — rkvenc DMA max segment size
+
+Added: 2026-08-08. A C change to **one** file, which `0001` created:
+
+| File | Change |
+|------|--------|
+| `drivers/media/platform/rockchip/rkvenc/rkvenc_hw.c` | adds `#include <linux/dma-mapping.h>`; sets the device's DMA max segment size in `rkvenc_hw_probe()` and fails the probe if the value does not take |
+
+It adds no new source file, no new SPDX header and no `MODULE_LICENSE`. The file it
+edits carries `SPDX-License-Identifier: (GPL-2.0+ OR MIT)`, inherited from the
+Rockchip BSP original `0001` was ported from; that is unchanged, and this repository
+makes no MIT claim for the lines it contributes here either — §5.1 applies unchanged.
+
+**Derivation, stated honestly.** Nothing was copied. The three statements are
+written against the pinned kernel's own DMA API (`dma_set_max_seg_size()` /
+`dma_get_max_seg_size()`, `include/linux/dma-mapping.h`), and the diagnosis they act
+on came from CeraLive's own board instrumentation on 2026-08-02 — recorded as defect
+2 of 3 in the `image-building-pipeline` `AGENTS.md` KNOWN ISSUE *"MPP hardware video
+encode does not work on the edge kernel"*. Setting a max segment size in a probe is
+an ordinary, widely-used kernel idiom; no BSP text or upstream patch was consulted as
+a source, and there is no upstream VEPU580 driver to have taken one from.
+
+**`UNVALIDATED` on hardware, and the patch says so in its own header.** It compiles
+and is source-correct; the runtime behaviour it predicts has not been observed on a
+board. Status and the conditions that would clear the marker:
+[`UPSTREAM-STATUS.md` § `0008`](UPSTREAM-STATUS.md#0008--unvalidated-and-what-that-does-and-does-not-mean).
+
+**Not upstream-bound, and not offered.** Same position as `0006`: no
+`Signed-off-by`, for the same reason.
+
 ---
 
 ## 9. Backported patches (`backports/`) and retirement (`retired/`)
 
-Added: 2026-08-08. Both directories are **empty of patches at this revision** —
-they are structure, not content, and this section records what will be true of
-their first occupant.
+Added: 2026-08-08 as structure. `backports/` gained its first member the same day —
+`0007`, a straight backport of mainline `8d4346ecd495`, tracked in
+[`UPSTREAM-STATUS.md`](UPSTREAM-STATUS.md#current-series-members) — while `retired/`
+is still **empty of patches at this revision**. What follows records what is true of
+a backport and what will be true of the first retirement.
 
 ### 9.1 Why `backports/` is a third lane
 

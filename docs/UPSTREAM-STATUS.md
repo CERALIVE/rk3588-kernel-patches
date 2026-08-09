@@ -55,8 +55,14 @@ against a source**, not the date the patch was last touched.
 
 ## Current series members
 
-The series has six members. `0004` is a deliberate ordinal gap — upstream never
+The series has seven members. `0004` is a deliberate ordinal gap — upstream never
 published one — and is not a row here for the same reason it is not a patch.
+
+A row may carry an **`UNVALIDATED`** marker. That is a statement about *our* patch,
+not about an upstream counterpart: it means the patch is source-correct and compiles
+into a real kernel `.deb`, but the runtime behaviour it predicts has never been
+observed on a board. It is orthogonal to the upstream-status token — a patch can be
+`first-party-no-upstream` and validated, or unvalidated, independently.
 
 | Patch | Origin | Upstream status | Retire trigger | Last checked | Notes |
 |---|---|---|---|---|---|
@@ -66,6 +72,7 @@ published one — and is not a row here for the same reason it is not a patch.
 | `0005` hdmirx audio | `upstream/` lane — Ross Cawston, same import. Upstream counterpart is the 4-patch series **`[PATCH v4 0/4] media: synopsys: hdmirx: add HDMI audio capture support`** by Igor Paunovic, <https://lore.kernel.org/r/20260721064115.64809-1-royalnet026@gmail.com> — same mechanism, *competing* DT half | `sent-v4` — fully reviewed, **not merged**; author pinged for pickup 2026-08-05, unanswered | Counterpart merges **and** base reaches that version **and** Rock 5B+ enablement exists **and** the multichannel / jack / plugout regressions are closed. All four | 2026-08-08 | **Upstream version rejected: adoptable but not strictly better** — applies cleanly to `v7.1.7`, but drops multichannel, jack reporting, plugout teardown and pre-capture clock lock, and its 4/4 enables the card on **Orange Pi 5 Plus only**. Verdict: [`EVAL-0005-AUDIO.md`](EVAL-0005-AUDIO.md). Read [§ 0005 / 0006](#0005--0006--the-pairing-is-load-bearing-and-upstream-does-not-replace-it) |
 | `0006` hdmirx audio sound card | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Upstream counterpart: **partial only** — v4 3/4 covers the SoC-level card, v4 4/4 covers Orange Pi 5 Plus; **nothing upstream covers Rock 5B+** | `first-party-no-upstream` | Only if an upstream HDMI-RX audio series lands its own DT sound card **and** enables it on Rock 5B+ *and* Orange Pi 5+. As of 2026-08-08 the posted series does not | 2026-08-08 | **T11 answer: NOT superseded, and NOT compatible.** `0006` and v4 3/4 edit the same two regions of `rk3588-extra.dtsi` and disagree on `#sound-dai-cells` (`<0>` vs `<1>`); `git apply --check` of `0006` onto an upstream-applied tree fails. Modelled on the BSP's `hdmiin-sound` wiring, expressed with mainline `simple-audio-card`; no BSP text copied |
 | `0007` iommu dte-limit fix | `backports/` lane — **backported from mainline** `8d4346ecd4950ae08cc76a6de327c264e846758c` "iommu/rockchip: disable fetch dte time limit", Simon Xue via Sven Püschel (Pengutronix), PATCHv2, <https://lore.kernel.org/r/20260428-spu-iommudtefix-v2-1-f592f579e508@pengutronix.de> | `merged@7.2-rc1` — `Acked-by` Heiko Stuebner, applied by Joerg Roedel 2026-06-02. **Absent from the base**: it carries no `Fixes:` tag and no `Cc: stable`, so `7.1.y` never picked it up | **Drop when base ≥ `v7.2`.** The base absorbing it is the whole retire condition — there is no merit question left, it is already mainline | 2026-08-08 | Sets `BIT(31)` of `MMU_AUTO_GATING` in `rk_iommu_enable()`, the vendor workaround for the RK356x/RK3588 blocked-VOP-and-black-screen and RK3588 RGA3 hang. Base check at `v7.1.7`: `DISABLE_FETCH_DTE_TIME_LIMIT` absent, `RK_MMU_AUTO_GATING` present. Applies forward with **no fuzz and no context adaptation**; **zero prerequisite commits**. Fixes:-tag sweep over mainline found **no follow-up** |
+| `0008` rkvenc DMA max segment size — **`UNVALIDATED` on hardware** | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Fixes a bookkeeping defect in `0001`, so its upstream position is the `0001` row's. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — upstream rkvenc is `WIP` (Collabora's Mesa/Vulkan work, the same tracker as `0001`), and there is no upstream VEPU580 H.264 driver to backport a fix from | Only if `0001` itself retires, i.e. if an upstream VEPU580 driver ever replaces it wholesale. **Do not retire it on the strength of "upstream rkvenc landed"** — see [§ `0001`](#0001--do-not-retire-on-rkvenc-landing), which applies verbatim | 2026-08-08 | Adds `dma_set_max_seg_size(dev, DMA_BIT_MASK(32))` to `rkvenc_hw_probe()`, then **reads it back** with `dma_get_max_seg_size()` and fails the probe with `-EINVAL` if it did not take. Defect 2 of the 3 stacked in the pipeline's "MPP hardware video encode" KNOWN ISSUE. The IOVA guardrail in `rkvenc_service.c` is **deliberately untouched** — it correctly catches the symptom. Read [§ `0008`](#0008--unvalidated-and-what-that-does-and-does-not-mean) |
 
 ### `0001` — do not retire on rkvenc landing
 
@@ -244,6 +251,61 @@ Two `0005` defects are ledgered and left standing: no suspend handling, and
 playback DAIs registered on a capture-only device. Neither has bitten a
 device that never suspends.
 
+### `0008` — `UNVALIDATED`, and what that does and does not mean
+
+`0008` is the first series member to carry an explicit `UNVALIDATED` marker, in
+its own mail header and in its row above. It is worth being precise about the
+claim, because the patch is unusually well-grounded for something unproven.
+
+**What IS established.** The root cause was diagnosed on a real Rock 5B+ on
+2026-08-02 and is recorded as defect 2 of 3 in the CeraLive
+`image-building-pipeline` `AGENTS.md` KNOWN ISSUE *"MPP hardware video encode does
+not work on the edge kernel"*. `rkvenc_dma_import_fd()` records an imported
+dma-buf's length as `sg_dma_len(sgt->sgl)` — the first mapped segment, not the
+mapping's total length — and `0001` never set a max segment size, so
+`dma_get_max_seg_size()` answered its `SZ_64K` default and iommu-dma's
+`__finalise_sg()` stopped coalescing there. The board reported a window of exactly
+`0x10000` in every failing case, and the register it rejected was the source
+frame's NV12 chroma-plane offset. The mechanism is checkable in the pinned tree:
+`include/linux/dma-mapping.h` (`dma_get_max_seg_size()` → `SZ_64K`) and
+`drivers/iommu/dma-iommu.c` `__finalise_sg()` (`max_len = dma_get_max_seg_size(dev)`,
+then `max_len - cur_len >= s_length`).
+
+**What is NOT established.** That the fix makes hardware encode work. It cannot,
+on its own: the KNOWN ISSUE names **three** stacked defects and this is one of
+them. The other two are userspace/heap problems that no patch in this repository
+addresses — `librockchip-mpp` hard-codes a `system-uncached` dma-heap that mainline
+does not register, and mainline has no uncached heap for it to fall back to. So a
+correct `0008` is necessary and is certainly not sufficient, and no observation of
+`rkvenc` behaviour on a board has been made with it applied.
+
+**The check is on the EFFECT, not on a return value — because there is no return
+value.** At `v7.1.7` `dma_set_max_seg_size()` is `static inline void`: it
+`WARN_ON_ONCE()`s when `dev->dma_parms` is NULL and returns, leaving the `SZ_64K`
+default in place. A `ret = dma_set_max_seg_size(...)` would not compile. The probe
+therefore reads the value back with `dma_get_max_seg_size()` and fails with
+`-EINVAL` on a mismatch, which is strictly stronger than a status check: the state
+it refuses to boot into is exactly the defect being fixed. On the platform bus
+`dma_parms` is always set (`drivers/base/platform.c` `setup_pdev_dma_masks()`), so
+this is expected to pass on every `rkvenc` core; the check exists so a future base
+that changes that fails loudly at probe instead of silently truncating every frame.
+
+**The IOVA guardrail is deliberately untouched, and must stay that way.** The
+guardrail in `rkvenc_service.c` rejects a translated register that falls outside
+its buffer's mapped `[iova, iova+len)` window. With `len` truncated to 64 KiB the
+chroma-plane offset genuinely IS outside that window, so the guardrail was right
+every time it fired — it was reporting a bookkeeping bug one layer below it.
+Silencing it would hide the defect and trade a clean `-EINVAL` for a DMA write past
+the end of a mapping. `0008` touches exactly one file
+(`drivers/media/platform/rockchip/rkvenc/rkvenc_hw.c`); `rkvenc_service.c` is
+byte-unchanged.
+
+**What would clear the marker.** A board with the series applied, `mpph264enc`
+reachable, and the `guardrail: … outside iova` line absent from a real encode —
+which in practice requires defects 1 and 3 to be addressed first. Until then this
+row stays `UNVALIDATED` and nothing should describe the edge-track encoder as
+working.
+
 ### I2S MCLK gate clocks — skipped, known regression on Rock 5B+
 
 The lore Message-ID this repository tracked is **v3**. The version that reached
@@ -336,11 +398,14 @@ is unchanged and `patches/` regenerates byte-identically.
 | VDPU381 VP9 decode | tracked only — **do not import** | <https://lore.kernel.org/r/20260726-b4-add-rkvdec2-vp9-vdpu381-v1-0-180fb2d1f10c@gmail.com> (PATCHv1) | `sent-v1` — not merged | n/a — not carried | 2026-08-08 | Out of the chosen lane: a decode feature, not metrics/PM. Row exists so a future reader can see it was considered and excluded on purpose |
 | VDPU381 multi-core (H.264/H.265) | tracked only — **do not import** | <https://lore.kernel.org/r/20260409-rkvdec-multicore-v1-0-62b316abf0f7@collabora.com> (PATCHv1) | `sent-v1` — not merged | n/a — not carried | 2026-08-08 | Same exclusion as the row above |
 
-The two first-party encoder patches (`dma_set_max_seg_size()` in the rkvenc probe,
-and the `system-uncached` dma-heap port) are added to the **current series** table
-above by the tasks that author them, T14 and T15. Both will be
-`first-party-no-upstream`, both `UNVALIDATED` on hardware, and the encoder's
-upstream position is the `0001` row's: WIP rkvenc, tracked only.
+The first of the two first-party encoder patches, `dma_set_max_seg_size()` in the
+rkvenc probe, **has landed as `0008`** and is now a row in
+[§ Current series members](#current-series-members): `first-party-no-upstream`,
+`UNVALIDATED` on hardware, upstream position inherited from the `0001` row (WIP
+rkvenc, tracked only). The second — the `system-uncached` dma-heap port — is not
+written and is deliberately not scheduled here: ARM cache-alias handling done
+subtly wrong yields silent intermittent corruption in the video path, so it needs a
+validation campaign rather than a patch.
 
 ### V4L2 HW usage stats (fdinfo) — skipped, the key names are already agreed to change
 

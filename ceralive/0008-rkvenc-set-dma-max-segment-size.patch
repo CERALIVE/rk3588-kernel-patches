@@ -1,0 +1,55 @@
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.c
+@@ -8,6 +8,7 @@
+ 
+ #include <linux/clk.h>
+ #include <linux/delay.h>
++#include <linux/dma-mapping.h>
+ #include <linux/iopoll.h>
+ #include <linux/ioport.h>
+ #include <linux/interrupt.h>
+@@ -802,9 +803,43 @@
+ 	int ret;
+ 	struct resource *res;
+ 	struct device *dev = &pdev->dev;
++	const unsigned int max_seg_size = DMA_BIT_MASK(32);
+ 
+ 	enc->dev = dev;
+ 
++	/*
++	 * Cap the DMA segment size at the device's 32-bit addressing width.
++	 *
++	 * rkvenc_dma_import_fd() records an imported buffer's length as
++	 * sg_dma_len(sgt->sgl) -- the FIRST mapped segment only. With no max
++	 * segment size of our own, dma_get_max_seg_size() answers the SZ_64K
++	 * default and iommu-dma's __finalise_sg() stops coalescing there, so
++	 * every import larger than 64 KiB is recorded as exactly 0x10000 bytes.
++	 *
++	 * Expected effect: an imported buffer's recorded length becomes the FULL
++	 * buffer length, so a frame's plane offsets resolve inside the mapped
++	 * window instead of past its truncated end.
++	 *
++	 * The IOVA guardrail in rkvenc_service.c is deliberately NOT touched. It
++	 * is correct: it rejects a register that genuinely points outside the
++	 * window this bookkeeping described, and with that window truncated to
++	 * 64 KiB an NV12 chroma-plane offset genuinely is outside it. Relaxing
++	 * the guardrail would hide the bug rather than fix it.
++	 *
++	 * dma_set_max_seg_size() returns void, so verify the EFFECT rather than
++	 * a status: a device with no dma_parms only WARNs and leaves the SZ_64K
++	 * default in place, which is precisely the defect being fixed. Nothing
++	 * has been acquired at this point, so failing returns directly instead
++	 * of unwinding through the `failed` label, whose pm_runtime_disable()
++	 * would be unbalanced before pm_runtime_enable() has run.
++	 */
++	dma_set_max_seg_size(dev, max_seg_size);
++	if (dma_get_max_seg_size(dev) != max_seg_size) {
++		dev_err(dev, "failed to set DMA max segment size to %u\n",
++			max_seg_size);
++		return -EINVAL;
++	}
++
+ 	/* Read task-capacity from DTS */
+ 	ret = of_property_read_u32(dev->of_node, "rockchip,task-capacity",
+ 				   &enc->task_capacity);

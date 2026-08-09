@@ -93,9 +93,10 @@ REGISTRY_RULE_RE = re.compile(r"^:?-{3,}:?$")
 SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 
 # Slot count, not member count. 0004 was never published upstream and we keep the
-# gap so our files line up 1:1 with theirs, hence ordinals 1/7, 2/7, 3/7, 5/7, 6/7.
-# 0007 continues the same counter into the backports/ lane.
-SERIES_TOTAL = 7
+# gap so our files line up 1:1 with theirs, hence ordinals 1/8, 2/8, 3/8, 5/8, 6/8.
+# 0007 continues the same counter into the backports/ lane, and 0008 back into
+# ceralive/.
+SERIES_TOTAL = 8
 
 DS_STORE_RE = re.compile(r"^Binary files .*\.DS_Store .* differ$")
 HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
@@ -248,6 +249,70 @@ SERIES: tuple[Patch, ...] = (
                 "carries no Fixes: tag and no Cc: stable, so 7.1.y will not pick it up on its",
                 "own. Retire this backport when the pinned base reaches v7.2.",
             ),
+        ),
+    ),
+    Patch(
+        filename="0008-rkvenc-set-dma-max-segment-size.patch",
+        ordinal=8,
+        subject=(
+            "media: rockchip: rkvenc: set the DMA max segment size "
+            "in the hardware probe"
+        ),
+        provenance=NULL_OID,
+        author="CeraLive <dev@ceralive.tv>",
+        date="Sat, 8 Aug 2026 12:00:00 -0500",
+        origin=CERALIVE,
+        rationale=(
+            "*** UNVALIDATED ON HARDWARE. *** This compiles and is source-correct; the",
+            "runtime behaviour it predicts has NOT been observed on a board. Do not read",
+            "it as a claim that MPP hardware encode now works on the edge track.",
+            "",
+            "Origin: the root-cause analysis recorded as defect 2 of 3 in the CeraLive",
+            "image-building-pipeline AGENTS.md KNOWN ISSUE on MPP hardware video encode",
+            "not working on the edge kernel -- a Rock 5B+ board diagnosis, 2026-08-02.",
+            "",
+            "rkvenc_dma_import_fd() records an imported dma-buf's length as",
+            "sg_dma_len(sgt->sgl) -- the FIRST mapped segment only, not the mapping's total",
+            "length. That is only ever correct when the mapping is a single segment, and",
+            "0001 never told the DMA layer how long a segment may be. dma_get_max_seg_size()",
+            "therefore answers its SZ_64K default (include/linux/dma-mapping.h), and",
+            "iommu-dma's __finalise_sg() stops coalescing at that boundary",
+            "(drivers/iommu/dma-iommu.c: max_len = dma_get_max_seg_size(dev), then",
+            "`max_len - cur_len >= s_length`). Every import larger than 64 KiB is recorded",
+            "as exactly 0x10000 bytes -- which is the window width the board reported, in",
+            "every failing case.",
+            "",
+            "Expected effect: with the cap raised to the device's 32-bit addressing width,",
+            "an imported buffer's recorded length becomes the FULL buffer length, so a",
+            "frame's plane offsets resolve inside the mapped window instead of past its",
+            "truncated end.",
+            "",
+            "The IOVA guardrail in rkvenc_service.c is deliberately NOT touched. It is",
+            "correct: it rejects a register that genuinely points outside the window this",
+            "bookkeeping described, and with that window truncated to 64 KiB an NV12",
+            "chroma-plane offset genuinely is outside it. Silencing the guardrail would hide",
+            "the defect one layer down instead of fixing it, and would trade a clean -EINVAL",
+            "for a DMA write past the end of a mapping.",
+            "",
+            "The call is checked, not fire-and-forget -- but NOT by its return value, which",
+            "does not exist at this base. At v7.1.7 dma_set_max_seg_size() returns void and",
+            "merely WARN_ON_ONCE()s when dev->dma_parms is NULL, leaving the SZ_64K default",
+            "in place. So the probe reads the value back with dma_get_max_seg_size() and",
+            "fails with -EINVAL if it did not take: that verifies the EFFECT rather than a",
+            "status, and the state it refuses to boot into is exactly the defect above. The",
+            "platform bus does point dma_parms at the platform_device's own storage",
+            "(drivers/base/platform.c setup_pdev_dma_masks), so this is expected to pass on",
+            "every rkvenc core; the check exists so a future base that changes that fails",
+            "loudly at probe rather than silently truncating every frame.",
+            "",
+            "Placed before pm_runtime_enable()/device_init_wakeup(), so the failure path is",
+            "a plain return rather than the `failed` label -- unwinding there would call",
+            "pm_runtime_disable() without a matching enable.",
+            "",
+            "This is one of THREE stacked defects on that track. It does not address the",
+            "other two, both of which are userspace/heap problems: librockchip-mpp asks for",
+            "a `system-uncached` dma-heap that mainline does not register, and mainline has",
+            "no uncached heap for it to fall back to.",
         ),
     ),
 )
@@ -803,8 +868,8 @@ def write_series(out_dir: Path, pin: dict[str, str]) -> None:
         "# git-am order for the CeraLive RK3588 series.",
         "# Upstream numbering is preserved verbatim -- 0004 was never published,",
         "# so the gap is intentional. Do not renumber to close it.",
-        "# 0006 is first-party (ceralive/) and 0007 is a backport (backports/);",
-        "# both continue the same counter.",
+        "# 0006 and 0008 are first-party (ceralive/) and 0007 is a backport",
+        "# (backports/); all three continue the same counter.",
         f"# Target kernel: {pin['KERNEL_TAG']} ({pin['KERNEL_COMMIT']})",
         *(
             f"# Retired slot {e.ordinal}: {e.filename} -- see retired/REGISTRY.md"

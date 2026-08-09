@@ -1,8 +1,8 @@
 # git-am order for the CeraLive RK3588 series.
 # Upstream numbering is preserved verbatim -- 0004 was never published,
 # so the gap is intentional. Do not renumber to close it.
-# 0006 is first-party (ceralive/) and 0007 is a backport (backports/);
-# both continue the same counter.
+# 0006 and 0008 are first-party (ceralive/) and 0007 is a backport
+# (backports/); all three continue the same counter.
 # Target kernel: v7.1.7 (c7ba9d6de43e9d9bd755b1f3c19501a38898c6b6)
 0001-rockchip-rk3588-vepu580-encoder-support-v3.patch
 0002-rockchip-rk3588-hdmirx-edid-fix-v1.patch
@@ -10,3 +10,4 @@
 0005-rockchip-rk3588-hdmirx-audio.patch
 0006-rk3588-hdmirx-audio-sound-card.patch
 0007-iommu-rockchip-disable-fetch-dte-time-limit.patch
+0008-rkvenc-set-dma-max-segment-size.patch
