@@ -102,25 +102,9 @@ version comparison. Hence: track only.
 
 ### `0002` — one upstream answer, already in the base
 
-This is the one row that must not be read quickly.
-
-> **Corrected 2026-08-08 by T10.** An earlier revision of this row called the
-> 7.2-rc1 counterpart *"different work"* from `7dd27810eea0`. **It is not — they
-> are the same commit in two trees.** The correction, with sources, is in
-> [§ Resolution](#resolution--they-are-the-same-commit) below and in full in
-> [`EVAL-0002-EDID.md`](EVAL-0002-EDID.md).
-
-**Fact 1 — an upstream EDID fix is merged for 7.2-rc1.** The Collabora capture
-lists "HDMI-RX EDID fix (7.2-rc1)", PATCHv2 by Dmitry Osipenko:
-<https://lore.kernel.org/r/20260325105742.63236-1-dmitry.osipenko@collabora.com>.
-That is the counterpart T10 was chartered to evaluate `0002` against. Note that
-"HDMI-RX EDID fix" is the Collabora table's own label — it names the *symptom*.
-The patch's actual subject is *"media: synopsys: hdmirx: Fix HPD lane hold time"*,
-and that mismatch is where the confusion below came from.
-
-**Fact 2 — stable already shipped a fix for the same symptom, and it is in our
-base.** The T7 rebase found exactly one commit in the whole 744-commit
-`v7.1.5..v7.1.7` window touching anything this series touches:
+**The Collabora capture's "HDMI-RX EDID fix (7.2-rc1)" and the stable commit
+`7dd27810eea0` in our base are the same fix in two trees, not two separate
+efforts.** Evidence:
 
 ```
 commit 7dd27810eea05554d9b43f74022bee9b37a86ac4   (first appears in v7.1.6)
@@ -130,62 +114,42 @@ commit 7dd27810eea05554d9b43f74022bee9b37a86ac4   (first appears in v7.1.6)
     Closes: https://lore.kernel.org/r/20260209061654.54757-1-ross@r-sc.ca
 ```
 
-It changes two lines inside `hdmirx_hpd_ctrl()` — `msleep(100)` → `msleep(100 + 50)`
-— and its commit message names the *same* symptom `0002` exists to fix, "EDID
-change not detected by source/display side". It is **Reported-by Ross Cawston**,
-the author of `0001`–`0005`, and it `Closes:` his own posting dated **2026-02-09**,
-the same date `0002` carries.
+The Collabora table's label names the *symptom* ("EDID fix"); the patch's own
+subject is *"Fix HPD lane hold time"*. Message-ID
+`20260325105742.63236-1-dmitry.osipenko@collabora.com` (patchwork id `14494411`,
+project `linux-rockchip`) resolves to that same subject and to mainline
+`d1162a5adbb5` (author date `2026-03-25T10:57:42Z` matches the posting to the
+second; committed by Hans Verkuil 2026-05-05; contained in `v7.2-rc1`, not in
+`v7.1`). `7dd27810eea0`'s own second line, `commit d1162a5adbb5… upstream.`,
+confirms it is that same commit picked up via `Cc: stable`. It changes two lines
+inside `hdmirx_hpd_ctrl()` — `msleep(100)` → `msleep(100 + 50)` — fixing the same
+symptom `0002` exists for ("EDID change not detected by source/display side"),
+reported by Ross Cawston (author of `0001`–`0005`) on 2026-02-09, the same date
+`0002` carries.
 
-**What is settled.** It is not a rebase problem. `0002` only *adds call sites* to
+**`0002` is unaffected by it.** `0002` only *adds call sites* to
 `hdmirx_hpd_ctrl()` and rewires the EDID-write, signal-lock and DMA-reset paths;
-it shares no line with the stable fix, and being net-zero lines the stable fix did
-not even shift a hunk offset. `0002` applies at `v7.1.7` with offsets only, and
-the content check shows none of its own symbols (`WAIT_SIGNAL_LOCK_TIME`,
-`NO_LOCK_CFG_RETRY_TIME`, `WAIT_LOCK_STABLE_TIME`) exist in the base.
+it shares no line with the stable fix, which is net-zero lines and did not shift
+a hunk offset. `0002` applies at `v7.1.7` with offsets only, and none of its own
+symbols (`WAIT_SIGNAL_LOCK_TIME`, `NO_LOCK_CFG_RETRY_TIME`,
+`WAIT_LOCK_STABLE_TIME`) exist in the base. The counterpart itself applies to
+`v7.1.7` as a **no-op** (forward `git apply --check` fails, reverse succeeds,
+`--3way` yields an empty diff), and it does not overlap `0002` — 2 lines of
+HPD-hold duration versus `0002`'s 8 hunks of IRQ masking, lock-loop rework, phy
+retry and DMA reset. **Verdict: KEEP `0002`.** Full write-up:
+[`REBASE-v7.1.7.md` § Stable overlap](REBASE-v7.1.7.md#stable-overlap--7dd27810eea0-and-why-it-is-not-a-conflict)
+and [`EVAL-0002-EDID.md`](EVAL-0002-EDID.md).
 
-**What is NOT settled, and is the open, hardware-gated question T7 ledgered:**
+**Open, hardware-gated question — unresolved:**
 
 > With `7dd27810eea0` in the base, is `0002`'s plugout/IRQ/HPD sequence still
 > required for a source to re-read a written EDID, or is the +50 ms hold now
 > sufficient on its own?
 
-Nobody has answered it, because answering it needs a real HDMI source and an
-RK3588 board, and this repository gates patch application only. The full write-up
-is [`REBASE-v7.1.7.md` § Stable overlap](REBASE-v7.1.7.md#stable-overlap--7dd27810eea0-and-why-it-is-not-a-conflict).
-
-### Resolution — they are the same commit
-
-T10 disambiguated this on 2026-08-08. There are **not** two upstream answers.
-There is one, and it has been in our base since `v7.1.6`:
-
-- The Message-ID `20260325105742.63236-1-dmitry.osipenko@collabora.com` resolves
-  (patchwork id `14494411`, project `linux-rockchip`) to
-  **`[v2] media: synopsys: hdmirx: Fix HPD lane hold time`** — not to a separately
-  titled EDID series.
-- That posting is mainline **`d1162a5adbb5`** (author date `2026-03-25T10:57:42Z`
-  matches the posting to the second; committed by Hans Verkuil 2026-05-05).
-  Containment check against mainline: `v7.2-rc1` contains it, `v7.1` does not.
-- `7dd27810eea0`'s own second line reads `commit d1162a5adbb5… upstream.` — the
-  stable-backport marker. It **is** that commit, picked up via `Cc: stable`.
-
-So "the 7.2-rc1 EDID fix" and "the stable HPD-hold-time fix" are one two-line
-change in two trees, and we already carry it. The February/March gap that looked
-like two efforts is simply report-then-fix: Ross Cawston reported the symptom on
-2026-02-09, Collabora fixed it in March.
-
-**Consequence — evaluated, and the answer is KEEP.** Adoption is not merely
-rejected, it is impossible: the counterpart applies to `v7.1.7` as a **no-op**
-(forward `git apply --check` fails, reverse succeeds, `--3way` yields an empty
-diff). It also does not overlap `0002` — 2 lines of HPD-hold duration versus
-`0002`'s 8 hunks of IRQ masking, lock-loop rework, phy retry and DMA reset. The
-full verdict, against all five criteria, is [`EVAL-0002-EDID.md`](EVAL-0002-EDID.md).
-
-**What this does not resolve.** The hardware-gated question above is unchanged.
-Knowing the +50 ms hold is the *only* upstream answer narrows it; it does not
-settle it. No board was involved in this evaluation, and none of it is
-board-verified. The standing bar applies and is quoted in the verdict doc: the
-in-house `0002` "is already working very well", so the threshold for replacing it
-is high — and nothing came close to it.
+Answering it needs a real HDMI source and an RK3588 board; this repository gates
+patch application only. Nothing here is board-verified. The standing bar
+applies: the in-house `0002` "is already working very well", so the threshold
+for replacing it is high, and nothing has come close to it.
 
 **4K60 revisit, 2026-08-08 — verdict unchanged, held more firmly.** Both shipped
 boards are specified for 4K@60 HDMI input. Decoding the driver's built-in

@@ -265,24 +265,11 @@ board has to demonstrate before anyone calls this working is enumerated in
 
 ### Why not the `sfqr0414` fork
 
-There is another public fork, `sfqr0414/rockchip-rk3588-mainline-patches`, which
-repackages the driver as a DKMS module. This fork does not use it, for three
-reasons:
-
-- **Stale.** Last push 2026-02-10. Upstream has moved since — most importantly
-  `0005` (HDMI-RX audio), added 2026-07-01, does not exist there at all. HDMI-RX
-  audio capture is directly relevant to CeraLive.
-- **v1-based.** It forked at upstream's `f9f342e` ("first commit"), which carried
-  the **v1** VEPU580 patch. Upstream has since shipped v2 and v3, and its own
-  commit `0959558` is titled "fix dts and update encoder patch". The `sfqr0414`
-  tree never picked those up.
-- **Hardware-untested, and largely machine-generated.** Its history
-  (`Initial plan` → `Extract driver files…` → `Add compat.h, Makefile, dkms.conf…`
-  → `Complete documentation…`, merged from a `copilot/…` branch) shows an
-  automated extraction. No evidence of validation on an RK3588 board exists.
-
-Forking `rcawston` directly stays on the maintained line, with the encoder patch
-at v3 and the audio patch present.
+The `sfqr0414/rockchip-rk3588-mainline-patches` fork was evaluated and rejected:
+stale (last push 2026-02-10, predates `0005`), v1-based VEPU580 patch (upstream
+has since shipped v2 and v3), and hardware-untested with a machine-generated
+history. Forking `rcawston` directly stays on the maintained line, with the
+encoder patch at v3 and the audio patch present.
 
 ---
 
