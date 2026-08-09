@@ -11,3 +11,4 @@
 0006-rk3588-hdmirx-audio-sound-card.patch
 0007-iommu-rockchip-disable-fetch-dte-time-limit.patch
 0008-rkvenc-set-dma-max-segment-size.patch
+0009-dma-buf-heaps-add-system-uncached-dma-heap.patch

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Sat, 8 Aug 2026 12:00:00 -0500
-Subject: [PATCH 8/8] media: rockchip: rkvenc: set the DMA max segment size in the hardware probe
+Subject: [PATCH 8/9] media: rockchip: rkvenc: set the DMA max segment size in the hardware probe
 
 *** UNVALIDATED ON HARDWARE. *** This compiles and is source-correct; the
 runtime behaviour it predicts has NOT been observed on a board. Do not read

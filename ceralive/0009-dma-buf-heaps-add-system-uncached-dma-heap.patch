@@ -1,0 +1,255 @@
+diff --git a/drivers/dma-buf/heaps/Kconfig b/drivers/dma-buf/heaps/Kconfig
+--- a/drivers/dma-buf/heaps/Kconfig
++++ b/drivers/dma-buf/heaps/Kconfig
+@@ -5,6 +5,31 @@
+ 	  Choose this option to enable the system dmabuf heap. The system heap
+ 	  is backed by pages from the buddy allocator. If in doubt, say Y.
+ 
++config DMABUF_HEAPS_SYSTEM_UNCACHED
++	bool "DMA-BUF System Uncached Heap"
++	depends on DMABUF_HEAPS_SYSTEM
++	depends on ARCH_HAS_DMA_PREP_COHERENT
++	help
++	  Choose this option to additionally export the system heap's pages
++	  under the name "system-uncached": mapped non-cacheable rather than
++	  cacheable, and with the CPU-sync half of DMA_BUF_IOCTL_SYNC reduced
++	  to a no-op because there is nothing left to synchronise.
++
++	  This exists for allocators that select a heap by hard-coded name and
++	  expect uncached memory from that name. Rockchip's MPP userspace is
++	  one: it cannot initialise the RK3588 hardware video encoder at all
++	  when /dev/dma_heap/system-uncached is absent.
++
++	  ARCH_HAS_DMA_PREP_COHERENT is a hard dependency, not a nicety. On an
++	  architecture that stubs out arch_dma_prep_coherent() this heap would
++	  hand back ordinary CACHED memory under an uncached name, which is
++	  worse than not offering the heap at all.
++
++	  Note the kernel's cacheable linear-map alias of these pages is left
++	  in place; the heap guarantees only that its own mappings are
++	  non-cacheable and that no dirty lines survive allocation. If in
++	  doubt, say N.
++
+ config DMABUF_HEAPS_CMA
+ 	bool "DMA-BUF CMA Heap"
+ 	depends on DMABUF_HEAPS && DMA_CMA
+diff --git a/drivers/dma-buf/heaps/system_heap.c b/drivers/dma-buf/heaps/system_heap.c
+--- a/drivers/dma-buf/heaps/system_heap.c
++++ b/drivers/dma-buf/heaps/system_heap.c
+@@ -14,6 +14,7 @@
+ #include <linux/dma-buf.h>
+ #include <linux/dma-mapping.h>
+ #include <linux/dma-heap.h>
++#include <linux/dma-map-ops.h>
+ #include <linux/err.h>
+ #include <linux/highmem.h>
+ #include <linux/mem_encrypt.h>
+@@ -27,6 +28,7 @@
+ 
+ struct system_heap_priv {
+ 	bool cc_shared;
++	bool uncached;
+ };
+ 
+ struct system_heap_buffer {
+@@ -38,6 +40,7 @@
+ 	int vmap_cnt;
+ 	void *vaddr;
+ 	bool cc_shared;
++	bool uncached;
+ };
+ 
+ struct dma_heap_attachment {
+@@ -46,6 +49,7 @@
+ 	struct list_head list;
+ 	bool mapped;
+ 	bool cc_shared;
++	bool uncached;
+ };
+ 
+ #define LOW_ORDER_GFP (GFP_HIGHUSER | __GFP_ZERO)
+@@ -129,6 +133,7 @@
+ 	INIT_LIST_HEAD(&a->list);
+ 	a->mapped = false;
+ 	a->cc_shared = buffer->cc_shared;
++	a->uncached = buffer->uncached;
+ 
+ 	attachment->priv = a;
+ 
+@@ -162,6 +167,13 @@
+ 	int ret;
+ 
+ 	attrs = a->cc_shared ? DMA_ATTR_CC_SHARED : 0;
++	/*
++	 * An uncached buffer's pages were cleaned to the point of coherency
++	 * at allocation and are never written through a cacheable mapping
++	 * afterwards, so map-time cache maintenance has nothing to do.
++	 */
++	if (a->uncached)
++		attrs |= DMA_ATTR_SKIP_CPU_SYNC;
+ 	ret = dma_map_sgtable(attachment->dev, table, direction, attrs);
+ 	if (ret)
+ 		return ERR_PTR(ret);
+@@ -175,9 +187,10 @@
+ 				      enum dma_data_direction direction)
+ {
+ 	struct dma_heap_attachment *a = attachment->priv;
++	unsigned long attrs = a->uncached ? DMA_ATTR_SKIP_CPU_SYNC : 0;
+ 
+ 	a->mapped = false;
+-	dma_unmap_sgtable(attachment->dev, table, direction, 0);
++	dma_unmap_sgtable(attachment->dev, table, direction, attrs);
+ }
+ 
+ static int system_heap_dma_buf_begin_cpu_access(struct dma_buf *dmabuf,
+@@ -191,10 +204,20 @@
+ 	if (buffer->vmap_cnt)
+ 		invalidate_kernel_vmap_range(buffer->vaddr, buffer->len);
+ 
+-	list_for_each_entry(a, &buffer->attachments, list) {
+-		if (!a->mapped)
+-			continue;
+-		dma_sync_sgtable_for_cpu(a->dev, &a->table, direction);
++	/*
++	 * A CPU-sync no-op ONLY where the memory is genuinely uncached: an
++	 * uncached buffer is mapped non-cacheable in both the userspace and
++	 * the vmap alias this heap hands out, so there are no cache lines to
++	 * invalidate or write back and the sync would be busywork. A cached
++	 * buffer still takes the full sync below -- skipping it there is what
++	 * silently corrupts a video frame.
++	 */
++	if (!buffer->uncached) {
++		list_for_each_entry(a, &buffer->attachments, list) {
++			if (!a->mapped)
++				continue;
++			dma_sync_sgtable_for_cpu(a->dev, &a->table, direction);
++		}
+ 	}
+ 	mutex_unlock(&buffer->lock);
+ 
+@@ -212,10 +235,13 @@
+ 	if (buffer->vmap_cnt)
+ 		flush_kernel_vmap_range(buffer->vaddr, buffer->len);
+ 
+-	list_for_each_entry(a, &buffer->attachments, list) {
+-		if (!a->mapped)
+-			continue;
+-		dma_sync_sgtable_for_device(a->dev, &a->table, direction);
++	/* See the note in system_heap_dma_buf_begin_cpu_access(). */
++	if (!buffer->uncached) {
++		list_for_each_entry(a, &buffer->attachments, list) {
++			if (!a->mapped)
++				continue;
++			dma_sync_sgtable_for_device(a->dev, &a->table, direction);
++		}
+ 	}
+ 	mutex_unlock(&buffer->lock);
+ 
+@@ -235,6 +261,8 @@
+ 	prot = vma->vm_page_prot;
+ 	if (buffer->cc_shared)
+ 		prot = pgprot_decrypted(prot);
++	if (buffer->uncached)
++		prot = pgprot_writecombine(prot);
+ 
+ 	for_each_sgtable_sg(table, sg, i) {
+ 		unsigned long n = sg->length >> PAGE_SHIFT;
+@@ -284,6 +312,8 @@
+ 	prot = PAGE_KERNEL;
+ 	if (buffer->cc_shared)
+ 		prot = pgprot_decrypted(prot);
++	if (buffer->uncached)
++		prot = pgprot_writecombine(prot);
+ 	vaddr = vmap(pages, npages, VM_MAP, prot);
+ 	vfree(pages);
+ 
+@@ -406,6 +436,7 @@
+ 	unsigned int max_order = orders[0];
+ 	struct system_heap_priv *priv = dma_heap_get_drvdata(heap);
+ 	bool cc_shared = priv->cc_shared;
++	bool uncached = priv->uncached;
+ 	struct dma_buf *dmabuf;
+ 	struct sg_table *table;
+ 	struct scatterlist *sg;
+@@ -422,6 +453,7 @@
+ 	buffer->heap = heap;
+ 	buffer->len = len;
+ 	buffer->cc_shared = cc_shared;
++	buffer->uncached = uncached;
+ 
+ 	INIT_LIST_HEAD(&pages);
+ 	i = 0;
+@@ -464,6 +496,32 @@
+ 		}
+ 	}
+ 
++	/*
++	 * __GFP_ZERO zeroed these pages through the cacheable linear map, so
++	 * they arrive with dirty cache lines. Clean them to the point of
++	 * coherency exactly once, here, before the buffer is ever mapped
++	 * non-cacheable -- otherwise an eviction of those stale lines would
++	 * later land on top of data the device, or a non-cacheable writer,
++	 * has already stored.
++	 *
++	 * arch_dma_prep_coherent() is the same primitive dma_direct_alloc()
++	 * uses to hand out coherent memory, so this introduces no new cache
++	 * maintenance policy. DMABUF_HEAPS_SYSTEM is bool, so this file is
++	 * built in and needs no exported symbol for it.
++	 *
++	 * Allocation failure needs no new handling and gets none: the error
++	 * paths below are reached with the pages in their ordinary state,
++	 * because nothing here changes the linear-map attributes -- a
++	 * cleaned page is an ordinary page and __free_pages() takes it back
++	 * unchanged. There is deliberately NO fallback to cached memory on
++	 * any path: a caller that asked this heap for a buffer either gets
++	 * an uncached one or gets an error.
++	 */
++	if (uncached) {
++		for_each_sgtable_sg(table, sg, i)
++			arch_dma_prep_coherent(sg_page(sg), sg->length);
++	}
++
+ 	/* create the dmabuf */
+ 	exp_info.exp_name = dma_heap_get_name(heap);
+ 	exp_info.ops = &system_heap_buf_ops;
+@@ -511,6 +569,10 @@
+ 	.cc_shared = true,
+ };
+ 
++static struct system_heap_priv system_heap_uncached_priv = {
++	.uncached = true,
++};
++
+ static int __init system_heap_create(void)
+ {
+ 	struct dma_heap_export_info exp_info;
+@@ -524,6 +586,29 @@
+ 	if (IS_ERR(sys_heap))
+ 		return PTR_ERR(sys_heap);
+ 
++	if (IS_ENABLED(CONFIG_DMABUF_HEAPS_SYSTEM_UNCACHED)) {
++		/*
++		 * The name is a userspace ABI, not a label. An allocator picks
++		 * a heap by opening /dev/dma_heap/<name>, and the allocator this
++		 * heap exists for hard-codes "system-uncached" with no override:
++		 * spell it any other way and the heap is unreachable, which is
++		 * the exact failure being fixed.
++		 *
++		 * Only the name is registered here. The resulting node's mode and
++		 * ownership stay the udev policy's business, exactly as they are
++		 * for the heaps above.
++		 */
++		exp_info.name = "system-uncached";
++		exp_info.priv = &system_heap_uncached_priv;
++
++		sys_heap = dma_heap_add(&exp_info);
++		if (IS_ERR(sys_heap)) {
++			pr_err("dma-buf system heap: cannot register system-uncached: %pe\n",
++			       sys_heap);
++			return PTR_ERR(sys_heap);
++		}
++	}
++
+ 	if (IS_ENABLED(CONFIG_HIGHMEM) ||
+ 	    !cc_platform_has(CC_ATTR_MEM_ENCRYPT))
+ 		return 0;

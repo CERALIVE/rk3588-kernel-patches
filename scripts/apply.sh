@@ -168,6 +168,24 @@ else
 	fail=1
 fi
 
+# 0009's entire userspace contract is the heap NAME: librockchip-mpp opens
+# /dev/dma_heap/system-uncached by hard-coded string and has no override. A typo
+# is therefore silent — a node appears, under a name nothing asks for — so assert
+# the literal rather than the feature.
+if grep -q '"system-uncached"' drivers/dma-buf/heaps/system_heap.c; then
+	echo "  ok      the system-uncached heap name is spelled exactly"
+else
+	echo "  MISSING the literal \"system-uncached\" in system_heap.c" >&2
+	fail=1
+fi
+
+if grep -q 'DMABUF_HEAPS_SYSTEM_UNCACHED' drivers/dma-buf/heaps/Kconfig; then
+	echo "  ok      CONFIG_DMABUF_HEAPS_SYSTEM_UNCACHED is selectable"
+else
+	echo "  MISSING DMABUF_HEAPS_SYSTEM_UNCACHED in dma-buf/heaps/Kconfig" >&2
+	fail=1
+fi
+
 # 0005 registers the ASoC codec; 0006 is what turns it into an ALSA card. Assert
 # both halves, and assert them per board: enabling hdmi_receiver without also
 # enabling hdmirx_sound + i2s7_8ch is precisely the silent no-capture-card state

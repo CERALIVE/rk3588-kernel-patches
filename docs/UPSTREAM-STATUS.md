@@ -1,7 +1,7 @@
 # Upstream status and retire-on-merge tracking
 
 **Base pin at last check:** `v7.1.7` — see [`kernel-pin.env`](../kernel-pin.env).
-**Last full sweep:** 2026-08-08.
+**Last full sweep:** 2026-08-08. **Rows added since:** `0009` (2026-08-09).
 
 This repository carries out-of-tree patches. Every one of them is either waiting
 for an upstream counterpart, tracking one, or has none and never will. This table
@@ -15,6 +15,8 @@ Related:
 [`README.md`](../README.md) (what each patch does) ·
 [`docs/REBASE-v7.1.7.md`](REBASE-v7.1.7.md) (does it still apply?) ·
 [`docs/PROVENANCE.md`](PROVENANCE.md) (who wrote it, under what licence) ·
+[`docs/BOARD-QUALIFICATION.md`](BOARD-QUALIFICATION.md) (what a real board has to
+demonstrate before an `UNVALIDATED` marker may be cleared) ·
 [`retired/REGISTRY.md`](../retired/REGISTRY.md) (what actually happens when a row's
 retire trigger fires).
 
@@ -55,14 +57,16 @@ against a source**, not the date the patch was last touched.
 
 ## Current series members
 
-The series has seven members. `0004` is a deliberate ordinal gap — upstream never
+The series has eight members. `0004` is a deliberate ordinal gap — upstream never
 published one — and is not a row here for the same reason it is not a patch.
 
 A row may carry an **`UNVALIDATED`** marker. That is a statement about *our* patch,
 not about an upstream counterpart: it means the patch is source-correct and compiles
 into a real kernel `.deb`, but the runtime behaviour it predicts has never been
 observed on a board. It is orthogonal to the upstream-status token — a patch can be
-`first-party-no-upstream` and validated, or unvalidated, independently.
+`first-party-no-upstream` and validated, or unvalidated, independently. What clears
+the marker for a given patch is written down, per patch, in
+[`BOARD-QUALIFICATION.md`](BOARD-QUALIFICATION.md); nothing else clears it.
 
 | Patch | Origin | Upstream status | Retire trigger | Last checked | Notes |
 |---|---|---|---|---|---|
@@ -72,7 +76,8 @@ observed on a board. It is orthogonal to the upstream-status token — a patch c
 | `0005` hdmirx audio | `upstream/` lane — Ross Cawston, same import. Upstream counterpart is the 4-patch series **`[PATCH v4 0/4] media: synopsys: hdmirx: add HDMI audio capture support`** by Igor Paunovic, <https://lore.kernel.org/r/20260721064115.64809-1-royalnet026@gmail.com> — same mechanism, *competing* DT half | `sent-v4` — fully reviewed, **not merged**; author pinged for pickup 2026-08-05, unanswered | Counterpart merges **and** base reaches that version **and** Rock 5B+ enablement exists **and** the multichannel / jack / plugout regressions are closed. All four | 2026-08-08 | **Upstream version rejected: adoptable but not strictly better** — applies cleanly to `v7.1.7`, but drops multichannel, jack reporting, plugout teardown and pre-capture clock lock, and its 4/4 enables the card on **Orange Pi 5 Plus only**. Verdict: [`EVAL-0005-AUDIO.md`](EVAL-0005-AUDIO.md). Read [§ 0005 / 0006](#0005--0006--the-pairing-is-load-bearing-and-upstream-does-not-replace-it) |
 | `0006` hdmirx audio sound card | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Upstream counterpart: **partial only** — v4 3/4 covers the SoC-level card, v4 4/4 covers Orange Pi 5 Plus; **nothing upstream covers Rock 5B+** | `first-party-no-upstream` | Only if an upstream HDMI-RX audio series lands its own DT sound card **and** enables it on Rock 5B+ *and* Orange Pi 5+. As of 2026-08-08 the posted series does not | 2026-08-08 | **T11 answer: NOT superseded, and NOT compatible.** `0006` and v4 3/4 edit the same two regions of `rk3588-extra.dtsi` and disagree on `#sound-dai-cells` (`<0>` vs `<1>`); `git apply --check` of `0006` onto an upstream-applied tree fails. Modelled on the BSP's `hdmiin-sound` wiring, expressed with mainline `simple-audio-card`; no BSP text copied |
 | `0007` iommu dte-limit fix | `backports/` lane — **backported from mainline** `8d4346ecd4950ae08cc76a6de327c264e846758c` "iommu/rockchip: disable fetch dte time limit", Simon Xue via Sven Püschel (Pengutronix), PATCHv2, <https://lore.kernel.org/r/20260428-spu-iommudtefix-v2-1-f592f579e508@pengutronix.de> | `merged@7.2-rc1` — `Acked-by` Heiko Stuebner, applied by Joerg Roedel 2026-06-02. **Absent from the base**: it carries no `Fixes:` tag and no `Cc: stable`, so `7.1.y` never picked it up | **Drop when base ≥ `v7.2`.** The base absorbing it is the whole retire condition — there is no merit question left, it is already mainline | 2026-08-08 | Sets `BIT(31)` of `MMU_AUTO_GATING` in `rk_iommu_enable()`, the vendor workaround for the RK356x/RK3588 blocked-VOP-and-black-screen and RK3588 RGA3 hang. Base check at `v7.1.7`: `DISABLE_FETCH_DTE_TIME_LIMIT` absent, `RK_MMU_AUTO_GATING` present. Applies forward with **no fuzz and no context adaptation**; **zero prerequisite commits**. Fixes:-tag sweep over mainline found **no follow-up** |
-| `0008` rkvenc DMA max segment size — **`UNVALIDATED` on hardware** | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Fixes a bookkeeping defect in `0001`, so its upstream position is the `0001` row's. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — upstream rkvenc is `WIP` (Collabora's Mesa/Vulkan work, the same tracker as `0001`), and there is no upstream VEPU580 H.264 driver to backport a fix from | Only if `0001` itself retires, i.e. if an upstream VEPU580 driver ever replaces it wholesale. **Do not retire it on the strength of "upstream rkvenc landed"** — see [§ `0001`](#0001--do-not-retire-on-rkvenc-landing), which applies verbatim | 2026-08-08 | Adds `dma_set_max_seg_size(dev, DMA_BIT_MASK(32))` to `rkvenc_hw_probe()`, then **reads it back** with `dma_get_max_seg_size()` and fails the probe with `-EINVAL` if it did not take. Defect 2 of the 3 stacked in the pipeline's "MPP hardware video encode" KNOWN ISSUE. The IOVA guardrail in `rkvenc_service.c` is **deliberately untouched** — it correctly catches the symptom. Read [§ `0008`](#0008--unvalidated-and-what-that-does-and-does-not-mean) |
+| `0008` rkvenc DMA max segment size — **`UNVALIDATED` on hardware** | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Fixes a bookkeeping defect in `0001`, so its upstream position is the `0001` row's. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — upstream rkvenc is `WIP` (Collabora's Mesa/Vulkan work, the same tracker as `0001`), and there is no upstream VEPU580 H.264 driver to backport a fix from | Only if `0001` itself retires, i.e. if an upstream VEPU580 driver ever replaces it wholesale. **Do not retire it on the strength of "upstream rkvenc landed"** — see [§ `0001`](#0001--do-not-retire-on-rkvenc-landing), which applies verbatim | 2026-08-08 | Adds `dma_set_max_seg_size(dev, DMA_BIT_MASK(32))` to `rkvenc_hw_probe()`, then **reads it back** with `dma_get_max_seg_size()` and fails the probe with `-EINVAL` if it did not take. Defect 2 of the 3 stacked in the pipeline's "MPP hardware video encode" KNOWN ISSUE. The IOVA guardrail in `rkvenc_service.c` is **deliberately untouched** — it correctly catches the symptom. Read [§ `0008`](#0008--unvalidated-and-what-that-does-and-does-not-mean). Hardware legs: [`BOARD-QUALIFICATION.md` §4](BOARD-QUALIFICATION.md) |
+| `0009` `system-uncached` dma-heap — **`UNVALIDATED` on hardware** | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Ported in shape from the ACK/Rockchip uncached heap; no upstream Linux counterpart exists — mainline `drivers/dma-buf/heaps/` carries `system`, `system_cc_shared` and CMA only. Its reason to exist is the same `0001`/MPP stack, so its upstream position is the `0001` row's | `first-party-no-upstream` — upstream rkvenc is `WIP` (Collabora's Mesa/Vulkan work, the same tracker as `0001`), and no mainline series proposes an uncached system heap | Retire when **either** mainline registers an uncached system heap under exactly the name `system-uncached`, **or** `0001` retires wholesale, **or** the userspace stops hard-coding the name (a `librockchip-mpp` with a heap-name override or a working cached-heap fallback). Not before: the shipped `librockchip-mpp1 1.5.0-1` has neither | 2026-08-09 | Registers a second dma-heap from `system_heap.c` using the file's existing per-heap drvdata mechanism: `pgprot_writecombine()` mappings, a one-time `arch_dma_prep_coherent()` clean at allocation, and `DMA_ATTR_SKIP_CPU_SYNC` + skipped `dma_sync_sgtable_*` **only** for that heap. Defects **1 and 3** of the 3 stacked in the pipeline's "MPP hardware video encode" KNOWN ISSUE (`0008` is defect 2). Gated by its own `CONFIG_DMABUF_HEAPS_SYSTEM_UNCACHED`, which `depends on ARCH_HAS_DMA_PREP_COHERENT` so it cannot build where it would silently hand back cached memory. Read [§ `0009`](#0009--why-hardware-proof-is-mandatory-here-and-not-merely-advisable) |
 
 ### `0001` — do not retire on rkvenc landing
 
@@ -273,11 +278,11 @@ then `max_len - cur_len >= s_length`).
 
 **What is NOT established.** That the fix makes hardware encode work. It cannot,
 on its own: the KNOWN ISSUE names **three** stacked defects and this is one of
-them. The other two are userspace/heap problems that no patch in this repository
-addresses — `librockchip-mpp` hard-codes a `system-uncached` dma-heap that mainline
-does not register, and mainline has no uncached heap for it to fall back to. So a
-correct `0008` is necessary and is certainly not sufficient, and no observation of
-`rkvenc` behaviour on a board has been made with it applied.
+them. The other two — `librockchip-mpp` hard-codes a `system-uncached` dma-heap
+that mainline does not register, and mainline has no uncached heap for it to fall
+back to — are now addressed by `0009`, which is **also `UNVALIDATED`**. So the
+series now covers all three defects in source and **none** of them on hardware. No
+observation of `rkvenc` behaviour on a board has been made with either applied.
 
 **The check is on the EFFECT, not on a return value — because there is no return
 value.** At `v7.1.7` `dma_set_max_seg_size()` is `static inline void`: it
@@ -301,10 +306,68 @@ the end of a mapping. `0008` touches exactly one file
 byte-unchanged.
 
 **What would clear the marker.** A board with the series applied, `mpph264enc`
-reachable, and the `guardrail: … outside iova` line absent from a real encode —
-which in practice requires defects 1 and 3 to be addressed first. Until then this
-row stays `UNVALIDATED` and nothing should describe the edge-track encoder as
-working.
+reachable, and the `guardrail: … outside iova` line absent from a real encode.
+Defects 1 and 3 now have a source-level answer in `0009`, so that precondition is
+no longer blocking — it is merely also unproven. The exact legs are
+[`BOARD-QUALIFICATION.md` §4](BOARD-QUALIFICATION.md) (with §3 as the
+prerequisite). Until they are ticked against transcripts this row stays
+`UNVALIDATED` and nothing should describe the edge-track encoder as working.
+
+### `0009` — why hardware proof is mandatory here, and not merely advisable
+
+`0009` is the second series member to carry an `UNVALIDATED` marker, and it is the
+one where the marker matters most. Every other patch in this series can be argued
+from source; this one cannot, and it is worth being exact about why.
+
+**What IS established.** The two defects were diagnosed on a real Rock 5B+ on
+2026-08-02 and recorded as defects 1 and 3 of 3 in the CeraLive
+`image-building-pipeline` `AGENTS.md` KNOWN ISSUE. Defect 1:
+`librockchip-mpp`'s dma-heap allocator table hard-codes `system-uncached` and has
+no environment override, so with no such heap the H.264 HAL's init-time allocation
+fails, `mpp_init(MPP_CTX_ENC, AVC)` fails, and the GStreamer plugin's registration
+probe skips `mpph264enc` entirely — the board logged
+`os_allocator_dma_heap_open open dma heap type 0 system-uncached failed!` followed
+by `hal_h264e_vepu580_init init vepu buffer failed ret: -1`. Defect 3: MPP performs
+no CPU cache maintenance on a heap it believes is uncached, so handed cached memory
+it produced 231,047 then 161,997 bytes for byte-identical input and intermittent
+CABAC decode failures. Both are measured facts, not inferences.
+
+**What is NOT established: anything about the runtime.** The patch compiles and the
+heap name is asserted by `apply.sh`. Neither says the memory behaves.
+
+**The cache-alias subtlety is precisely why compile-only is not enough.** `0009`
+makes the heap's own mappings non-cacheable — `pgprot_writecombine()` for `mmap()`
+and for the internal `vmap()` — and cleans the pages to the point of coherency once
+at allocation with `arch_dma_prep_coherent()`, because `__GFP_ZERO` zeroed them
+through the cacheable linear map. What it does **not** do is tear down that linear
+map alias. Those pages therefore keep a cacheable kernel alias for their whole
+lifetime, and on arm64 a Normal-NC and a Normal-Cacheable alias of the same page are
+architecturally permitted to lose coherency. The ACK/Rockchip heap this is ported
+from has shipped with exactly that property at very large scale, which is evidence
+and is not proof — and it is not evidence about this tree, this base or this board.
+
+The consequence is what makes the proof mandatory rather than advisable: **getting
+this subtly wrong does not produce an error.** It produces a frame that is slightly
+wrong, sometimes. There is no return code, no `WARN`, no `dmesg` line and no
+`-EINVAL` — which is the opposite of `0008`, whose failure mode is a probe that
+refuses to bind. A compile proves the heap exists; only a board can prove the memory
+behind it is coherent. The determinism and decode legs
+([`BOARD-QUALIFICATION.md`](BOARD-QUALIFICATION.md) §5 and §6, plus the soak in §6d
+and the pressure case in §6f) are the ones that can actually fail, and they are the
+reason this document exists.
+
+**What would clear the marker.** §2 through §7 of
+[`BOARD-QUALIFICATION.md`](BOARD-QUALIFICATION.md), ticked against pasted
+transcripts, on **both** boards. Nothing less, and specifically not "it encoded a
+clip".
+
+**What is deliberately not attempted, and must not be.** A
+`/dev/dma_heap/system-uncached` symlink or `mknod` alias onto an existing heap. It
+would make §2a and §3a pass and every later leg lie: aliasing the `system` heap
+hands MPP cached memory it will not synchronise, and aliasing the CMA heap caps out
+below 1080p (32 MiB pool fragmenting to a ~1.9 MiB largest run against a ~3.1 MiB
+1080p NV12 frame). The pipeline's KNOWN ISSUE names it a corruption trap and used it
+as a diagnostic instrument only.
 
 ### I2S MCLK gate clocks — skipped, known regression on Rock 5B+
 

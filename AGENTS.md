@@ -4,8 +4,9 @@
 
 Holds the **mainline-track RK3588 kernel patch series** for CeraLive: VEPU580
 hardware encoder plus three HDMI-RX fixes imported from upstream, one backported
-IOMMU fix, and two first-party patches — the device-tree half that makes HDMI-RX
-audio actually capturable, and a DMA segment-size fix to the encoder driver —
+IOMMU fix, and three first-party patches — the device-tree half that makes HDMI-RX
+audio actually capturable, a DMA segment-size fix to the encoder driver, and the
+`system-uncached` dma-heap the Rockchip MPP userspace requires by name —
 converted to a `git am` mailbox series and pinned to an exact kernel tag.
 
 Produces **patch text only** — no `.deb`, no kernel, no image artifact. It is
@@ -44,6 +45,7 @@ rk3588-kernel-patches/
 │   └── apply.sh               # the gate: verify -> clone pinned tag -> git am -> assert
 ├── docs/
 │   ├── UPSTREAM-STATUS.md     # per-patch upstream status + retire-on-merge triggers
+│   ├── BOARD-QUALIFICATION.md # the DEFERRED hardware checklist — every item unchecked, by design
 │   ├── EVAL-0002-EDID.md      # verdict: keep 0002; the 7.2-rc1 fix is already in the base
 │   ├── EVAL-0005-AUDIO.md     # verdict: keep 0005+0006; the lore v4 series drops Rock 5B+
 │   ├── PROVENANCE.md          # licence/provenance audit incl. the MIT-claim caveat
@@ -61,6 +63,8 @@ rk3588-kernel-patches/
 | Add a CeraLive-authored patch | `ceralive/<NNNN>-*.patch` + a `SERIES` entry with `origin=CERALIVE` in `scripts/build-series.py`, then regenerate |
 | Add a patch taken from mainline / lore | `backports/<NNNN>-*.patch` + a `SERIES` entry with `origin=BACKPORTS` **and** a `Backport(...)` — see [`backports/README.md`](backports/README.md) |
 | Whether a patch has an upstream counterpart / can be dropped yet | [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) |
+| What a real board must demonstrate before an `UNVALIDATED` marker comes off | [`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md) |
+| Why the `system-uncached` heap exists, and why its NAME is not negotiable | [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) § `0009` and `patches/0009-*`'s own mail header |
 | Why `0002` was kept instead of taking the upstream EDID fix | [`docs/EVAL-0002-EDID.md`](docs/EVAL-0002-EDID.md) |
 | Why `0005`+`0006` were kept instead of taking the lore HDMI-audio series | [`docs/EVAL-0005-AUDIO.md`](docs/EVAL-0005-AUDIO.md) |
 | Stop carrying a patch | **Never `git rm` it.** Move it to `retired/` and add a row — see [`retired/REGISTRY.md`](retired/REGISTRY.md) |
@@ -185,9 +189,10 @@ verbatim by CI, so it cannot rot the same way.
 **Upstream numbering is preserved, gap included: `0001`, `0002`, `0003`, `0005`.**
 There is no `0004` upstream. **Do NOT renumber to close the gap** — the 1:1 filename
 correspondence with upstream is what makes the import auditable. First-party and
-backported patches continue the same counter (`0006` and `0008` = `ceralive/`,
-`0007` = `backports/`), so the ordinals read `1/8`, `2/8`, `3/8`, `5/8`, `6/8`,
-`7/8`, `8/8` — the gap at 4 stays visible, which is the whole point.
+backported patches continue the same counter (`0006`, `0008` and `0009` =
+`ceralive/`, `0007` = `backports/`), so the ordinals read `1/9`, `2/9`, `3/9`,
+`5/9`, `6/9`, `7/9`, `8/9`, `9/9` — the gap at 4 stays visible, which is the whole
+point.
 
 **`0005` is driver-only; `0006` is what makes HDMI-RX audio reachable.** Upstream's
 `0005` registers an ASoC `hdmi-audio-codec` child under `hdmi_receiver@fdee0000`
@@ -243,6 +248,49 @@ Two things about it are easy to get wrong:
   `AGENTS.md` KNOWN ISSUE "MPP hardware video encode does not work on the edge
   kernel". Marker and clearing conditions:
   [`docs/UPSTREAM-STATUS.md` § `0008`](docs/UPSTREAM-STATUS.md#0008--unvalidated-and-what-that-does-and-does-not-mean).
+
+**`0009` is defects 1+3 of the same three, is `UNVALIDATED`, and its NAME is a
+userspace ABI.** `librockchip-mpp` picks a dma-heap by hard-coded name and asks for
+`system-uncached`, which mainline does not register — so the H.264 HAL's init-time
+allocation fails and `mpph264enc` never registers as a GStreamer element at all
+(defect 1). And because MPP does no CPU cache maintenance on a heap it believes is
+uncached, cached memory under that name produces different output for identical
+input plus intermittent CABAC failures (defect 3). `0009` registers a second heap
+out of `system_heap.c` using the per-heap drvdata mechanism the file already has
+for `system_cc_shared`: `pgprot_writecombine()` mappings, one `arch_dma_prep_coherent()`
+clean at allocation (because `__GFP_ZERO` dirties the lines), and
+`DMA_ATTR_SKIP_CPU_SYNC` plus skipped `dma_sync_sgtable_*` **only** for that heap.
+
+Four things about it are easy to get wrong:
+
+- **The heap name must be exactly `system-uncached`.** It is the entire userspace
+  contract and there is no override in the shipped `librockchip-mpp1 1.5.0-1`. A
+  typo is silent — a node appears, under a name nothing opens. `apply.sh` asserts
+  the literal for that reason.
+- **A symlink / bind-mount / `mknod` alias is NOT a workaround, and must never be
+  added.** The image pipeline's `AGENTS.md` names it a corruption trap: aliasing
+  the `system` heap hands MPP cached memory it will not synchronise, and aliasing
+  the CMA heap caps out below 1080p (32 MiB pool, ~1.9 MiB largest run, ~3.1 MiB
+  needed). It was a diagnostic instrument, never a fix.
+- **The cacheable linear-map alias is deliberately left in place**, exactly as in
+  the ACK heap this follows. That is the one thing a compile cannot vet: getting it
+  subtly wrong yields silent intermittent video corruption, not an error. Hardware
+  proof is therefore **mandatory, not advisable** — the legs are
+  [`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md) §2-§7, and the
+  reasoning is [`docs/UPSTREAM-STATUS.md` § `0009`](docs/UPSTREAM-STATUS.md#0009--why-hardware-proof-is-mandatory-here-and-not-merely-advisable).
+- **It registers a name and nothing else.** Node mode and ownership stay the
+  shipped `99-rk-device-permissions.rules` udev policy's job. Do not encode
+  permissions in the kernel patch.
+
+**`docs/BOARD-QUALIFICATION.md` is a specification, not a report — every item is
+unchecked on purpose.** Producing the checklist and executing it are two different
+jobs and only the first is done. Nothing in it has been run, so nothing in it may
+be quoted as a result. It also deliberately carries `N/A` legs for the imports T12
+and T13 evaluated and **declined** (I2S MCLK gating, PCIe system PM, V4L2 fdinfo
+stats, tracepoints, SCDC debugfs): completeness there means the leg is *present and
+marked*, not omitted, so a future reader can see it was considered. Do not delete
+an `N/A` leg, do not tick one, and do not tick anything else without a pasted
+transcript.
 
 **The `78c67d98f221` HDMI-codec regression does NOT apply to this tree.** An
 `armbian/linux-rockchip` commit zeroes `capture.channels_min/max` for every
@@ -360,6 +408,11 @@ defconfig, and a 30-minute job to prove something the image pipeline proves bett
   row — including the **Last checked** date; a status change with a stale date is not a check
 - Don't record a list-scoped lore URL, and don't re-capture the Collabora status
   table with `curl` — it is Anubis-gated and needs a real browser
+- Don't rename, alias, symlink or `mknod` the `system-uncached` heap — the name is
+  a userspace ABI and an alias is a corruption trap, not a workaround
+- Don't tick anything in `docs/BOARD-QUALIFICATION.md` without a pasted transcript,
+  and don't delete its `N/A` legs — a declined import that leaves no trace reads as
+  a forgotten one
 - Don't renumber the series to close the `0004` gap, or reuse a retired ordinal
 - Don't restate a pinned coordinate in a workflow — read it from `kernel-pin.env`
 - Don't strip quotes off a `kernel-pin.env` value by hand; `read_pin()` parses it

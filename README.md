@@ -28,6 +28,7 @@ backported patches continue the same counter from `0006`:
 | `0006` | hdmirx audio sound card | `ceralive/` | The device-tree half. Without it `0005`'s codec is bound but ALSA never instantiates a card, so HDMI-IN audio cannot be captured at all. |
 | `0007` | iommu dte-limit fix | `backports/` | Backport of mainline `8d4346ecd495`. Sets `BIT(31)` of the IOMMU's `MMU_AUTO_GATING`, without which a DTE fetch racing a page-table update blocks the IOMMU — a black screen on the VOP, and sporadic RGA3 hangs. Merged for 7.2-rc1, absent from `v7.1.7`. |
 | `0008` | rkvenc DMA max segment size | `ceralive/` | **`UNVALIDATED` on hardware.** Sets the encoder's DMA max segment size in `rkvenc_hw_probe()`, so an imported dma-buf's recorded length stops being truncated to the `SZ_64K` default. Fixes a bookkeeping defect in `0001`; the IOVA guardrail that catches the symptom is deliberately left alone. |
+| `0009` | `system-uncached` dma-heap | `ceralive/` | **`UNVALIDATED` on hardware.** Registers a second dma-heap named exactly `system-uncached` — the name Rockchip's MPP userspace hard-codes and mainline does not provide — with non-cacheable mappings, a one-time cache clean at allocation, and the CPU-sync steps skipped only for that heap. Without it `mpph264enc` does not register at all, and cached memory under an uncached name encodes non-deterministically. |
 
 Plus [`overlays/rockchip-rk3588-rkvenc-mpp.dts`](overlays/rockchip-rk3588-rkvenc-mpp.dts),
 the device-tree overlay the encoder needs, carried verbatim.
@@ -47,6 +48,12 @@ written down, the verdict gets its own document. So far:
   declined because it drops multichannel handling, jack reporting and cable-pull
   teardown, and because its device-tree half enables the sound card on Orange Pi 5
   Plus only, which would silently leave Rock 5B+ with no capture card.
+
+Two members carry an **`UNVALIDATED`** marker (`0008` and `0009`). What a real
+board has to demonstrate before that marker can come off — every leg, every
+command, on both boards — is
+[`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md). Every item there is
+deliberately unchecked: the checklist has been written, and it has not been run.
 
 ## Layout
 
@@ -215,7 +222,7 @@ that the set of added and removed lines in `patches/` is byte-identical to the
 patch's source lane, and it runs in CI. If a rebase rule ever overstepped, that
 check fails.
 
-**There are two first-party patches upstream does not have.** `0006` adds the
+**There are three first-party patches upstream does not have.** `0006` adds the
 device-tree sound card that turns upstream's `0005` HDMI-RX audio codec into a
 capturable ALSA card. Upstream `0005` is driver-only; on a Rock 5B+ running the
 full series the codec device is bound with no cable attached
@@ -238,6 +245,23 @@ that pointed outside the (truncated) window, so silencing it would hide the bug
 rather than fix it. It is marked **`UNVALIDATED`** in its own mail header and in
 [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) — it compiles into a real
 kernel package, and its runtime effect has never been observed on a board.
+
+`0009` is the third, and it is the other two thirds of the same problem. Rockchip's
+MPP userspace picks a dma-heap by hard-coded name and asks for `system-uncached`,
+which mainline does not register at all — so the H.264 encoder's init-time buffer
+allocation fails and `mpph264enc` never even registers as a GStreamer element. And
+because MPP does no CPU cache maintenance on a heap it believes is uncached, simply
+pointing it at cached memory produces different output for identical input plus
+intermittent CABAC decode failures. `0009` registers a second heap under exactly
+that name, reusing the extension point `system_heap.c` already has for
+`system_cc_shared`: non-cacheable mappings, a one-time cache clean at allocation,
+and the CPU-sync steps skipped **only** for that heap. It is likewise marked
+**`UNVALIDATED`**, and the marker carries more weight here than anywhere else in
+the series: the kernel's cacheable linear-map alias of those pages is left in
+place, so getting the cache handling subtly wrong yields silent intermittent
+corruption rather than an error, and no compile can rule that out. What a real
+board has to demonstrate before anyone calls this working is enumerated in
+[`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md).
 
 ### Why not the `sfqr0414` fork
 
@@ -302,13 +326,18 @@ questions.
 driver, and are carried here byte-for-byte. This fork contributes packaging,
 pinning, auditing, and CI.
 
-`0006` and `0008` are first-party CeraLive work with no upstream counterpart.
-`0006` is a device-tree change modelled on the Rockchip BSP's own `hdmiin-sound`
-wiring (`rockchip,cpu = <&i2s7_8ch>`, receiver as clock master), expressed with
-mainline's `simple-audio-card` instead of the BSP's `rockchip,hdmi` machine driver.
-`0008` is a three-statement fix to the encoder driver `0001` introduces, written
-against the pinned kernel's own DMA API. Both are kept in a separate `ceralive/`
-directory precisely so the credit line above stays true.
+`0006`, `0008` and `0009` are first-party CeraLive work with no upstream
+counterpart. `0006` is a device-tree change modelled on the Rockchip BSP's own
+`hdmiin-sound` wiring (`rockchip,cpu = <&i2s7_8ch>`, receiver as clock master),
+expressed with mainline's `simple-audio-card` instead of the BSP's `rockchip,hdmi`
+machine driver. `0008` is a three-statement fix to the encoder driver `0001`
+introduces, written against the pinned kernel's own DMA API. `0009` follows the
+shape of the ACK/Rockchip uncached dma-heap, but is written against mainline's
+`system_heap.c` and its existing per-heap drvdata mechanism rather than copied —
+mainline has no `dma_heap_get_dev()`, so the one-time cache clean uses
+`arch_dma_prep_coherent()`, the same primitive `dma_direct_alloc()` uses. All
+three are kept in a separate `ceralive/` directory precisely so the credit line
+above stays true.
 
 `0007` is neither ours nor Ross Cawston's: it is a straight backport of a mainline
 commit by Simon Xue, carried in `backports/` with its own provenance header.
