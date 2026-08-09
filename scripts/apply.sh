@@ -30,12 +30,12 @@ log() { printf '\n== %s\n' "$*"; }
 
 # ---------------------------------------------------------------------------
 # 1. Series integrity — patches/ must be exactly what the converter produces
-#    from upstream/, and it must not have changed what upstream's patches do.
+#    from its source lanes, and it must not have changed what those patches do.
 # ---------------------------------------------------------------------------
 log "Verifying patches/ is generated, not hand-edited"
 python3 "${HERE}/build-series.py" --check
 
-log "Verifying the series changes nothing upstream/ did not already change"
+log "Verifying the series changes nothing its source lanes did not already change"
 python3 "${HERE}/verify-payload-parity.py"
 
 # ---------------------------------------------------------------------------
@@ -58,14 +58,42 @@ if [[ -n "$(git status --porcelain)" ]]; then
 	exit 1
 fi
 
-actual_commit="$(git rev-parse "${KERNEL_TAG}^{commit}")"
+# Assert BOTH pinned coordinates, and read them from refs/tags/ explicitly so a
+# same-named branch cannot shadow the tag. The peeled commit alone cannot see a tag
+# object that was re-created — re-signed, re-dated, re-worded — while still pointing
+# at the same commit, and the tag object is what a signature is verified against.
+if ! git rev-parse --verify --quiet "refs/tags/${KERNEL_TAG}" >/dev/null; then
+	echo "error: ${TREE} has no refs/tags/${KERNEL_TAG}." >&2
+	echo "       Clone with --branch ${KERNEL_TAG}, or fetch the tag. Not applying." >&2
+	exit 1
+fi
+
+actual_tag_object="$(git rev-parse "refs/tags/${KERNEL_TAG}")"
+actual_commit="$(git rev-parse "refs/tags/${KERNEL_TAG}^{commit}")"
+pin_ok=1
+
+if [[ "$(git cat-file -t "refs/tags/${KERNEL_TAG}")" != "tag" ]]; then
+	echo "error: refs/tags/${KERNEL_TAG} is not an annotated tag object." >&2
+	echo "       linux-stable tags are annotated, so this tree was either fetched" >&2
+	echo "       without them or the tag is not upstream's." >&2
+	pin_ok=0
+elif [[ "${actual_tag_object}" != "${KERNEL_TAG_OBJECT}" ]]; then
+	echo "error: refs/tags/${KERNEL_TAG} is tag object ${actual_tag_object}," >&2
+	echo "       but kernel-pin.env pins ${KERNEL_TAG_OBJECT}." >&2
+	pin_ok=0
+fi
+
 if [[ "${actual_commit}" != "${KERNEL_COMMIT}" ]]; then
-	echo "error: ${KERNEL_TAG} resolves to ${actual_commit}," >&2
+	echo "error: ${KERNEL_TAG} resolves to commit ${actual_commit}," >&2
 	echo "       but kernel-pin.env pins ${KERNEL_COMMIT}." >&2
+	pin_ok=0
+fi
+
+if (( pin_ok == 0 )); then
 	echo "       A tag moved, or the tree is not linux-stable. Not applying." >&2
 	exit 1
 fi
-log "Kernel tree at ${KERNEL_TAG} (${actual_commit})"
+log "Kernel tree at ${KERNEL_TAG} (tag ${actual_tag_object}, commit ${actual_commit})"
 
 # `git am` needs an identity even when nothing is committed by a human.
 git config user.name  >/dev/null 2>&1 || git config user.name  "CeraLive Patch Gate"
@@ -137,6 +165,24 @@ if grep -q "${RKVENC_CONFIG_SYMBOL#CONFIG_}" \
 	echo "  ok      ${RKVENC_CONFIG_SYMBOL} is selectable"
 else
 	echo "  MISSING ${RKVENC_CONFIG_SYMBOL} in rkvenc/Kconfig" >&2
+	fail=1
+fi
+
+# 0009's entire userspace contract is the heap NAME: librockchip-mpp opens
+# /dev/dma_heap/system-uncached by hard-coded string and has no override. A typo
+# is therefore silent — a node appears, under a name nothing asks for — so assert
+# the literal rather than the feature.
+if grep -q '"system-uncached"' drivers/dma-buf/heaps/system_heap.c; then
+	echo "  ok      the system-uncached heap name is spelled exactly"
+else
+	echo "  MISSING the literal \"system-uncached\" in system_heap.c" >&2
+	fail=1
+fi
+
+if grep -q 'DMABUF_HEAPS_SYSTEM_UNCACHED' drivers/dma-buf/heaps/Kconfig; then
+	echo "  ok      CONFIG_DMABUF_HEAPS_SYSTEM_UNCACHED is selectable"
+else
+	echo "  MISSING DMABUF_HEAPS_SYSTEM_UNCACHED in dma-buf/heaps/Kconfig" >&2
 	fail=1
 fi
 

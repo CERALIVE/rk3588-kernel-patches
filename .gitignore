@@ -3,3 +3,7 @@
 
 __pycache__/
 *.pyc
+
+# Local orchestration scratch. Never tracked, and never referenced from a tracked
+# file — this repo has to build standalone in CI, where none of it exists.
+.omo/

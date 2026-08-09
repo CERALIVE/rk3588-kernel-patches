@@ -52,6 +52,28 @@ jobs:
             echo "note: import commit not in this shallow checkout; skipping ancestry check"
           fi
 
+  # kernel-pin.env is the single source of truth for the pinned coordinates, so the
+  # apply matrix is READ from it rather than restated here. A hard-coded tag would
+  # go stale the moment the pin is bumped, and a stale matrix fails green: the job
+  # would prove the series against a kernel nobody ships.
+  pin:
+    name: resolve kernel pin
+    runs-on: ubuntu-latest
+    outputs:
+      tags: ${{ steps.read.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Read the apply matrix from kernel-pin.env
+        id: read
+        run: |
+          set -euo pipefail
+          # shellcheck source=/dev/null
+          source kernel-pin.env
+          : "${KERNEL_TAG:?KERNEL_TAG is not set in kernel-pin.env}"
+          echo "tags=[\"$KERNEL_TAG\"]" >> "$GITHUB_OUTPUT"
+          echo "apply matrix: [\"$KERNEL_TAG\"]"
+
   # Non-blocking on the weekly schedule (drift is information, not a regression);
   # blocking on push/PR (a change that desyncs the pin from Armbian is a bug).
   preflight:
@@ -73,14 +95,15 @@ jobs:
   # instruction is a red build.
   apply:
     name: git am against ${{ matrix.tag }}
-    needs: series-integrity
+    needs: [series-integrity, pin]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        # Single entry today. It is a matrix so a future pin bump can prove the
-        # series against the old and new tag in the same run.
-        tag: [v7.1.5]
+        # Derived from KERNEL_TAG, so it is a single entry today and cannot drift
+        # from the pin. It stays a matrix so a future bump can widen it to prove
+        # the series against the old and new tag in the same run.
+        tag: ${{ fromJSON(needs.pin.outputs.tags) }}
     steps:
       - uses: actions/checkout@v7
 
@@ -88,13 +111,18 @@ jobs:
         id: pin
         run: |
           source kernel-pin.env
+          # KERNEL_COMMIT below is the commit of KERNEL_TAG and of nothing else, so
+          # a matrix entry that is not KERNEL_TAG would cache and verify against the
+          # wrong tree. Widening the matrix means resolving the commit per entry.
           [ "$KERNEL_TAG" = "${{ matrix.tag }}" ] || {
             echo "::error::matrix tag ${{ matrix.tag }} != KERNEL_TAG $KERNEL_TAG"
             exit 1
           }
-          echo "tag=$KERNEL_TAG"          >> "$GITHUB_OUTPUT"
-          echo "commit=$KERNEL_COMMIT"    >> "$GITHUB_OUTPUT"
-          echo "mirror=$KERNEL_MIRROR"    >> "$GITHUB_OUTPUT"
+          {
+            echo "tag=$KERNEL_TAG"
+            echo "commit=$KERNEL_COMMIT"
+            echo "mirror=$KERNEL_MIRROR"
+          } >> "$GITHUB_OUTPUT"
 
       # The kernel clone dominates the job. Key on the immutable commit, so the
       # cache is only ever reused for the exact source it was built from.

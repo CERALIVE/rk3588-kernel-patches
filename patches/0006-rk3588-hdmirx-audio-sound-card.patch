@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Sun, 2 Aug 2026 12:00:00 -0500
-Subject: [PATCH 6/6] arm64: dts: rockchip: rk3588: bind the HDMI-RX audio codec to a sound card
+Subject: [PATCH 6/9] arm64: dts: rockchip: rk3588: bind the HDMI-RX audio codec to a sound card
 
 0005 gives snps_hdmirx its driver-side audio half: it registers an ASoC
 hdmi-audio-codec child device under hdmi_receiver@fdee0000 and drives the
@@ -41,7 +41,7 @@ matches the BSP and the fs*128 rate 0005 programs on the "audio" clock.
 i2s7_8ch declares only a "rx" DMA, so rockchip_i2s_tdm_init_dai() marks it
 capture-only and the link resolves to a single capture stream.
 
-First-party: authored by CeraLive against v7.1.5, with no upstream
+First-party: authored by CeraLive against v7.1.7, with no upstream
 counterpart in rockchip-rk3588-mainline-patches. The source of record is
 ceralive/0006-rk3588-hdmirx-audio-sound-card.patch; patches/ is generated from it by
 scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the

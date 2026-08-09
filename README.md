@@ -8,15 +8,15 @@ imported at `e13a311` (2026-07-01) with full history and authorship preserved.
 
 | | |
 |---|---|
-| **Target kernel** | `v7.1.5` (`155b42bec9cbb6b8cdc47dd9bd09503a81fbe493`) |
+| **Target kernel** | `v7.1.7` (`c7ba9d6de43e9d9bd755b1f3c19501a38898c6b6`) |
 | **Why that kernel** | Armbian rk3588 `edge` → `KERNEL_MAJOR_MINOR=7.1` — derived in [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md) |
 | **Boards** | Radxa Rock 5B+, Orange Pi 5+ (both `BOARDFAMILY=rockchip-rk3588`) |
-| **Status** | Applies cleanly. **Not built, not run on hardware, not upstream-bound.** |
+| **Status** | Applies cleanly. **Not run on hardware, not upstream-bound.** This repo builds nothing — the series has been compiled into a real `linux-image-7.1.7-ceralive-rk3588` `.deb` downstream by `image-building-pipeline`, which is a compile proof and *not* a hardware one. |
 
 ## What's in the series
 
-Upstream's numbering is preserved verbatim, gap included. First-party patches
-continue the same counter from `0006`:
+Upstream's numbering is preserved verbatim, gap included. First-party and
+backported patches continue the same counter from `0006`:
 
 | | Patch | Source | What it does |
 |---|---|---|---|
@@ -26,26 +26,63 @@ continue the same counter from `0006`:
 | *0004* | — | — | **Never published upstream.** The gap is intentional; do not renumber to close it. |
 | `0005` | hdmirx audio | `upstream/` | The driver half of HDMI-RX audio capture: registers an ASoC `hdmi-audio-codec` under `hdmi_receiver@fdee0000` and drives the receiver's audio FIFO, ACR-derived sample rate and recovered clock. Adds no device tree. |
 | `0006` | hdmirx audio sound card | `ceralive/` | The device-tree half. Without it `0005`'s codec is bound but ALSA never instantiates a card, so HDMI-IN audio cannot be captured at all. |
+| `0007` | iommu dte-limit fix | `backports/` | Backport of mainline `8d4346ecd495`. Sets `BIT(31)` of the IOMMU's `MMU_AUTO_GATING`, without which a DTE fetch racing a page-table update blocks the IOMMU — a black screen on the VOP, and sporadic RGA3 hangs. Merged for 7.2-rc1, absent from `v7.1.7`. |
+| `0008` | rkvenc DMA max segment size | `ceralive/` | **`UNVALIDATED` on hardware.** Sets the encoder's DMA max segment size in `rkvenc_hw_probe()`, so an imported dma-buf's recorded length stops being truncated to the `SZ_64K` default. Fixes a bookkeeping defect in `0001`; the IOVA guardrail that catches the symptom is deliberately left alone. |
+| `0009` | `system-uncached` dma-heap | `ceralive/` | **`UNVALIDATED` on hardware.** Registers a second dma-heap named exactly `system-uncached` — the name Rockchip's MPP userspace hard-codes and mainline does not provide — with non-cacheable mappings, a one-time cache clean at allocation, and the CPU-sync steps skipped only for that heap. Without it `mpph264enc` does not register at all, and cached memory under an uncached name encodes non-deterministically. |
 
 Plus [`overlays/rockchip-rk3588-rkvenc-mpp.dts`](overlays/rockchip-rk3588-rkvenc-mpp.dts),
 the device-tree overlay the encoder needs, carried verbatim.
+
+Which of these have an upstream counterpart, how far along it is, and what would
+have to be true before a patch can be dropped, is tracked per patch in
+[`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md).
+
+Where an upstream counterpart was evaluated as a replacement and the answer was
+written down, the verdict gets its own document. So far:
+
+- [`docs/EVAL-0002-EDID.md`](docs/EVAL-0002-EDID.md) — keeps `0002`, and explains
+  why the 7.2-rc1 EDID fix is not a substitute for it (it is already in the base,
+  and it fixes something else).
+- [`docs/EVAL-0005-AUDIO.md`](docs/EVAL-0005-AUDIO.md) — keeps `0005`+`0006`
+  against a fully-reviewed lore HDMI-audio series that *does* apply cleanly. It is
+  declined because it drops multichannel handling, jack reporting and cable-pull
+  teardown, and because its device-tree half enables the sound card on Orange Pi 5
+  Plus only, which would silently leave Rock 5B+ with no capture card.
+
+Two members carry an **`UNVALIDATED`** marker (`0008` and `0009`). What a real
+board has to demonstrate before that marker can come off — every leg, every
+command, on both boards — is
+[`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md). Every item there is
+deliberately unchecked: the checklist has been written, and it has not been run.
 
 ## Layout
 
 ```
 upstream/          Ross Cawston's original diff -ruN files, byte-for-byte
 ceralive/          first-party patches with no upstream counterpart
-patches/           the git-am series — GENERATED from both, never hand-edit
+backports/         patches taken from mainline / a stable tree / lore
+retired/           patches moved out of the series, byte-unchanged, + REGISTRY.md
+patches/           the git-am series — GENERATED from the lanes, never hand-edit
 overlays/          the rkvenc/MPP device-tree overlay
 rebase/            per-kernel-tag context re-anchor rules
 scripts/           preflight · build-series · verify-payload-parity · apply
 kernel-pin.env     every pinned coordinate, in one sourceable file
-docs/              provenance audit · rebase ledger · preflight derivation
+docs/              provenance audit · rebase ledger · preflight derivation · upstream status · adopt-or-keep verdicts
 ```
 
-Both source lanes run through the same converter, so `patches/` stays 100 %
-generated and `verify-payload-parity.py` holds every patch — first-party included
-— to byte-identical added/removed lines against its own source file.
+All three source lanes run through the same converter, so `patches/` stays 100 %
+generated and `verify-payload-parity.py` holds every patch — first-party and
+backported included — to byte-identical added/removed lines against its own source
+file. The build also refuses to run if any lane file is not accounted for exactly
+once, so a patch dropped into a lane and forgotten is an error rather than a silent
+no-op.
+
+**A source file is never deleted.** Dropping a patch from the series moves it into
+[`retired/`](retired/REGISTRY.md) byte-unchanged and records a row in the registry
+there. That is what keeps "`upstream/` is exactly what was imported" checkable even
+after the series stops carrying one of those files. The *precondition* for dropping
+a given patch — "upstream merged it, so drop when the base reaches vX.Y" — is
+recorded per patch in [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md).
 
 ---
 
@@ -148,7 +185,7 @@ as a patch.
 ```bash
 scripts/preflight.sh --head     # has Armbian moved edge?
 # edit KERNEL_TAG / KERNEL_TAG_OBJECT / KERNEL_COMMIT together
-cp rebase/v7.1.5.rules rebase/<new-tag>.rules
+cp rebase/v7.1.7.rules rebase/<new-tag>.rules   # seed, then re-decide every rule
 scripts/apply.sh                # resolve conflicts per the rule below
 ```
 
@@ -156,7 +193,7 @@ scripts/apply.sh                # resolve conflicts per the rule below
 entry **only** if the fix changes how a patch *applies*, never what it *does*.
 Anything else gets written up in a new `docs/REBASE-<tag>.md` and the series is
 reported as not applying. That boundary is machine-enforced, not a convention —
-see [`docs/REBASE-v7.1.5.md`](docs/REBASE-v7.1.5.md).
+see [`docs/REBASE-v7.1.7.md`](docs/REBASE-v7.1.7.md).
 
 ---
 
@@ -171,16 +208,21 @@ main reason this fork exists — `patches/` is generated from `upstream/` and
 `ceralive/` by `scripts/build-series.py`, which adds mailbox headers and drops the
 `.DS_Store` noise.
 
-**The series is re-anchored for `v7.1.5`.** Upstream targeted `v6.19-rc8`. Two
-context anchors drifted in between; both were re-anchored, and both are documented
-hunk by hunk in [`docs/REBASE-v7.1.5.md`](docs/REBASE-v7.1.5.md).
+**The series is re-anchored for `v7.1.7`.** Upstream targeted `v6.19-rc8`. Two
+context anchors drifted in between; both were re-anchored, and the five members
+that existed at the re-anchor are documented hunk by hunk in
+[`docs/REBASE-v7.1.7.md`](docs/REBASE-v7.1.7.md). `0007` was backported straight
+onto `v7.1.7` and `0008` and `0009` were authored against it, so none of the three
+needed re-anchoring and none has a ledger entry there. The earlier
+[`docs/REBASE-v7.1.5.md`](docs/REBASE-v7.1.5.md) is kept as the record of the
+previous base.
 
 **Nothing the patches do was changed.** `scripts/verify-payload-parity.py` proves
 that the set of added and removed lines in `patches/` is byte-identical to the
 patch's source lane, and it runs in CI. If a rebase rule ever overstepped, that
 check fails.
 
-**There is one first-party patch upstream does not have.** `0006` adds the
+**There are three first-party patches upstream does not have.** `0006` adds the
 device-tree sound card that turns upstream's `0005` HDMI-RX audio codec into a
 capturable ALSA card. Upstream `0005` is driver-only; on a Rock 5B+ running the
 full series the codec device is bound with no cable attached
@@ -190,6 +232,36 @@ tree binds that codec to a DAI. `0006` adds `#sound-dai-cells` to
 `hdmi_receiver`, adds an `hdmirx-sound` `simple-audio-card`, and enables it plus
 `i2s7_8ch` on the two CeraLive boards. It lives in `ceralive/`, is clearly marked
 first-party in its own mail header, and carries no upstream attribution.
+
+`0008` is the second, and it repairs `0001` rather than extending it.
+`rkvenc_dma_import_fd()` records an imported dma-buf's length as
+`sg_dma_len(sgt->sgl)` — the first mapped segment only — and `0001` never told the
+DMA layer how long a segment may be, so `dma_get_max_seg_size()` answered the
+`SZ_64K` default, iommu-dma stopped coalescing there, and every import over 64 KiB
+was recorded as exactly `0x10000` bytes. `0008` sets the cap in `rkvenc_hw_probe()`
+and reads it back, failing the probe if it did not take. It leaves the driver's
+IOVA guardrail alone on purpose: the guardrail was correctly rejecting a register
+that pointed outside the (truncated) window, so silencing it would hide the bug
+rather than fix it. It is marked **`UNVALIDATED`** in its own mail header and in
+[`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) — it compiles into a real
+kernel package, and its runtime effect has never been observed on a board.
+
+`0009` is the third, and it is the other two thirds of the same problem. Rockchip's
+MPP userspace picks a dma-heap by hard-coded name and asks for `system-uncached`,
+which mainline does not register at all — so the H.264 encoder's init-time buffer
+allocation fails and `mpph264enc` never even registers as a GStreamer element. And
+because MPP does no CPU cache maintenance on a heap it believes is uncached, simply
+pointing it at cached memory produces different output for identical input plus
+intermittent CABAC decode failures. `0009` registers a second heap under exactly
+that name, reusing the extension point `system_heap.c` already has for
+`system_cc_shared`: non-cacheable mappings, a one-time cache clean at allocation,
+and the CPU-sync steps skipped **only** for that heap. It is likewise marked
+**`UNVALIDATED`**, and the marker carries more weight here than anywhere else in
+the series: the kernel's cacheable linear-map alias of those pages is left in
+place, so getting the cache handling subtly wrong yields silent intermittent
+corruption rather than an error, and no compile can rule that out. What a real
+board has to demonstrate before anyone calls this working is enumerated in
+[`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md).
 
 ### Why not the `sfqr0414` fork
 
@@ -254,9 +326,18 @@ questions.
 driver, and are carried here byte-for-byte. This fork contributes packaging,
 pinning, auditing, and CI.
 
-`0006` is first-party CeraLive work with no upstream counterpart: a device-tree
-change modelled on the Rockchip BSP's own `hdmiin-sound` wiring
-(`rockchip,cpu = <&i2s7_8ch>`, receiver as clock master), expressed with mainline's
-`simple-audio-card` instead of the BSP's `rockchip,hdmi` machine driver. It is
-kept in a separate `ceralive/` directory precisely so the credit line above stays
-true.
+`0006`, `0008` and `0009` are first-party CeraLive work with no upstream
+counterpart. `0006` is a device-tree change modelled on the Rockchip BSP's own
+`hdmiin-sound` wiring (`rockchip,cpu = <&i2s7_8ch>`, receiver as clock master),
+expressed with mainline's `simple-audio-card` instead of the BSP's `rockchip,hdmi`
+machine driver. `0008` is a three-statement fix to the encoder driver `0001`
+introduces, written against the pinned kernel's own DMA API. `0009` follows the
+shape of the ACK/Rockchip uncached dma-heap, but is written against mainline's
+`system_heap.c` and its existing per-heap drvdata mechanism rather than copied —
+mainline has no `dma_heap_get_dev()`, so the one-time cache clean uses
+`arch_dma_prep_coherent()`, the same primitive `dma_direct_alloc()` uses. All
+three are kept in a separate `ceralive/` directory precisely so the credit line
+above stays true.
+
+`0007` is neither ours nor Ross Cawston's: it is a straight backport of a mainline
+commit by Simon Xue, carried in `backports/` with its own provenance header.

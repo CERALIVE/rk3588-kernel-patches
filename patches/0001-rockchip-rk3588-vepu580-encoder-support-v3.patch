@@ -1,10 +1,10 @@
 From 09595583f3ffadd3d790a20ead392434e0e46728 Mon Sep 17 00:00:00 2001
 From: Ross Cawston <rcawston@users.noreply.github.com>
 Date: Mon, 9 Feb 2026 20:42:16 -0800
-Subject: [PATCH 1/6] rockchip: rk3588: add VEPU580 (RKVENC v2) H.265/H.264/JPEG encoder support
+Subject: [PATCH 1/9] rockchip: rk3588: add VEPU580 (RKVENC v2) H.265/H.264/JPEG encoder support
 
 Imported from https://github.com/rcawston/rockchip-rk3588-mainline-patches
-at e13a311d8ee5e8ed92ec3d4a57c21f766c61d660"   # main @ 2026-07-01, file 0001-rockchip-rk3588-vepu580-encoder-support-v3.patch.
+at e13a311d8ee5e8ed92ec3d4a57c21f766c61d660, file 0001-rockchip-rk3588-vepu580-encoder-support-v3.patch.
 
 Authored by Ross Cawston. This CeraLive copy re-packages the file as a git
 mailbox so it can be applied with `git am`. Every added and removed line is
@@ -14,9 +14,9 @@ Dropped 8 payload-free "Binary files .../.DS_Store ... differ"
 stanza(s) that macOS left in the original `diff -ruN` output. They carry
 no data, and git apply refuses a binary stanza with no index line.
 
-Re-anchored for v7.1.5 (upstream developed this against v6.19-rc8):
+Re-anchored for v7.1.7 (upstream developed this against v6.19-rc8):
   - replaced context line `power-domains = <&power RK3588_PD_VDPU>;`
-Context lines only -- see rebase/v7.1.5.rules and docs/REBASE-v7.1.5.md for the
+Context lines only -- see rebase/v7.1.7.rules and docs/REBASE-v7.1.7.md for the
 hunk-by-hunk ledger.
 
 NOT upstream-bound: this is a CeraLive-maintained adaptation, not a submission

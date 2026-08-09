@@ -107,19 +107,22 @@ version, because that would change the resolution entirely.
 | Armbian patch dir for this family | `patch/kernel/archive/rockchip64-7.1/` |
 | `KERNELSOURCE` | `https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git` |
 | `KERNELBRANCH` (Armbian's) | `branch:linux-7.1.y` — a **rolling branch** |
-| **This repository's pin** | **`v7.1.5`** = `155b42bec9cbb6b8cdc47dd9bd09503a81fbe493` |
+| **This repository's pin** | **`v7.1.7`** = `c7ba9d6de43e9d9bd755b1f3c19501a38898c6b6` (tag object `c8fde2689e91a16e9d4b11fe3b08e45c89870585`) |
 
 ### Why a tag is pinned when Armbian uses a branch
 
 Armbian tracks `linux-7.1.y`, which moves with every stable release. A patch series
 verified against "whatever `linux-7.1.y` was that morning" is not verified against
 anything reproducible. So this repository pins the exact stable tag that was the
-tip of `linux-7.1.y` at import time — `v7.1.5`, released 2026-07-24 — and the CI
-gate applies against that tag and no other.
+tip of `linux-7.1.y` when the pin was last taken — `v7.1.7`, released 2026-08-06 —
+and the CI gate applies against that tag and no other. The previous pin was
+`v7.1.5` (released 2026-07-24); the move is ledgered in
+[`REBASE-v7.1.7.md`](REBASE-v7.1.7.md).
 
-`scripts/apply.sh` refuses to proceed if `v7.1.5` in the tree it is handed does not
-resolve to the pinned commit, so a moved or spoofed tag fails loudly instead of
-producing a green run against the wrong source.
+`scripts/apply.sh` refuses to proceed if `v7.1.7` in the tree it is handed does not
+resolve to **both** the pinned commit and the pinned annotated-tag object, so a
+moved, re-created or spoofed tag fails loudly instead of producing a green run
+against the wrong source.
 
 **Consequence for downstream consumers.** The image pipeline must pin the same tag
 rather than following `linux-7.1.y`, otherwise it will eventually build a kernel
