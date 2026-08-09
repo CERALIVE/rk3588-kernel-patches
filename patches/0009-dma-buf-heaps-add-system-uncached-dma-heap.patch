@@ -3,17 +3,27 @@ From: CeraLive <dev@ceralive.tv>
 Date: Sun, 9 Aug 2026 12:00:00 -0500
 Subject: [PATCH 9/9] dma-buf: heaps: add a system-uncached heap
 
-*** UNVALIDATED ON HARDWARE. *** This compiles and is source-correct against
-the pinned base; nothing it predicts has been observed on a board. Do not read
-it as a claim that MPP hardware encode now works on the edge track.
-
-*** HARDWARE PROOF IS MANDATORY FOR THIS PATCH, NOT OPTIONAL. *** Everything
-else in this series can be argued from source. This one cannot, and the reason
-is stated plainly below under CACHE ALIASING: a compile proves the heap exists,
-and a heap that exists while getting cache maintenance subtly wrong produces
-intermittent, silent corruption in the video path rather than an error. The
-checklist that must pass before anyone calls this working is
-docs/BOARD-QUALIFICATION.md.
+*** VALIDATED on Rock 5B+ (2026-08-09) -- UNVALIDATED on Orange Pi 5+. ***
+/dev/dma_heap/system-uncached was confirmed a genuine second heap (minor
+250,1 vs system's 250,0, its own /sys/class/dma_heap entry) that does NOT
+draw from CMA: holding a 1080p + 4K allocation open left CmaFree unchanged
+at 25,504 kB, while the identical pair from the CMA heap dropped it to
+10,312 kB. Encoded output was byte-identical across 5 repeats, 3
+resolutions, a reboot and 5.2 GiB of memory pressure, decoding clean with
+CABAC in use. See docs/BOARD-QUALIFICATION.md for the full transcript and
+image-building-pipeline's
+.omo/evidence/image-pipeline-quality/hardware-validation-round1.md for the
+raw session evidence. Orange Pi 5+ has never run this image at all, and no
+real HDMI capture source was attached during this run -- do NOT read this
+marker as a claim that MPP hardware encode is validated fleet-wide or that
+the full capture-to-encode path with live video is proven.
+*** HARDWARE PROOF WAS MANDATORY FOR THIS PATCH, AND HAS NOW BEEN GIVEN ON
+ONE BOARD. *** Everything else in this series can be argued from source.
+This one could not, for the reason stated plainly below under CACHE
+ALIASING: a compile proves the heap exists, and a heap that exists while
+getting cache maintenance subtly wrong produces intermittent, silent
+corruption in the video path rather than an error. The checklist that
+was run to clear this marker is docs/BOARD-QUALIFICATION.md.
 
 Origin: the root-cause analysis recorded as defects 1 and 3 of 3 in the CeraLive
 image-building-pipeline AGENTS.md KNOWN ISSUE on MPP hardware video encode not
