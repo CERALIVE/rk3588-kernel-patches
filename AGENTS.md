@@ -50,7 +50,7 @@ rk3588-kernel-patches/
 │   ├── EVAL-0005-AUDIO.md     # verdict: keep 0005+0006; the lore v4 series drops Rock 5B+
 │   ├── PROVENANCE.md          # licence/provenance audit incl. the MIT-claim caveat
 │   ├── PREFLIGHT.md           # how the Armbian edge -> 7.1 mapping was derived
-│   ├── REBASE-v7.1.7.md       # hunk-by-hunk rebase ledger — CURRENT base; the 5 re-anchored members (0007/0008 needed none)
+│   ├── REBASE-v7.1.7.md       # hunk-by-hunk rebase ledger — CURRENT base; the 5 re-anchored members (0007/0008/0009 needed none)
 │   └── REBASE-v7.1.5.md       # ledger for the previous base, kept for the record
 └── .github/workflows/patch-apply.yml
 ```
@@ -240,11 +240,13 @@ Two things about it are easy to get wrong:
   64 KiB, an NV12 chroma-plane offset really is outside `[iova, iova+len)`. Silencing
   it hides the defect and trades a clean `-EINVAL` for a DMA write past the end of a
   mapping. `0008` touches exactly one file (`rkvenc_hw.c`).
-- **This is one of THREE stacked defects, and the other two are userspace.**
-  `librockchip-mpp` hard-codes a `system-uncached` dma-heap mainline does not
-  register, and mainline has no uncached heap to fall back to. So `0008` is necessary
-  and nowhere near sufficient — do not describe MPP hardware encode as fixed on the
-  `edge` track. Full three-defect analysis: the CeraLive `image-building-pipeline`
+- **This is one of THREE stacked defects.** The other two — `librockchip-mpp`
+  hard-coding a `system-uncached` dma-heap mainline does not register, and mainline
+  having no uncached heap to fall back to — are answered in source by `0009`, which
+  is **also `UNVALIDATED`**. So all three defects now have a source-level fix and
+  **none** has a hardware one: `0008` is necessary, `0008`+`0009` is plausibly
+  sufficient, and neither claim has been observed on a board. Do not describe MPP
+  hardware encode as fixed on the `edge` track. Full three-defect analysis: the CeraLive `image-building-pipeline`
   `AGENTS.md` KNOWN ISSUE "MPP hardware video encode does not work on the edge
   kernel". Marker and clearing conditions:
   [`docs/UPSTREAM-STATUS.md` § `0008`](docs/UPSTREAM-STATUS.md#0008--unvalidated-and-what-that-does-and-does-not-mean).

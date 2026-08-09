@@ -11,7 +11,7 @@ imported at `e13a311` (2026-07-01) with full history and authorship preserved.
 | **Target kernel** | `v7.1.7` (`c7ba9d6de43e9d9bd755b1f3c19501a38898c6b6`) |
 | **Why that kernel** | Armbian rk3588 `edge` → `KERNEL_MAJOR_MINOR=7.1` — derived in [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md) |
 | **Boards** | Radxa Rock 5B+, Orange Pi 5+ (both `BOARDFAMILY=rockchip-rk3588`) |
-| **Status** | Applies cleanly. **Not built, not run on hardware, not upstream-bound.** |
+| **Status** | Applies cleanly. **Not run on hardware, not upstream-bound.** This repo builds nothing — the series has been compiled into a real `linux-image-7.1.7-ceralive-rk3588` `.deb` downstream by `image-building-pipeline`, which is a compile proof and *not* a hardware one. |
 
 ## What's in the series
 
@@ -212,8 +212,8 @@ main reason this fork exists — `patches/` is generated from `upstream/` and
 context anchors drifted in between; both were re-anchored, and the five members
 that existed at the re-anchor are documented hunk by hunk in
 [`docs/REBASE-v7.1.7.md`](docs/REBASE-v7.1.7.md). `0007` was backported straight
-onto `v7.1.7` and `0008` was authored against it, so neither needed re-anchoring and
-neither has a ledger entry there. The earlier
+onto `v7.1.7` and `0008` and `0009` were authored against it, so none of the three
+needed re-anchoring and none has a ledger entry there. The earlier
 [`docs/REBASE-v7.1.5.md`](docs/REBASE-v7.1.5.md) is kept as the record of the
 previous base.
 

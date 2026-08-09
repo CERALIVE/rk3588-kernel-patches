@@ -523,10 +523,12 @@ matters most at the point where the link is hardest."
 
 ### Requires board validation at 4K60
 
-`docs/BOARD-QUALIFICATION.md` **does not exist yet** — T15 has not run. These items
-are therefore parked here, in the document that generated them, for T15 to pick up
-and move into that file when it is created. Every one of them is hardware-only:
-none can be settled by reading source, and none is claimed to have been.
+**These items have since moved.** They now live in
+[`BOARD-QUALIFICATION.md`](BOARD-QUALIFICATION.md) § 9, as unticked checklist legs
+with the same B1–B7 numbering; that file is the executable copy. The table below is
+kept as the record of where they came from and why each one is hardware-only —
+none can be settled by reading source, and none is claimed to have been. **Tick
+legs in `BOARD-QUALIFICATION.md`, never here.**
 
 | # | Check | Why it cannot be answered here |
 |---|---|---|
@@ -591,6 +593,7 @@ item **B5** in
 [§ Requires board validation at 4K60](#requires-board-validation-at-4k60), where it
 now reads specifically against a 4K60 EDID — the case that actually matters,
 because 4K60 is the only mode on these boards that cannot use the built-in EDID at
-all. Six further hardware-only checks (B1–B4, B6, B7) are listed alongside it for
-T15's board-qualification pass. `docs/BOARD-QUALIFICATION.md` does not exist yet;
-when T15 creates it, that table is the intended source.
+all. Six further hardware-only checks (B1–B4, B6, B7) sit alongside it.
+All seven now live in
+[`docs/BOARD-QUALIFICATION.md`](BOARD-QUALIFICATION.md) § 9, which is where they
+get ticked; the table above is their origin record, not the live checklist.

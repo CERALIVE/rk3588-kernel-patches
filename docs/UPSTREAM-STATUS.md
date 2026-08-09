@@ -2,6 +2,10 @@
 
 **Base pin at last check:** `v7.1.7` — see [`kernel-pin.env`](../kernel-pin.env).
 **Last full sweep:** 2026-08-08. **Rows added since:** `0009` (2026-08-09).
+**Row-consistency re-check:** 2026-08-09 — every import and every evaluation from
+this cycle has a row, and each row's verdict matches the series on disk. No
+upstream status was re-resolved, so no **Last checked** date moved; a consistency
+pass is not a sweep.
 
 This repository carries out-of-tree patches. Every one of them is either waiting
 for an upstream counterpart, tracking one, or has none and never will. This table
@@ -461,14 +465,20 @@ is unchanged and `patches/` regenerates byte-identically.
 | VDPU381 VP9 decode | tracked only — **do not import** | <https://lore.kernel.org/r/20260726-b4-add-rkvdec2-vp9-vdpu381-v1-0-180fb2d1f10c@gmail.com> (PATCHv1) | `sent-v1` — not merged | n/a — not carried | 2026-08-08 | Out of the chosen lane: a decode feature, not metrics/PM. Row exists so a future reader can see it was considered and excluded on purpose |
 | VDPU381 multi-core (H.264/H.265) | tracked only — **do not import** | <https://lore.kernel.org/r/20260409-rkvdec-multicore-v1-0-62b316abf0f7@collabora.com> (PATCHv1) | `sent-v1` — not merged | n/a — not carried | 2026-08-08 | Same exclusion as the row above |
 
-The first of the two first-party encoder patches, `dma_set_max_seg_size()` in the
-rkvenc probe, **has landed as `0008`** and is now a row in
-[§ Current series members](#current-series-members): `first-party-no-upstream`,
-`UNVALIDATED` on hardware, upstream position inherited from the `0001` row (WIP
-rkvenc, tracked only). The second — the `system-uncached` dma-heap port — is not
-written and is deliberately not scheduled here: ARM cache-alias handling done
-subtly wrong yields silent intermittent corruption in the video path, so it needs a
-validation campaign rather than a patch.
+**Both first-party encoder patches have now landed**, and each is a row in
+[§ Current series members](#current-series-members) rather than a candidate here:
+`0008` (`dma_set_max_seg_size()` in the rkvenc probe) and `0009` (the
+`system-uncached` dma-heap port). Both are `first-party-no-upstream`, both are
+`UNVALIDATED` on hardware, and both inherit their upstream position from the
+`0001` row (WIP rkvenc, tracked only).
+
+The reservation this section used to carry about `0009` — that ARM cache-alias
+handling done subtly wrong yields silent intermittent corruption in the video path
+— was **not** withdrawn when the patch was written. It was converted into the
+validation campaign it asked for:
+[`BOARD-QUALIFICATION.md`](BOARD-QUALIFICATION.md) §2–§7, every leg unticked, and
+the reasoning is in [§ `0009`](#0009--why-hardware-proof-is-mandatory-here-and-not-merely-advisable).
+The patch existing is not the campaign being run.
 
 ### V4L2 HW usage stats (fdinfo) — skipped, the key names are already agreed to change
 

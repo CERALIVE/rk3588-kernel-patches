@@ -961,8 +961,8 @@ def write_series(out_dir: Path, pin: dict[str, str]) -> None:
         "# git-am order for the CeraLive RK3588 series.",
         "# Upstream numbering is preserved verbatim -- 0004 was never published,",
         "# so the gap is intentional. Do not renumber to close it.",
-        "# 0006 and 0008 are first-party (ceralive/) and 0007 is a backport",
-        "# (backports/); all three continue the same counter.",
+        "# 0006, 0008 and 0009 are first-party (ceralive/) and 0007 is a",
+        "# backport (backports/); all four continue the same counter.",
         f"# Target kernel: {pin['KERNEL_TAG']} ({pin['KERNEL_COMMIT']})",
         *(
             f"# Retired slot {e.ordinal}: {e.filename} -- see retired/REGISTRY.md"
