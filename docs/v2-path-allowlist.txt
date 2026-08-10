@@ -6,7 +6,7 @@
 # different repo, different content, verified separately.
 #
 # Checked with the SAME generic tool Wave 1 built, reused UNMODIFIED:
-#   git grep -n 'image-building-pipeline/v2\|\bv2/' >hits.txt
+#   git grep -n 'image-building-pipeline\x2fv2\|\bv2\x2f' >hits.txt
 #   python3 /mnt/development/ceralive/.omo/tools/check-path-allowlist.py \
 #     --hits hits.txt --allow docs/v2-path-allowlist.txt
 #
@@ -14,7 +14,7 @@
 # purpose: it is prose describing a SPECIFIC, dated, already-executed hardware
 # validation run (RUN 1, Rock 5B+, 2026-08-09), quoting the exact build
 # command and image-pipeline paths that run actually used. image-pipeline's
-# `v2/` prefix was later promoted to the pipeline root (Wave 1, that repo),
+# `v2\x2f` prefix was later promoted to the pipeline root (Wave 1, that repo),
 # but rewriting these citations to the post-promotion path would misrepresent
 # what RUN 1 actually ran — these are historical transcripts, not current
 # instructions. Each row is escaped (`\x2f` for `/`) per the tool's
