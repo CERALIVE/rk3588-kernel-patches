@@ -38,6 +38,12 @@ jobs:
       - name: patches/ payload is byte-identical to its source lane
         run: python3 scripts/verify-payload-parity.py
 
+      - name: series, generated patches and the status ledger tell one story
+        run: |
+          scripts/check-series-ledger.py --self-test
+          scripts/check-series-ledger.py --require-before U2:U1
+          scripts/check-series-ledger.py --exact docs/UPSTREAM-STATUS.md
+
       - name: the candidate reconciliation matrix is complete
         run: |
           python3 scripts/validate-candidate-matrix.py docs/UPSTREAM-STATUS.md \
