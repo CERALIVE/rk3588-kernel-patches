@@ -86,7 +86,6 @@ the marker for a given patch is written down, per patch, in
 | `0007` iommu dte-limit fix | `backports/` lane — **backported from mainline** `8d4346ecd4950ae08cc76a6de327c264e846758c` "iommu/rockchip: disable fetch dte time limit", Simon Xue via Sven Püschel (Pengutronix), PATCHv2, <https://lore.kernel.org/r/20260428-spu-iommudtefix-v2-1-f592f579e508@pengutronix.de> | `merged@7.2-rc1` — `Acked-by` Heiko Stuebner, applied by Joerg Roedel 2026-06-02. **Absent from the base**: it carries no `Fixes:` tag and no `Cc: stable`, so `7.1.y` never picked it up | **Drop when base ≥ `v7.2`.** The base absorbing it is the whole retire condition — there is no merit question left, it is already mainline | 2026-08-08 | Sets `BIT(31)` of `MMU_AUTO_GATING` in `rk_iommu_enable()`, the vendor workaround for the RK356x/RK3588 blocked-VOP-and-black-screen and RK3588 RGA3 hang. Base check at `v7.1.7`: `DISABLE_FETCH_DTE_TIME_LIMIT` absent, `RK_MMU_AUTO_GATING` present. Applies forward with **no fuzz and no context adaptation**; **zero prerequisite commits**. Fixes:-tag sweep over mainline found **no follow-up** |
 | `0008` rkvenc DMA max segment size — **`VALIDATED` on Rock 5B+ (2026-08-09), `UNVALIDATED` on Orange Pi 5+** | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Fixes a bookkeeping defect in `0001`, so its upstream position is the `0001` row's. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — upstream rkvenc is `WIP` (Collabora's Mesa/Vulkan work, the same tracker as `0001`), and there is no upstream VEPU580 H.264 driver to backport a fix from | Only if `0001` itself retires, i.e. if an upstream VEPU580 driver ever replaces it wholesale. **Do not retire it on the strength of "upstream rkvenc landed"** — see [§ `0001`](#0001--do-not-retire-on-rkvenc-landing), which applies verbatim | 2026-08-09 | Adds `dma_set_max_seg_size(dev, DMA_BIT_MASK(32))` to `rkvenc_hw_probe()`, then **reads it back** with `dma_get_max_seg_size()` and fails the probe with `-EINVAL` if it did not take. Defect 2 of the 3 stacked in the pipeline's "MPP hardware video encode" KNOWN ISSUE. The IOVA guardrail in `rkvenc_service.c` is **deliberately untouched** — it correctly catches the symptom, and on a real board it never fired across 1080p, 4K, dual-core or a 10-minute soak. Read [§ `0008`](#0008--validated-on-rock-5b-and-what-that-does-and-does-not-mean). Hardware legs: [`BOARD-QUALIFICATION.md` §4](BOARD-QUALIFICATION.md) |
 | `0009` `system-uncached` dma-heap — **`VALIDATED` on Rock 5B+ (2026-08-09), `UNVALIDATED` on Orange Pi 5+** | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Ported in shape from the ACK/Rockchip uncached heap; no upstream Linux counterpart exists — mainline `drivers/dma-buf/heaps/` carries `system`, `system_cc_shared` and CMA only. Its reason to exist is the same `0001`/MPP stack, so its upstream position is the `0001` row's | `first-party-no-upstream` — upstream rkvenc is `WIP` (Collabora's Mesa/Vulkan work, the same tracker as `0001`), and no mainline series proposes an uncached system heap | Retire when **either** mainline registers an uncached system heap under exactly the name `system-uncached`, **or** `0001` retires wholesale, **or** the userspace stops hard-coding the name (a `librockchip-mpp` with a heap-name override or a working cached-heap fallback). Not before: the shipped `librockchip-mpp1 1.5.0-1` has neither | 2026-08-09 | Registers a second dma-heap from `system_heap.c` using the file's existing per-heap drvdata mechanism: `pgprot_writecombine()` mappings, a one-time `arch_dma_prep_coherent()` clean at allocation, and `DMA_ATTR_SKIP_CPU_SYNC` + skipped `dma_sync_sgtable_*` **only** for that heap. Defects **1 and 3** of the 3 stacked in the pipeline's "MPP hardware video encode" KNOWN ISSUE (`0008` is defect 2). Gated by its own `CONFIG_DMABUF_HEAPS_SYSTEM_UNCACHED`, which `depends on ARCH_HAS_DMA_PREP_COHERENT` so it cannot build where it would silently hand back cached memory. Confirmed a genuine second heap (minor `250,1`, not an alias of `system`'s `250,0`) that does not draw from CMA. Read [§ `0009`](#0009--validated-on-rock-5b-and-why-orange-pi-5-and-a-real-hdmi-source-stay-open) |
-
 ### `0001` — do not retire on rkvenc landing
 
 The Collabora table's VEPU580 H.264 entry is `WIP`, and the linked thread says
@@ -713,60 +712,283 @@ HDMI-TX link ever becomes something this product diagnoses.
 
 ---
 
-## Honest gaps
+## 2026-08 candidate reconciliation matrix (M1–M8 / U1–U7)
 
-**As of 2026-08-08, in the Collabora mainline-status table and the lore threads it
-links** (that qualifier is the whole point of this section — it is a statement
-about two named sources on one named date, not a universal negative about the
-kernel):
+One screening round, fifteen candidates, one row each — **including the ones that
+were excluded before a single command was run**. A candidate that leaves no row
+reads later as a candidate nobody thought of, which is exactly the confusion this
+ledger exists to prevent, so "not screened, and here is why" is recorded as a
+result rather than omitted.
 
-- **No RK3588 Bluetooth backport candidates found.** The Collabora table carries
-  no Bluetooth row at all, and no linked thread in either the pending or merged
-  improvements list concerns RK3588 Bluetooth. This is consistent with the shipped
-  boards, where Bluetooth is **USB-side and handled in userspace** — so there is
-  nothing for a kernel-patch repository to carry here regardless.
-- **GPU (panthor), DFI and thermal-ADC metrics are already in `v7.1.y`.** The
-  capture shows GPU `6.10-rc1`, DFI `6.7-rc1` ("DDR memory utilization for perf"),
-  Thermal ADC `6.4-rc1`, plain ADC `6.5-rc1` — all well below the pinned base, so
-  there is nothing to backport.
-- **DMC and deeper power telemetry are upstream-TODO — nothing importable.** The
-  capture lists DMC (Dynamic Memory Controller, memory frequency scaling) as
-  `TODO` with no linked series. There is no posting to backport; this is an
-  absence upstream, not a gap in this repository.
+Discovery artifact: the Collabora `mainline-status.md` snapshot, fetched
+`2026-08-09T20:27:03Z`, 27,159 bytes. The live `ref=main` bytes still matched that
+digest when this round re-fetched them on 2026-08-10, and the same bytes are
+reproducible from the immutable commit-pinned URL
+`…/repository/files/mainline-status.md/raw?ref=8bcf0c0493a1bf90e4e7216e25a6b2a00a5688f8`,
+which is recorded as the source of record so a later edit to the page cannot move
+this round's ground truth.
 
-None of the three is a work item, and none should be turned into one. They are
-recorded so the next person does not repeat the search and reach the same three
-dead ends.
+**Screening base:** `v7.1.7` (`c7ba9d6de43e9d9bd755b1f3c19501a38898c6b6`), a real
+checkout — `Apply base-only` and `Apply stacked` below are `git apply` results
+against that tree, not judgements. **Build result** is a symbol-resolution and
+`git am` result: this repository compiles nothing by design (see `AGENTS.md`
+"Scope is patch application only"), so a row claiming a compile would be a claim
+this repo cannot make. **Last checked: 2026-08-10** for every row.
 
-### Sources checked for this sweep
+**Machine-checked.** `scripts/validate-candidate-matrix.py` refuses this block if
+an alias, a field or the snapshot digest is missing, empty, duplicated, or carries
+a disposition outside `IN` / `OUT` / `ALREADY-IN-BASE / NO IMPORT` /
+`ALREADY CARRIED`:
 
-| Source | How | Snapshot |
-|---|---|---|
-| Collabora `mainline-status.md` | Fetched 2026-08-08 with a real browser (Playwright 1.61.1 / Chromium) — the page sits behind an Anubis proof-of-work gate that a plain `curl` cannot pass | `.omo/evidence/image-pipeline-quality/collabora-mainline-status-2026-08-08.md` (untracked; `.omo/` is gitignored) — sha256 `729b87afb5a4fb097713b79e264a3688e25f3f971a8b9fcbc6c73d49340dccb9` |
-| Every lore thread linked from the rows above | `https://lore.kernel.org/r/<message-id>` resolution check, 2026-08-08 | All 12 Message-IDs resolved (HTTP 302 to `/all/…`); zero 404s |
-| The `0005` counterpart thread, **read in full** | `https://lore.kernel.org/all/<message-id>/t.mbox.gz` — the gzipped thread mbox is served to plain `curl`, unlike the HTML views and `/raw` (both 403). `patchwork.kernel.org`'s API returns **zero** results for this Message-ID, so T10's patchwork route does not work here | 34 messages, 4 patches, 3 human reviewers + `sashiko-bot`; every `Reviewed-by`/`Tested-by` quoted in [`EVAL-0005-AUDIO.md`](EVAL-0005-AUDIO.md) |
-| The pinned kernel tree at `v7.1.7` | Path + content checks per patch | [`REBASE-v7.1.7.md` § Patch-ID / content check](REBASE-v7.1.7.md#patch-id--content-check-against-the-new-base) — 0 of 5 absorbed |
-| Both T12 import-candidate threads, **read in full** | Same `t.mbox.gz` route as the `0005` row. `lore.kernel.org`'s *search* endpoint (`/all/?q=…&x=m`) is **also 403** — only a thread fetched by a known Message-ID is served, so a "Fixes: sweep" cannot be run against lore | IOMMU: 3 messages (`Acked-by` Heiko, "Applied, thanks" from Joerg). MCLK: the v3 thread is 9 messages, and the **v4** thread it became is 18, including the post-merge regression report |
-| All four T13 candidate threads, **read in full** | Same `t.mbox.gz` route, one fetch per Message-ID, all HTTP 200 to plain `curl`. Every reply body read, not just the patches — which is where three of the four verdicts came from | fdinfo 12 unique msgs (24 raw) · tracepoints 22 (44) · PCIe PM 11 (22) · SCDC 10 (10). **Zero** `Reviewed-by`/`Acked-by`/`Tested-by` across the first three; five review tags across SCDC, none of them on its payload patch |
-| Applicability + symbol existence for all 29 T13 patches | `git apply --check` forward **and** reverse per patch against a clean `v7.1.7` worktree, then a stacked `git apply` of each candidate's minimal useful set, then an identifier probe of the base for every symbol the payloads name (per T12's "applies ≠ compiles" rule) | 12 of 29 fail even a textual forward apply. Minimal stacks: fdinfo **applies**; tracepoints stops at `03/11`; PCIe PM stops at `7/8`; SCDC stops at `4/5` |
-| Is `debugfs` mounted on the shipped image? (the SCDC gate) | Direct inspection of `image-building-pipeline/v2/mkosi` — the built base layer's systemd unit tree and the image's own unit-masking policy — plus the pipeline's real-hardware notes | **Yes.** `sys-kernel-debug.mount` present *and* in `sysinit.target.wants/`; not among the six units `suppress_unusable_boot_units` masks; `/sys/kernel/debug/...` demonstrably read on a live Rock 5B+ |
-| Mainline commit resolution and the **`Fixes:` sweep** | `api.github.com/search/commits` over `torvalds/linux` for identity (author date matched to the posting, to the second), `…/compare/<sha>…v7.2-rc1` for containment (`status: ahead`, `behind_by: 0`), then `…/commits?path=<file>&since=<merge-date>` per touched file — a bounded per-file sweep, which is what makes "no follow-up exists" a measured claim rather than an absent search hit | 6 SHAs resolved, all contained in `v7.2-rc1`. Sweep over all five touched files: **zero** commits carrying a `Fixes:` tag naming any of them; the only extra commit surfaced was `32d1d88c4165`, which is a *prerequisite* of the MCLK series, not a fix to it |
+```bash
+python3 scripts/validate-candidate-matrix.py docs/UPSTREAM-STATUS.md \
+  --aliases M1,M2,M3,M4,M5,M6,M7,M8,U1,U2,U3,U4,U5,U6,U7 \
+  --source-sha256 729b87afb5a4fb097713b79e264a3688e25f3f971a8b9fcbc6c73d49340dccb9
+```
 
-**The Collabora capture is a snapshot, not a live feed.** Re-capture it — with a
-browser, not `curl` — at every base bump, and move the "Last checked" dates in the
-same change. A stale date is the honest signal that a row has not been re-verified.
+<!-- candidate-matrix: begin -->
 
----
+Discovery snapshot sha256: 729b87afb5a4fb097713b79e264a3688e25f3f971a8b9fcbc6c73d49340dccb9
 
-## Updating a row
+#### M1
 
-1. Re-capture the Collabora table (browser required) and re-resolve the row's
-   Message-ID.
-2. Update **Upstream status** and **Last checked** together. A status change with
-   an unchanged date is not a check.
-3. If the retire trigger has fired, do the retirement through
-   [`retired/REGISTRY.md`](../retired/REGISTRY.md) — **move** the source file, add
-   the registry row, drop the `SERIES` entry, regenerate `patches/`. Then point
-   this row's Notes at the registry entry.
-4. If an import lands, replace the candidate row's placeholder provenance with the
-   real `commit <sha> upstream.` value recorded in the `backports/` header.
+- Capture revision: merged mainline commit, captured 2026-08-10
+- Subject: mmc: sdhci-of-dwcmshc: check bus clock enable result in the probe() method
+- Identity: commit `521f39ca93cc43ce1b3eae8d44201f8f55dd9151`
+- Thread review: merged with `Acked-by: Adrian Hunter`, `Cc: stable@vger.kernel.org`, applied by Ulf Hansson; two `Fixes:` tags (`e438cf49b305`, `bccce2ec7790`)
+- Prerequisite graph: none — the change is local to `dwcmshc_probe()` error unwinding
+- Follow-up sweep: not needed; the commit is already present in the screening base, so any follow-up would arrive through 7.1.y like the commit itself did
+- Apply base-only: forward `git apply --check` FAILS, reverse `git apply -R --check` SUCCEEDS on every hunk — the post-image is already the base
+- Apply stacked: not attempted; a patch already present in the base cannot be stacked onto it
+- Overlap: none with any series member; no member touches `drivers/mmc/`
+- Build result: not applicable — nothing is imported, and the base already carries `err_bus_clk` at `sdhci-of-dwcmshc.c:2513` plus the checked `clk_prepare_enable(priv->bus_clk)` at 2443
+- Regression state: none known; the fix is in the shipped base and has been through 7.1.y
+- Retire trigger: not applicable — there is nothing carried to retire
+- Disposition: ALREADY-IN-BASE / NO IMPORT
+
+#### M2
+
+- Capture revision: merged mainline commit (7.3-rc1 per the Collabora table), captured 2026-08-10
+- Subject: phy: rockchip: naneng-combphy: Always configure SSC spread direction
+- Identity: commit `be2b5b17b7053fee142939076746d26b2d6c9702`
+- Thread review: merged with `Tested-by: Liu Changjie`, `Cc: stable`, `Fixes: 0b31f297557f`, applied by Vinod Koul
+- Prerequisite graph: exactly one, and it is decisive — the commit only makes sense on top of `0b31f297557f` ("Consolidate SSC configuration"), which introduced the regression it repairs
+- Follow-up sweep: `torvalds/linux` commits on `phy-rockchip-naneng-combphy.c` since 2026-03-25 are `0b31f297557f` (2026-05-19) and this commit (2026-07-20); neither is in `v7.1.7`
+- Apply base-only: forward FAILS — the base has no `rk_combphy_common_cfg_ssc()` for the hunks to land in
+- Apply stacked: not attempted; the base-only result already settles it
+- Overlap: would overlap `0010` (both edit `phy-rockchip-naneng-combphy.c`), which is moot given the disposition
+- Build result: not applicable — nothing imported
+- Regression state: the regression this fixes does not exist in the base. `v7.1.7` still performs the `RK3568_PHYREG32` direction writes unconditionally inside each per-type `switch` (lines 604, 614, 759, 771, 885) and gates only the "Enable SSC" block on `priv->enable_ssc`, which is the pre-`0b31f297557f` behaviour this commit restores
+- Retire trigger: not applicable — nothing carried. If the base ever absorbs `0b31f297557f` without this commit, re-open the candidate
+- Disposition: OUT
+
+#### M3
+
+- Capture revision: merged mainline commit, captured 2026-08-10
+- Subject: media: rockchip: rga: avoid odd frame sizes for YUV formats
+- Identity: commit `92f50870ae987b8e2e5334e4ee38f82f6f405d78`
+- Thread review: not read — excluded by the approved import tier before technical screening began
+- Prerequisite graph: not resolved — excluded before screening
+- Follow-up sweep: not run — excluded before screening
+- Apply base-only: not attempted — excluded before screening
+- Apply stacked: not attempted — excluded before screening
+- Overlap: not assessed — excluded before screening; RGA is touched by no series member
+- Build result: not run — excluded before screening
+- Regression state: not assessed — excluded before screening
+- Retire trigger: not applicable — nothing carried. Re-open only if the approved import tier is widened to RGA
+- Disposition: OUT
+
+#### M4
+
+- Capture revision: merged mainline commit set, captured 2026-08-10
+- Subject: Panthor runtime/reset/MMU/firmware stability set
+- Identity: commits `e62179fd3e23ecfaedf7101e19ec0d3e4f51de76`, `1b8d771fb214e1f783d66caf13d35d7eda39a643`, `1f27cef1f41dac0bd254d8741766f189936c9880`, `b921b8613790a3f9e78ab64017fa7149ef0b750c`, `4a2c8cbe9bcba170706fdf08b1c84b6cbcf5b044`, `2b8f13d3c7e26c46c20d9e367904cf01729c88e6`
+- Thread review: not read — excluded by the approved import tier before technical screening began
+- Prerequisite graph: not resolved — excluded before screening. The set is six commits on its face, which is already past this lane's two-prerequisite ceiling
+- Follow-up sweep: not run — excluded before screening
+- Apply base-only: not attempted — excluded before screening
+- Apply stacked: not attempted — excluded before screening
+- Overlap: not assessed — excluded before screening; the GPU driver is touched by no series member
+- Build result: not run — excluded before screening
+- Regression state: not assessed — excluded before screening
+- Retire trigger: not applicable — nothing carried. Re-open only if the approved import tier is widened to Panthor
+- Disposition: OUT
+
+#### M5
+
+- Capture revision: `PATCHv2` posting, merged for 7.2-rc1 per the Collabora table; captured 2026-08-10
+- Subject: media: synopsys: hdmirx: Fix HPD lane hold time — the Collabora table names this row "HDMI-RX EDID fix", which is the symptom, not the mechanism
+- Identity: lore `20260325105742.63236-1-dmitry.osipenko@collabora.com`; the stable backport in the base is `7dd27810eea0`, itself the backport of mainline `d1162a5adbb5`
+- Thread review: single message, `Signed-off-by: Dmitry Osipenko`, no objections in thread
+- Prerequisite graph: none — a two-line `msleep(100)` → `msleep(100 + 50)` change in `hdmirx_hpd_ctrl()`
+- Follow-up sweep: not needed; the change is already in the base via 7.1.6
+- Apply base-only: forward `git apply --check` FAILS, reverse `git apply -R --check` SUCCEEDS — the post-image is the base. Verified against the real `v7.1.7` checkout, not inferred from `docs/EVAL-0002-EDID.md`
+- Apply stacked: not attempted; a patch already present in the base cannot be stacked onto it
+- Overlap: shares `snps_hdmirx.c` with `0002`/`0003`/`0005`, but shares no mechanism — `0002` is IRQ masking, lock-loop rework and DMA reset; this is HPD hold time
+- Build result: not applicable — nothing imported
+- Regression state: none known; in the base since `v7.1.6`
+- Retire trigger: not applicable — nothing carried. This row exists so that a future reader does not re-import it. It is **not** a replacement for `0002`; see `docs/EVAL-0002-EDID.md`
+- Disposition: ALREADY-IN-BASE / NO IMPORT
+
+#### M6
+
+- Capture revision: merged mainline commit, carried since the `0007` import; re-verified 2026-08-10
+- Subject: iommu/rockchip: disable fetch dte time limit
+- Identity: commit `8d4346ecd4950ae08cc76a6de327c264e846758c`, lore `20260428-spu-iommudtefix-v2-1-f592f579e508@pengutronix.de`
+- Thread review: `Acked-by: Heiko Stuebner`, applied by Joerg Roedel; no `Fixes:` tag and no `Cc: stable`, which is why 7.1.y will not pick it up on its own
+- Prerequisite graph: none — `RK_MMU_AUTO_GATING` and `rk_iommu_read/write` already exist in the base
+- Follow-up sweep: unchanged since the `0007` import sweep; no landed follow-up on `rockchip-iommu.c` invalidates it
+- Apply base-only: applies with no fuzz — this is what the existing `0007` import does today
+- Apply stacked: `scripts/apply.sh` applies the full 12-member series to `v7.1.7`, `0007` included, on 2026-08-10
+- Overlap: none — `0007` is the only member touching `drivers/iommu/`
+- Build result: `git am` of the whole series succeeds; no unresolved symbol
+- Regression state: none known
+- Retire trigger: pinned base reaches `v7.2`, then retire through `retired/REGISTRY.md`
+- Disposition: ALREADY CARRIED
+
+#### M7
+
+- Capture revision: `PATCHv3` posting, merged for 7.2-rc1 per the Collabora table; captured 2026-08-10
+- Subject: Add support for I2S MCLK output gate clocks (RK3588)
+- Identity: lore `20260320-rk3588-mclk-gate-grf-v3-0-980338eacd2c@superkali.me`
+- Thread review: already read and written up in this document — see "I2S MCLK gate clocks — skipped, known regression on Rock 5B+"
+- Prerequisite graph: four deep, recorded in that section; the lane's ceiling is two
+- Follow-up sweep: not re-run — the recorded Rock 5B+ regression has no landed fix, which is the blocking finding and does not change with a sweep
+- Apply base-only: not re-attempted — the decision is behavioural, not an apply result
+- Apply stacked: not re-attempted, same reason
+- Overlap: would touch the I2S/clock path `0006` depends on, which is precisely why the recorded Rock 5B+ regression is disqualifying here
+- Build result: not run — the candidate is excluded on a recorded regression, not on build
+- Regression state: documented Rock 5B+ regression with no landed fix. This is an owner decision already taken; it is not re-litigated here
+- Retire trigger: not applicable — nothing carried. Re-open only if the recorded regression is demonstrably fixed upstream
+- Disposition: OUT
+
+#### M8
+
+- Capture revision: `PATCHv2` posting, 13 patches, merged for 7.2-rc1 per the Collabora table; captured 2026-08-10 from the canonical thread archive
+- Subject: arm64: dts: rockchip: Wire up frl-enable-gpios for RK3576/RK3588 boards
+- Identity: lore `20260428-dts-rk-frl-enable-gpios-v2-0-924df9db884a@collabora.com`
+- Thread review: cover plus 13 patches plus one reply; a clean, uncontested device-tree wiring series
+- Prerequisite graph: the *driver* half is already in the base — `dw_hdmi_qp-rockchip.c` reads `frl-enable-gpios` at line 553 and the property is documented in `rockchip,rk3588-dw-hdmi-qp.yaml`. The series itself is 13 sequential patches, and patches 11–13 are unrelated `pinctrl-names` cleanup
+- Follow-up sweep: not run — the disposition turns on payload scope, which no follow-up changes
+- Apply base-only: the thread parses and the 13 patches extract cleanly; a full apply was not run because the candidate is excluded on scope
+- Apply stacked: not attempted, same reason
+- Overlap: patches 04 and 12 touch `rk3588-orangepi-5-plus.dts`, which `0006` also edits — a real overlap risk for a payload with no capture-path benefit
+- Build result: not run — excluded on scope
+- Regression state: none known upstream. Absent the GPIO the encoder falls back cleanly to TMDS, which the binding states explicitly, so declining costs no working behaviour
+- Retire trigger: not applicable — nothing carried. Re-open if CeraLive ever ships HDMI **output** above 4K60, which needs FRL and therefore this bias wiring
+- Disposition: OUT
+
+#### U1
+
+- Capture revision: `PATCHv3`, posted 2026-04-08; captured 2026-08-10 from the canonical thread archive
+- Subject: mmc: sdhci-of-dwcmshc: Disable clock before DLL configuration
+- Identity: lore `1775632729-22841-1-git-send-email-shawn.lin@rock-chips.com`
+- Thread review: two messages — the posting (`Signed-off-by: Shawn Lin`, `Acked-by: Adrian Hunter`) and a reply from Ulf Hansson
+- Prerequisite graph: depends on U2's Rockchip platform-data refactor, which is why U2 is ordered before U1 wherever both are considered
+- Follow-up sweep: not needed; the change is already present in the base
+- Apply base-only: forward FAILS, reverse `git apply -R --check` SUCCEEDS on every hunk
+- Apply stacked: not attempted; already present in the base
+- Overlap: none with any series member
+- Build result: not applicable — nothing imported. The base carries the exact constructs the posting adds: `/* Disable clock while config DLL */` (line 787), the `enable_clk:` label (876) and `sdhci_enable_clk(host, 0)` (884)
+- Regression state: none known
+- Retire trigger: not applicable — nothing carried
+- Disposition: ALREADY-IN-BASE / NO IMPORT
+
+#### U2
+
+- Capture revision: `PATCHv2`, posted 2026-03-27; captured 2026-08-10 from the canonical thread archive
+- Subject: mmc: sdhci-dwcmshc: Refactor Rockchip platform data for controller revisions
+- Identity: lore `1774620875-18258-1-git-send-email-shawn.lin@rock-chips.com`
+- Thread review: two messages — the posting (`Signed-off-by: Shawn Lin`) and `Acked-by: Adrian Hunter`
+- Prerequisite graph: none; it is itself U1's prerequisite
+- Follow-up sweep: not needed; the refactor is already present in the base
+- Apply base-only: forward FAILS and reverse FAILS, but only on one hunk, and the content check settles it — see Build result
+- Apply stacked: not attempted; already present in the base
+- Overlap: none with any series member
+- Build result: not applicable — nothing imported. Every construct the refactor introduces is in the base: `struct rockchip_pltfm_data` (line 328) with its `revision` member (335), `to_pltfm_data(dwc_priv, rockchip)` (757), the `revision == 0` / `revision == 1` tests (828, 854) and the three `sdhci_dwcmshc_rk35xx_pdata` initialisers (2131, 2147, 2163). The reverse apply fails only because a later cosmetic change dropped a pair of parentheses at line 854
+- Regression state: none known
+- Retire trigger: not applicable — nothing carried
+- Disposition: ALREADY-IN-BASE / NO IMPORT
+
+#### U3
+
+- Capture revision: `PATCHv1` (posted as a bare `[PATCH]`), 2026-03-25; captured 2026-08-10 from the canonical thread archive
+- Subject: phy: rockchip: naneng-combphy: Fix TX detect RX termination errata
+- Identity: lore `1774423383-36599-1-git-send-email-shawn.lin@rock-chips.com`
+- Thread review: three messages — the posting (`Signed-off-by: Shawn Lin`), an author ping on 2026-04-27, and Vinod Koul on 2026-05-10 asking for a `Fixes:` tag and an erratum reference. Unanswered, no reroll, no `Reviewed-by`, no `Nacked-by`. The open question is about the commit message, not the register write
+- Prerequisite graph: none — `rockchip_combphy_updatel()` and the `RK3568_PHYREG*` block are in the base, and `RK3568_PHYREG26` is defined by the patch itself
+- Follow-up sweep: `phy-rockchip-naneng-combphy.c` took `0b31f297557f` (2026-05-19) and `be2b5b17b705` (2026-07-20) in mainline since the posting; neither is in `v7.1.7` and neither touches the RTERM path
+- Apply base-only: applies with no fuzz to `v7.1.7`
+- Apply stacked: applies with no fuzz on top of the existing series
+- Overlap: none — no other series member touches `drivers/phy/`
+- Build result: `git am` of the 12-member series succeeds; no unresolved symbol
+- Regression state: none known; no reported regression on the thread
+- Retire trigger: the posting merges AND the pinned base absorbs it — both, then retire through `retired/REGISTRY.md`
+- Disposition: IN
+
+#### U4
+
+- Capture revision: `PATCHv5`, 10 patches, posted 2026-07-23; captured 2026-08-10 from the canonical thread archive
+- Subject: phy: rockchip: samsung-hdptx: Clock fixes and API transition cleanups
+- Identity: lore `20260723-hdptx-clk-fixes-v5-0-8e786067865f@collabora.com`
+- Thread review: 31 messages. Manivannan Sadhasivam reviewed all ten on 2026-08-07 and gave `Reviewed-by` on eight — but asked for a behaviour change on 02/10 ("If the hardware state is invalid, why can't this be a hard failure?") and repeated it on 03/10, both unanswered
+- Prerequisite graph: internally sequential — 03 and 06–10 fail a base-only apply on their own and only land after their predecessors, so taking any single fix means taking its chain
+- Follow-up sweep: not decisive — the blocking finding is an open in-thread change request, which no mainline sweep can resolve
+- Apply base-only: all ten apply with no fuzz **in sequence** to `v7.1.7`
+- Apply stacked: not attempted — the candidate is excluded on review state, not on apply
+- Overlap: none with any series member
+- Build result: not run — excluded on review state
+- Regression state: no reported regression; the exclusion is that 02 and 03 are still being negotiated
+- Retire trigger: would not work. What merges will be a v6 whose 02/03 behave differently from what a v5 import would ship, so "retire when this merges" would silently stop matching — the same failure that turned away the fdinfo candidate
+- Disposition: OUT
+
+#### U5
+
+- Capture revision: `PATCHv3`, standalone — **no cover letter and zero sibling patches**; posted 2026-05-21 by Simon Wright; captured 2026-08-10 from the canonical thread archive
+- Subject: [PATCH v3] drm/bridge: dw-hdmi-qp: use drm_hdmi_acr_get_n_cts() helper for audio N/CTS
+- Identity: lore `86fcf349-0a7a-4618-9001-612371b0f71b@symple.nz`
+- Thread review: two messages — the posting (`Signed-off-by`, `Tested-by`, `Reported-by`, all Simon Wright) and Cristian Ciocaltea on 2026-06-03 giving `Reviewed-by` and `Tested-by` with "The patch looks good to me." No change requested, no reroll
+- Prerequisite graph: none — `drm_hdmi_acr_get_n_cts()` is already exported by `drivers/gpu/drm/display/drm_hdmi_helper.c` in the base
+- Follow-up sweep: the only mainline commit on `dw-hdmi-qp.c` since the posting is `fb145be7964d` (2026-05-21, common TMDS char rate constant), which does not touch the N/CTS path
+- Apply base-only: applies with no fuzz to `v7.1.7`
+- Apply stacked: applies with no fuzz on top of the existing series, and before `0012`
+- Overlap: shares `dw-hdmi-qp.c` with `0012` and does not collide — this replaces the private N/CTS table, `0012` changes the audio enable/prepare hooks; applying `0011` then `0012` was verified clean in that order
+- Build result: `git am` of the 12-member series succeeds; no unresolved symbol
+- Regression state: none known
+- Retire trigger: the posting merges AND the pinned base absorbs it — both, then retire through `retired/REGISTRY.md`
+- Disposition: IN
+
+#### U6
+
+- Capture revision: `PATCHv1` (posted as a bare `[PATCH]`), 2026-05-19; captured 2026-08-10 from the canonical thread archive
+- Subject: drm/bridge: dw-hdmi-qp: Return -EOPNOTSUPP in HDMI audio functions
+- Identity: lore `20260519-fix-hdmi-audio-warnings-v1-1-9608966c993f@collabora.com`
+- Thread review: five messages — the posting (`Signed-off-by: Detlev Casanova`), Sebastian Reichel asking only for a `Fixes: fd0141d1a8a2a` tag, `Tested-by: Maud Spierings` on an Orange Pi 5+ (2026-07-06), an author nudge (2026-08-06) and `Tested-by: Diederik de Haas` (2026-08-08) reporting hundreds of the errors it removes. No change to the payload was requested
+- Prerequisite graph: none — two hunks, no new symbol
+- Follow-up sweep: the only mainline commit on `dw-hdmi-qp.c` since the posting is `fb145be7964d` (2026-05-21), which does not touch the audio hooks
+- Apply base-only: applies with no fuzz to `v7.1.7`
+- Apply stacked: applies with no fuzz on top of the existing series and after `0011`
+- Overlap: shares `dw-hdmi-qp.c` with `0011` and does not collide — see the `0011` row
+- Build result: `git am` of the 12-member series succeeds; no unresolved symbol
+- Regression state: none known; two independent `Tested-by` reports on RK3588 hardware
+- Retire trigger: the posting merges AND the pinned base absorbs it — both, then retire through `retired/REGISTRY.md`
+- Disposition: IN
+
+#### U7
+
+- Capture revision: `PATCHv6`, 4 patches, posted 2025-07-15; captured 2026-08-10 from the canonical thread archive
+- Subject: PCI: Add support for resetting the Root Ports in a platform specific way
+- Identity: lore `20250715-pci-port-reset-v6-0-6f9cce94e7bb@oss.qualcomm.com`
+- Thread review: 25 messages, long-running cross-subsystem discussion; the b4 relay rewrites `From:` on some archived copies, which is why the importer records the observed senders beside the digest rather than inside it
+- Prerequisite graph: unbounded for this base — the series was written against a mid-2025 tree and touches PCI core (`PCI/ERR`), `pci-host-common`, `pcie-qcom` and `pcie-dw-rockchip` together
+- Follow-up sweep: not decisive — the candidate fails on apply before a sweep matters
+- Apply base-only: 1/4 applies; **2/4, 3/4 and 4/4 all FAIL** in sequence — `pci-host-common.h:16`, `dwc/Kconfig:296` and `pcie-dw-rockchip.c:23` have all moved in `v7.1.7`
+- Apply stacked: not attempted — a series that fails base-only cannot pass stacked
+- Overlap: none with any series member
+- Build result: not run — the series does not apply
+- Regression state: not assessed — the candidate fails on apply
+- Retire trigger: not applicable — nothing carried. Re-open only if the series is reposted against a 7.x tree
+- Disposition: OUT
+
+<!-- candidate-matrix: end -->
+

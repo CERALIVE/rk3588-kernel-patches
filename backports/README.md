@@ -21,8 +21,8 @@ inheriting that one.
 
 ## What a member of this lane must carry
 
-Each `backports/` entry in `SERIES` is a `Patch(origin=BACKPORTS, …)` with a
-`Backport(...)` attached, and the build refuses the lane without one:
+Each `backports/` entry in `SERIES` is a `Patch(origin=BACKPORTS, …)`
+with a `Backport(...)` attached, and the build refuses the lane without one:
 
 | Field | What it is |
 |-------|-----------|
@@ -66,8 +66,18 @@ already turned a candidate away once:
   readable. The I2S MCLK gate series was declined on both counts at once —
   [`docs/UPSTREAM-STATUS.md` § MCLK](../docs/UPSTREAM-STATUS.md#i2s-mclk-gate-clocks--skipped-known-regression-on-rock-5b).
 
+Both checks were exercised again in the 2026-08 screening round, and both turned
+candidates away: U7 (PCIe root-port reset, `PATCHv6`) fails 2/4 onward against
+`v7.1.7` because it was written for a mid-2025 tree, and M2 repairs a regression
+introduced by a commit the base does not carry. Every candidate, IN or OUT, has a
+row in the reconciliation matrix in
+[`docs/UPSTREAM-STATUS.md`](../docs/UPSTREAM-STATUS.md#2026-08-candidate-reconciliation-matrix-m1m8--u1u7);
+`scripts/validate-candidate-matrix.py` refuses that block if any row or field is
+missing.
+
 For an **unmerged** posting there is a third check, and it is the one that turned
-away the only T13 candidate that passed everything else:
+away the only T13 candidate that passed everything else — and, in the 2026-08
+round, U4 as well:
 
 - **Whether the payload is a userspace-visible interface still under
   negotiation.** A backport of merged code retires cleanly when the base absorbs
@@ -81,4 +91,7 @@ away the only T13 candidate that passed everything else:
   [`docs/UPSTREAM-STATUS.md` § fdinfo](../docs/UPSTREAM-STATUS.md#v4l2-hw-usage-stats-fdinfo--skipped-the-key-names-are-already-agreed-to-change).
   The counter-check is just as important: read the *review tags per patch*, not
   per series. The SCDC series carries five of them and **none** is on the patch
-  that would have been the payload.
+  that would have been the payload. U4 is the same trap wearing a better
+  disguise: eight of its ten patches carry `Reviewed-by` from the maintainer, and
+  the other two carry an unanswered request to change their behaviour — so a v5
+  import would ship exactly the two patches upstream has already declined.

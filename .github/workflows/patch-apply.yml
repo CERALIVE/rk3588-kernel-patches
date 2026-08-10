@@ -38,6 +38,12 @@ jobs:
       - name: patches/ payload is byte-identical to its source lane
         run: python3 scripts/verify-payload-parity.py
 
+      - name: the candidate reconciliation matrix is complete
+        run: |
+          python3 scripts/validate-candidate-matrix.py docs/UPSTREAM-STATUS.md \
+            --aliases M1,M2,M3,M4,M5,M6,M7,M8,U1,U2,U3,U4,U5,U6,U7 \
+            --source-sha256 729b87afb5a4fb097713b79e264a3688e25f3f971a8b9fcbc6c73d49340dccb9
+
       - name: upstream/ is unmodified since import
         run: |
           source kernel-pin.env
