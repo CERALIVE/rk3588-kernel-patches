@@ -96,10 +96,10 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 REVISION_RE = re.compile(r"^v[0-9]+$")
 
 # Slot count, not member count. 0004 was never published upstream and we keep the
-# gap so our files line up 1:1 with theirs, hence ordinals 1/9, 2/9, 3/9, 5/9, 6/9.
-# 0007 continues the same counter into the backports/ lane, and 0008 and 0009 back
+# gap so our files line up 1:1 with theirs. Every later ordinal continues the same
+# counter regardless of lane: 0007 and 0010-0012 into backports/, everything else
 # into ceralive/.
-SERIES_TOTAL = 17
+SERIES_TOTAL = 18
 
 DS_STORE_RE = re.compile(r"^Binary files .*\.DS_Store .* differ$")
 HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
@@ -1081,6 +1081,81 @@ SERIES: tuple[Patch, ...] = (
             "have the same one-shot, auto-reset, consumed-counter semantics as the",
             "rkvenc controls, and both compile to nothing when the symbol is off --",
             "checked, not asserted: a production build produces no snps_hdmirx_test.o.",
+        ),
+    ),
+    Patch(
+        filename="0018-dma-buf-heaps-truthful-partial-registration.patch",
+        ordinal=18,
+        subject=(
+            "dma-buf: heaps: report partial system-heap registration truthfully"
+        ),
+        provenance=NULL_OID,
+        author="CeraLive <dev@ceralive.tv>",
+        date="Sun, 10 Aug 2026 14:00:00 -0500",
+        origin=CERALIVE,
+        rationale=(
+            "*** THE KUNIT SUITE IS VALIDATED, THE BOOT PATH IS NOT. *** All four",
+            "cases of ceralive_system_heap_test PASS under qemu-system-aarch64 on the",
+            "applied series (tools/testing/kunit/kunit.py run --arch=arm64), including",
+            "the one that matters. What has not been done is booting this on a Rock",
+            "5B+ and confirming the real heaps are still distinct and an encode still",
+            "works -- that is Wave 8, and this patch does not claim it.",
+            "",
+            "THERE IS NO REMOVAL API, AND THIS PATCH DOES NOT INVENT ONE.",
+            "",
+            "0009 added a second dma_heap_add() to system_heap_create(). If it fails,",
+            "the \"system\" heap registered immediately before it is ALREADY LIVE and",
+            "cannot be withdrawn: at this base dma_heap_add() has no counterpart --",
+            "no dma_heap_remove(), no unregister, and no atomic multi-add. The",
+            "function returned the error and said nothing about that, so a reader of",
+            "the code, and of dmesg, had no way to know which heaps the kernel was",
+            "left holding.",
+            "",
+            "Two wrong fixes were available and are named here so they are not tried",
+            "later. Adding a rollback would mean writing an unregister the API cannot",
+            "support, and a \"cleanup\" that leaves the heap present while reporting",
+            "that it removed it is worse than no cleanup at all. Claiming the pair is",
+            "atomic in a comment would be false in a place nobody can check.",
+            "",
+            "So the behaviour is stated instead. The error message now names the",
+            "partial state explicitly -- the first heap REMAINS REGISTERED and cannot",
+            "be withdrawn -- and the retire condition is written down beside the",
+            "function: when the pinned base gains a real removal API, unwind on",
+            "failure and change the test to assert the unwind rather than the",
+            "retention.",
+            "",
+            "THE SEAM. The registration sequence moves behind an internal add_fn",
+            "parameter, and __init keeps only the one-line wrapper that passes the",
+            "real dma_heap_add(). This is not abstraction for its own sake: a failing",
+            "second registration is not something a running kernel can be asked to",
+            "produce, so without an injection point the entire failure path is",
+            "unreachable from any test, and \"we handle it truthfully\" is an",
+            "unfalsifiable claim.",
+            "",
+            "THE TEST. ceralive_system_heap_test (built in under",
+            "CONFIG_DMABUF_HEAPS_CERALIVE_TEST, added by 0013) drives a fake add_fn",
+            "that fails on the Nth call. Its four cases assert: the second-add failure",
+            "returns the error unchanged AND leaves the first heap registered AND",
+            "attempts nothing further; a first-add failure registers nothing at all;",
+            "the success path registers the exact NAMES userspace binds to by string;",
+            "and -- the non-vacuity case -- the sequence really does call the injected",
+            "function, so a refactor back to a direct dma_heap_add() fails the suite",
+            "instead of silently making every other case test nothing and start",
+            "registering real heaps from a KUnit run.",
+            "",
+            "NOTHING REAL IS TOUCHED. Every add in the test goes through the injected",
+            "function and returns a sentinel token that is never dereferenced;",
+            "dma_heap_add() is not reached, so the boot's actual /dev/dma_heap nodes",
+            "are unaffected by the suite running. tests/check-kunit-heap.sh re-asserts",
+            "that from userspace afterwards, and parses the TAP result with an ANCHORED",
+            "match -- \"not ok 1 - <suite>\" contains \"ok 1 - <suite>\", so an",
+            "unanchored grep reports a failure as a pass.",
+            "",
+            "The test file is #included into system_heap.c rather than built as its",
+            "own translation unit because it drives file-local state (the three",
+            "system_heap_priv instances) and a static helper -- the same arrangement",
+            "other in-tree KUnit suites use for static internals. It compiles to",
+            "nothing without the symbol.",
         ),
     ),
 )

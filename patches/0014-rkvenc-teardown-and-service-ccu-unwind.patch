@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Sun, 10 Aug 2026 10:00:00 -0500
-Subject: [PATCH 14/17] media: rockchip: rkvenc: fix session teardown and unwind probe stages in reverse
+Subject: [PATCH 14/18] media: rockchip: rkvenc: fix session teardown and unwind probe stages in reverse
 
 *** SOURCE-VERIFIED AND BUILD-CLEAN; HARDWARE VALIDATION PENDING. ***
 The defects below were each read out of the driver as it stands after

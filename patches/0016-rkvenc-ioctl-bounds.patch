@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Sun, 10 Aug 2026 12:00:00 -0500
-Subject: [PATCH 16/17] media: rockchip: rkvenc: bound every userspace-supplied register request
+Subject: [PATCH 16/18] media: rockchip: rkvenc: bound every userspace-supplied register request
 
 *** SOURCE-VERIFIED AND BUILD-CLEAN; HARDWARE VALIDATION PENDING. ***
 Every defect below is reachable by any process that can open

@@ -1,0 +1,249 @@
+diff --git a/drivers/dma-buf/heaps/system_heap.c b/drivers/dma-buf/heaps/system_heap.c
+--- a/drivers/dma-buf/heaps/system_heap.c
++++ b/drivers/dma-buf/heaps/system_heap.c
+@@ -573,7 +573,34 @@ static struct system_heap_priv system_heap_uncached_priv = {
+ 	.uncached = true,
+ };
+ 
+-static int __init system_heap_create(void)
++/*
++ * REGISTRATION HAS NO INVERSE AT THIS KERNEL VERSION, AND THIS CODE DOES NOT
++ * PRETEND OTHERWISE.
++ *
++ * dma_heap_add() has no counterpart: there is no dma_heap_remove(), no
++ * unregister, and no way to add two heaps atomically. So when the system heap
++ * registers and the system-uncached heap that follows it FAILS, the first heap
++ * stays registered -- permanently, for that boot. That is not a bug to be
++ * papered over with a fake rollback; a rollback here would have to invent an
++ * API that does not exist, and a "cleanup" that silently leaves the heap
++ * present while reporting that it removed it is worse than no cleanup at all.
++ *
++ * The honest behaviour is therefore: keep the first heap, report the failure,
++ * and SAY what state the kernel is in. The partial state is documented in the
++ * error message rather than in a comment nobody reading dmesg will see.
++ *
++ * RETIRE CONDITION for this whole arrangement: when the pinned base gains a
++ * real dma_heap removal API, this function should unwind on failure and the
++ * KUnit case below should assert the unwind instead of the retention.
++ *
++ * add_fn exists so the failure above is REACHABLE from a test without
++ * registering or removing anything real. It is not an abstraction for its own
++ * sake -- it is the only seam through which "what happens when the second add
++ * fails" can be observed on a kernel that offers no way to make it fail.
++ */
++typedef struct dma_heap *(*system_heap_add_fn)(const struct dma_heap_export_info *);
++
++static int __system_heap_register_all(system_heap_add_fn add_fn)
+ {
+ 	struct dma_heap_export_info exp_info;
+ 	struct dma_heap *sys_heap;
+@@ -582,7 +609,7 @@ static int __init system_heap_create(void)
+ 	exp_info.ops = &system_heap_ops;
+ 	exp_info.priv = &system_heap_priv;
+ 
+-	sys_heap = dma_heap_add(&exp_info);
++	sys_heap = add_fn(&exp_info);
+ 	if (IS_ERR(sys_heap))
+ 		return PTR_ERR(sys_heap);
+ 
+@@ -601,9 +628,9 @@ static int __init system_heap_create(void)
+ 		exp_info.name = "system-uncached";
+ 		exp_info.priv = &system_heap_uncached_priv;
+ 
+-		sys_heap = dma_heap_add(&exp_info);
++		sys_heap = add_fn(&exp_info);
+ 		if (IS_ERR(sys_heap)) {
+-			pr_err("dma-buf system heap: cannot register system-uncached: %pe\n",
++			pr_err("dma-buf system heap: cannot register system-uncached: %pe; the \"system\" heap registered before it REMAINS REGISTERED and cannot be withdrawn (no removal API at this kernel version)\n",
+ 			       sys_heap);
+ 			return PTR_ERR(sys_heap);
+ 		}
+@@ -615,10 +642,23 @@ static int __init system_heap_create(void)
+ 
+ 	exp_info.name = "system_cc_shared";
+ 	exp_info.priv = &system_heap_cc_shared_priv;
+-	sys_heap = dma_heap_add(&exp_info);
+-	if (IS_ERR(sys_heap))
++	sys_heap = add_fn(&exp_info);
++	if (IS_ERR(sys_heap)) {
++		pr_err("dma-buf system heap: cannot register system_cc_shared: %pe; the heaps registered before it REMAIN REGISTERED\n",
++		       sys_heap);
+ 		return PTR_ERR(sys_heap);
++	}
+ 
+ 	return 0;
+ }
++
++static int __init system_heap_create(void)
++{
++	return __system_heap_register_all(dma_heap_add);
++}
++
++#if IS_ENABLED(CONFIG_DMABUF_HEAPS_CERALIVE_TEST)
++#include "system_heap_test.c"
++#endif
++
+ module_init(system_heap_create);
+diff --git a/drivers/dma-buf/heaps/system_heap_test.c b/drivers/dma-buf/heaps/system_heap_test.c
+new file mode 100644
+--- /dev/null
++++ b/drivers/dma-buf/heaps/system_heap_test.c
+@@ -0,0 +1,158 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * ceralive_system_heap_test — pin the TRUTHFUL failure semantics of the system
++ * heap's registration sequence.
++ *
++ * Included from system_heap.c under CONFIG_DMABUF_HEAPS_CERALIVE_TEST rather
++ * than built as its own translation unit, because it drives file-local state
++ * (the three system_heap_priv instances) and a static helper. That is the same
++ * arrangement other in-tree KUnit suites use for testing static internals.
++ *
++ * WHAT IS BEING ASSERTED, AND WHY IT IS NOT ATOMICITY.
++ *
++ * dma_heap_add() has no inverse at this kernel version: no removal, no
++ * unregister, no atomic multi-add. So a second registration that fails leaves
++ * the first heap registered for the remainder of the boot. This suite asserts
++ * exactly that -- first add retained, failure returned, no further adds
++ * attempted -- because it is what the API can actually promise. A test that
++ * asserted rollback would be asserting a behaviour the kernel cannot implement,
++ * and the only way to make it pass would be to fake the rollback.
++ *
++ * NOTHING REAL IS TOUCHED. Every add goes through the injected function, which
++ * records the call and returns a token; dma_heap_add() itself is never reached,
++ * so the boot's actual /dev/dma_heap nodes are unaffected by this suite running.
++ * tests/check-kunit-heap.sh re-asserts that from userspace afterwards.
++ *
++ * Copyright (C) 2026 CeraLive
++ */
++
++#include <kunit/test.h>
++
++#define CERALIVE_TEST_MAX_ADDS 8
++
++struct ceralive_add_log {
++	const char *names[CERALIVE_TEST_MAX_ADDS];
++	unsigned int count;
++	unsigned int fail_at;	/* 1-based; 0 means never fail */
++	int fail_err;
++};
++
++static struct ceralive_add_log ceralive_log;
++
++/*
++ * A non-NULL, non-ERR_PTR token. It is never dereferenced -- the registration
++ * sequence only ever IS_ERR()s it -- so a distinct sentinel is both sufficient
++ * and safer than handing back a real object.
++ */
++static struct dma_heap *const ceralive_fake_heap = (struct dma_heap *)&ceralive_log;
++
++static struct dma_heap *ceralive_fake_add(const struct dma_heap_export_info *info)
++{
++	if (ceralive_log.count < CERALIVE_TEST_MAX_ADDS)
++		ceralive_log.names[ceralive_log.count] = info->name;
++	ceralive_log.count++;
++
++	if (ceralive_log.fail_at && ceralive_log.count == ceralive_log.fail_at)
++		return ERR_PTR(ceralive_log.fail_err);
++
++	return ceralive_fake_heap;
++}
++
++static void ceralive_log_reset(unsigned int fail_at, int fail_err)
++{
++	memset(&ceralive_log, 0, sizeof(ceralive_log));
++	ceralive_log.fail_at = fail_at;
++	ceralive_log.fail_err = fail_err;
++}
++
++/*
++ * THE CASE THIS FILE EXISTS FOR. The second add fails; the first must remain
++ * registered, the error must be returned unchanged, and nothing beyond the
++ * failing add may be attempted.
++ */
++static void ceralive_second_add_failure_is_truthful(struct kunit *test)
++{
++	int ret;
++
++	if (!IS_ENABLED(CONFIG_DMABUF_HEAPS_SYSTEM_UNCACHED))
++		kunit_skip(test, "the second add only exists when the uncached heap is built");
++
++	ceralive_log_reset(2, -ENOMEM);
++	ret = __system_heap_register_all(ceralive_fake_add);
++
++	KUNIT_EXPECT_EQ_MSG(test, ret, -ENOMEM,
++			    "the failing add's error must reach the caller unchanged");
++	KUNIT_ASSERT_EQ_MSG(test, ceralive_log.count, 2u,
++			    "registration must stop at the failing add, not continue");
++	KUNIT_EXPECT_STREQ_MSG(test, ceralive_log.names[0], "system",
++			       "the FIRST heap was registered and is NOT withdrawn: there is no removal API at this kernel version, so this partial state is the honest outcome");
++	KUNIT_EXPECT_STREQ_MSG(test, ceralive_log.names[1], "system-uncached",
++			       "the second add must be the uncached heap");
++}
++
++/* A first-add failure registers nothing at all -- there is no partial state. */
++static void ceralive_first_add_failure_registers_nothing(struct kunit *test)
++{
++	int ret;
++
++	ceralive_log_reset(1, -ENOMEM);
++	ret = __system_heap_register_all(ceralive_fake_add);
++
++	KUNIT_EXPECT_EQ(test, ret, -ENOMEM);
++	KUNIT_EXPECT_EQ_MSG(test, ceralive_log.count, 1u,
++			    "nothing may be attempted after the first add fails");
++}
++
++/* The happy path still registers the names userspace binds to by string. */
++static void ceralive_success_registers_expected_names(struct kunit *test)
++{
++	int ret;
++
++	ceralive_log_reset(0, 0);
++	ret = __system_heap_register_all(ceralive_fake_add);
++
++	KUNIT_EXPECT_EQ(test, ret, 0);
++	KUNIT_ASSERT_GE(test, ceralive_log.count, 1u);
++	KUNIT_EXPECT_STREQ(test, ceralive_log.names[0], "system");
++
++	if (IS_ENABLED(CONFIG_DMABUF_HEAPS_SYSTEM_UNCACHED)) {
++		KUNIT_ASSERT_GE(test, ceralive_log.count, 2u);
++		/*
++		 * The name is the ENTIRE userspace contract: librockchip_mpp
++		 * opens /dev/dma_heap/system-uncached by hard-coded string and
++		 * has no override, so a typo here is silent -- a node appears
++		 * under a name nothing asks for.
++		 */
++		KUNIT_EXPECT_STREQ(test, ceralive_log.names[1], "system-uncached");
++	}
++}
++
++/*
++ * Non-vacuity: prove the injected function is what the sequence actually calls.
++ * Without this, a refactor that reverted to calling dma_heap_add() directly
++ * would leave every case above passing while testing nothing -- and would also
++ * start registering real heaps from a KUnit run.
++ */
++static void ceralive_injection_is_actually_used(struct kunit *test)
++{
++	ceralive_log_reset(0, 0);
++	KUNIT_EXPECT_EQ(test, ceralive_log.count, 0u);
++	__system_heap_register_all(ceralive_fake_add);
++	KUNIT_EXPECT_GT_MSG(test, ceralive_log.count, 0u,
++			    "the sequence did not call the injected add function at all");
++}
++
++static struct kunit_case ceralive_system_heap_cases[] = {
++	KUNIT_CASE(ceralive_second_add_failure_is_truthful),
++	KUNIT_CASE(ceralive_first_add_failure_registers_nothing),
++	KUNIT_CASE(ceralive_success_registers_expected_names),
++	KUNIT_CASE(ceralive_injection_is_actually_used),
++	{}
++};
++
++static struct kunit_suite ceralive_system_heap_suite = {
++	.name = "ceralive_system_heap_test",
++	.test_cases = ceralive_system_heap_cases,
++};
++
++kunit_test_suite(ceralive_system_heap_suite);
