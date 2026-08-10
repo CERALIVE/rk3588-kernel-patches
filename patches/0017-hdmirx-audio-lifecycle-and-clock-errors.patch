@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Sun, 10 Aug 2026 13:00:00 -0500
-Subject: [PATCH 17/18] media: synopsys: hdmirx: fix the audio work and clock lifecycle under lockdep
+Subject: [PATCH 17/19] media: synopsys: hdmirx: fix the audio work and clock lifecycle under lockdep
 
 MOTIVATION. hdmi-codec invokes ->hook_plugged_cb() under the ASoC
 card mutex, and the installed callback reports a jack under the

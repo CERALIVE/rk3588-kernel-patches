@@ -1,0 +1,188 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: CeraLive <dev@ceralive.tv>
+Date: Mon, 10 Aug 2026 18:00:00 -0500
+Subject: [PATCH 19/19] media: rockchip: rkvenc: fix the worker's lock context and the dma-buf import API
+
+MOTIVATION. A plain, unfaulted 1080p encode on a Rock 5B+ running
+a KASAN+LOCKDEP kernel produced three reports, all from 0001's
+imported driver and none of them from fault injection:
+
+  BUG: sleeping function called from invalid context at
+  kernel/locking/mutex.c:623 ... name: rkvenc-worker
+  1 lock held by rkvenc-worker/249:
+   #0: (&queue->running_lock){....}-{3:3}, at:
+   rkvenc_task_worker_default+0x108
+  [ BUG: Invalid wait context ] trying to lock
+   (&queue->pending_lock){+.+.}-{4:4}, at:
+   rkvenc_task_worker_default+0x1d4
+  WARNING: drivers/dma-buf/dma-buf.c:1179 at
+  dma_buf_map_attachment+0x184, rkvenc_dma_import_fd
+
+Two independent defects. First, rkvenc_task_worker_default() takes
+queue->running_lock with spin_lock_irqsave() and then, still
+holding it with interrupts off, takes queue->pending_lock -- which
+0001 declares as a struct mutex. That is a sleeping lock acquired
+from atomic context; it can schedule with interrupts disabled and
+deadlock the box, and lockdep flags the {3:3}-inside-{4:4} wait
+context before it gets that far. Second, rkvenc_dma_import_fd()
+and rkvenc_dma_release_buffer() call the LOCKED dma-buf entry
+points, dma_buf_map_attachment() and dma_buf_unmap_attachment(),
+which since the dynamic-importer split assert the caller holds the
+exporter's reservation lock. rkvenc holds no such lock and is not
+a dynamic importer, so every single buffer import trips
+dma_resv_assert_held(). The two are unrelated: the WARNING fires
+in ioctl context on a task that never touches either queue lock.
+
+BEHAVIOUR. pending_lock becomes a spinlock_t, initialised with
+spin_lock_init() and taken with spin_lock()/spin_unlock() at both
+of its two sites. running_lock deliberately stays held across the
+dequeue: claiming an idle core and taking the task that will
+occupy it has to be one step, or two workers on different cores
+can claim the same core_id. Neither pending_lock critical section
+sleeps or is anything but an O(1) list operation, so the type
+change costs nothing and is what the nesting already required.
+The dma-buf calls move to dma_buf_map_attachment_unlocked() and
+dma_buf_unmap_attachment_unlocked(), the entry points for static
+importers that do not hold dmabuf->resv, which is exactly what
+this driver is: it attaches with plain dma_buf_attach() and
+registers no dma_buf_attach_ops.
+
+NON-GOALS. No lockdep suppression, no lockdep_off(), no
+might_sleep() annotation change -- the lock order is fixed, not
+hidden. The worker is not restructured and no work item is added:
+the dequeue does not need to move contexts once the lock it takes
+is the right type. No new locking is introduced and no critical
+section grows.
+
+PROVENANCE. First-party CeraLive fix to the imported 0001 driver.
+Both defects are 0001's as imported -- neither the 0013 test hook
+nor the 0014 teardown work touches this block, and 0014's
+pending_lock edits are all on the unrelated session->pending_lock.
+No upstream counterpart: the VEPU580 driver is not in mainline.
+
+EVIDENCE POINTER. Root-caused from a REAL Rock 5B+ KASAN+LOCKDEP
+boot log, not a self-test: the splat names both locks, both
+acquisition offsets in rkvenc_task_worker_default, and the exact
+dma-buf line. Source-verified against v7.1.7's own
+drivers/dma-buf/dma-buf.c, where line 1179 is
+dma_resv_assert_held(attach->dmabuf->resv). Build-clean; the
+runtime re-test on the debug slot is the confirming evidence and
+is pending. See docs/BOARD-QUALIFICATION.md.
+
+First-party: authored by CeraLive against v7.1.7, with no upstream
+counterpart in rockchip-rk3588-mainline-patches. The source of record is
+ceralive/0019-rkvenc-worker-lock-context-and-dma-buf-api.patch; patches/ is generated from it by
+scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the
+same added/removed-line parity the upstream lane gets.
+
+NOT upstream-bound: this targets the CeraLive device tree only and is not a
+submission to linux-media, linux-rockchip or the fork parent. No Signed-off-by
+is added, because a DCO assertion belongs to whoever actually submits it.
+
+---
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h b/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h
+@@ -371,7 +371,15 @@ struct rkvenc_iommu_info {
+ /* ---- Task queue ---- */
+ struct rkvenc_taskqueue {
+ 	struct mutex session_lock;
+-	struct mutex pending_lock;
++	/*
++	 * pending_lock nests INSIDE running_lock: the worker claims an idle
++	 * core and dequeues the task it will run as one atomic step, so the
++	 * dequeue happens with running_lock held and interrupts off. A
++	 * sleeping lock cannot be acquired there. Both of pending_lock's
++	 * critical sections are O(1) list operations that never sleep, so a
++	 * spinlock costs nothing and is the type the nesting requires.
++	 */
++	spinlock_t pending_lock;
+ 	spinlock_t running_lock;
+ 	struct mutex dev_lock;
+ 
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_iommu.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_iommu.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_iommu.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_iommu.c
+@@ -63,7 +63,16 @@ static void rkvenc_dma_release_buffer(struct kref *ref)
+ 	buffer->dma->buffer_count--;
+ 	list_move_tail(&buffer->link, &buffer->dma->unused_list);
+ 
+-	dma_buf_unmap_attachment(buffer->attach, buffer->sgt, buffer->dir);
++	/*
++	 * The _unlocked variant is the one for importers that do NOT hold the
++	 * exporter's reservation lock, which is this driver: it attaches with
++	 * plain dma_buf_attach() and registers no dma_buf_attach_ops, so it is
++	 * a static importer and never takes dmabuf->resv itself. The locked
++	 * entry point asserts that lock is held and trips
++	 * dma_resv_assert_held() when it is not.
++	 */
++	dma_buf_unmap_attachment_unlocked(buffer->attach, buffer->sgt,
++					  buffer->dir);
+ 	dma_buf_detach(buffer->dmabuf, buffer->attach);
+ 	dma_buf_put(buffer->dmabuf);
+ 	buffer->dma = NULL;
+@@ -177,10 +186,11 @@ rkvenc_dma_import_fd(struct rkvenc_iommu_info *iommu_info,
+ 		goto fail_attach;
+ 	}
+ 
+-	sgt = dma_buf_map_attachment(attach, buffer->dir);
++	sgt = dma_buf_map_attachment_unlocked(attach, buffer->dir);
+ 	if (IS_ERR(sgt)) {
+ 		ret = PTR_ERR(sgt);
+-		rkvenc_err("dma_buf_map_attachment fd %d failed(%d)\n", fd, ret);
++		rkvenc_err("dma_buf_map_attachment_unlocked fd %d failed(%d)\n",
++			   fd, ret);
+ 		goto fail_map;
+ 	}
+ 	buffer->iova = sg_dma_address(sgt->sgl);
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
+@@ -821,7 +821,16 @@ void rkvenc_task_worker_default(struct kthread_work *work)
+ 		core_id = find_first_bit(&core_idle, queue->core_id_max + 1);
+ 
+ 		if (core_id <= queue->core_id_max && queue->cores[core_id]) {
+-			mutex_lock(&queue->pending_lock);
++			/*
++			 * running_lock stays held across the dequeue on
++			 * purpose: finding an idle core and taking the task
++			 * that will occupy it must be one step, or two
++			 * workers racing on different cores can both claim
++			 * the same core_id. That is why pending_lock is a
++			 * spinlock -- this acquisition happens with
++			 * interrupts already disabled.
++			 */
++			spin_lock(&queue->pending_lock);
+ 			pending_task = list_first_entry_or_null(&queue->pending_list,
+ 								struct rkvenc_mpp_task,
+ 								queue_link);
+@@ -831,7 +840,7 @@ void rkvenc_task_worker_default(struct kthread_work *work)
+ 				pending_task->mpp = queue->cores[core_id];
+ 				pending_task->core_id = core_id;
+ 			}
+-			mutex_unlock(&queue->pending_lock);
++			spin_unlock(&queue->pending_lock);
+ 		}
+ 		spin_unlock_irqrestore(&queue->running_lock, flags);
+ 
+@@ -1207,9 +1216,9 @@ static long rkvenc_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long
+ 
+ 		/* Add to task queue and trigger worker */
+ 		set_bit(TASK_STATE_PENDING, &task->mpp_task.state);
+-		mutex_lock(&queue->pending_lock);
++		spin_lock(&queue->pending_lock);
+ 		list_add_tail(&task->mpp_task.queue_link, &queue->pending_list);
+-		mutex_unlock(&queue->pending_lock);
++		spin_unlock(&queue->pending_lock);
+ 
+ 		/* Trigger the worker to run the task */
+ 		kthread_queue_work(&queue->worker, &session->mpp->work);
+@@ -1403,7 +1412,7 @@ int rkvenc_service_probe(struct platform_device *pdev)
+ 			return -ENOMEM;
+ 
+ 		mutex_init(&queue->session_lock);
+-		mutex_init(&queue->pending_lock);
++		spin_lock_init(&queue->pending_lock);
+ 		spin_lock_init(&queue->running_lock);
+ 		mutex_init(&queue->dev_lock);
+ 		INIT_LIST_HEAD(&queue->session_attach);

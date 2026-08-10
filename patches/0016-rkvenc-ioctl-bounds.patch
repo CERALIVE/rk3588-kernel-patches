@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Sun, 10 Aug 2026 12:00:00 -0500
-Subject: [PATCH 16/18] media: rockchip: rkvenc: bound every userspace-supplied register request
+Subject: [PATCH 16/19] media: rockchip: rkvenc: bound every userspace-supplied register request
 
 MOTIVATION. req->offset and req->size arrive verbatim from
 userspace in mpp_msg_v1 and were used unchecked, reachable by any
