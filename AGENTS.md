@@ -33,6 +33,7 @@ rk3588-kernel-patches/
 ├── upstream/                  # SOURCE LANE — Ross Cawston's raw diff -ruN files, VERBATIM + README.MD
 ├── ceralive/                  # SOURCE LANE — FIRST-PARTY raw diffs with no upstream counterpart
 ├── backports/                 # SOURCE LANE — externally-sourced patches, each carrying its OWN provenance
+│   └── lore/<alias>/          # canonical mail of each UNMERGED posting, so its digest is recomputable offline
 ├── retired/                   # ARCHIVE — patches moved out of the series, byte-unchanged
 │   └── REGISTRY.md            # the RETIRED registry: state machine + the retirement table
 ├── patches/                   # GENERATED git-am series + series file — NEVER hand-edit
@@ -42,7 +43,11 @@ rk3588-kernel-patches/
 │   ├── preflight.sh           # re-resolve the Armbian edge mapping; --head for live check
 │   ├── build-series.py        # source lanes -> patches/ ; --check asserts in-sync; orphan check
 │   ├── verify-payload-parity.py  # proves patches/ changes nothing its source lane didn't
+│   ├── import-lore-series.py  # the ONLY sanctioned way to import an unmerged posting
+│   ├── validate-candidate-matrix.py  # every screened candidate has every field
+│   ├── check-series-ledger.py # SERIES <-> patches/ <-> UPSTREAM-STATUS.md, compared exactly
 │   └── apply.sh               # the gate: verify -> clone pinned tag -> git am -> assert
+├── tests/                     # stdlib unittest fixtures for the Python tooling
 ├── docs/
 │   ├── UPSTREAM-STATUS.md     # per-patch upstream status + retire-on-merge triggers
 │   ├── BOARD-QUALIFICATION.md # the DEFERRED hardware checklist — every item unchecked, by design
@@ -61,7 +66,9 @@ rk3588-kernel-patches/
 |------|----------|
 | Change the target kernel | [`kernel-pin.env`](kernel-pin.env) + a new `rebase/<tag>.rules` + a new `docs/REBASE-<tag>.md` |
 | Add a CeraLive-authored patch | `ceralive/<NNNN>-*.patch` + a `SERIES` entry with `origin=CERALIVE` in `scripts/build-series.py`, then regenerate |
-| Add a patch taken from mainline / lore | `backports/<NNNN>-*.patch` + a `SERIES` entry with `origin=BACKPORTS` **and** a `Backport(...)` — see [`backports/README.md`](backports/README.md) |
+| Add a patch taken from a MERGED mainline commit | `backports/<NNNN>-*.patch` + a `SERIES` entry with `origin=BACKPORTS` **and** a `Backport(...)` — see [`backports/README.md`](backports/README.md) |
+| Add a patch taken from an UNMERGED lore posting | run `scripts/import-lore-series.py`, then a `SERIES` entry with `origin=BACKPORTS`, `provenance=LORE_POSTING` **and** a `LorePosting(...)` — see [`backports/README.md`](backports/README.md) |
+| Whether a screened candidate was taken, and why | [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) § 2026-08 candidate reconciliation matrix |
 | Whether a patch has an upstream counterpart / can be dropped yet | [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) |
 | What a real board must demonstrate before an `UNVALIDATED` marker comes off | [`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md) |
 | Why the `system-uncached` heap exists, and why its NAME is not negotiable | [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) § `0009` and `patches/0009-*`'s own mail header |
@@ -94,6 +101,23 @@ stable tree or a lore posting goes in `backports/`. All three lanes run through
 same added/removed-line parity by `verify-payload-parity.py` — the lane only changes
 which mail header is written and which directory parity is proven against. **Never
 put first-party or backported content in `upstream/`.**
+
+**An UNMERGED posting never gets a commit id, and this is the repository's
+sharpest correctness rule.** `backports/` has two provenance variants. A merged
+commit carries `Backport(...)` and a 40-hex `provenance`, and its header says
+`commit <sha> upstream.`. An unmerged lore posting carries `LorePosting(...)` and
+`provenance=LORE_POSTING`, and its header says `Backport of unmerged <vN>
+posting.` and nothing else — **no `commit <sha> upstream.`, no `NULL_OID`, no
+parent SHA, no 40-hex mbox delimiter.** `NULL_OID` is the trap: it is forty hex
+digits, so it passes every shape test while asserting the patch came from the null
+commit. There is no identity to state, so the header states its absence.
+`scripts/check-series-ledger.py` fails the build if one ever appears, and
+`build-series.py` refuses an entry carrying both variants or neither. Importing is
+`scripts/import-lore-series.py`'s job only: it requires the canonical
+`all/<msgid>/t.mbox.gz`, treats patchwork and `/r/<msgid>/raw` as discovery
+instruments that may justify an OUT verdict but never supply bytes, and a blocked
+archive means OUT `unfetchable-canonical-thread` rather than a hand-typed patch.
+Details, digest domains and the refusal list: [`backports/README.md`](backports/README.md).
 
 **`backports/` carries provenance per patch, because it cannot inherit one.** The
 `upstream/` lane hard-codes a single credit block — *"Imported from
@@ -405,7 +429,14 @@ defconfig, and a 30-minute job to prove something the image pipeline proves bett
 - Don't make `verify-payload-parity.py` import from `build-series.py` — it is
   deliberately the second, independent opinion
 - Don't `git rm` a source-lane patch — move it to `retired/` and register it
-- Don't add a `backports/` patch without its own commit sha and lore Message-ID
+- Don't add a MERGED `backports/` patch without its own commit sha and lore Message-ID
+- Don't put a commit sha, `NULL_OID`, a parent SHA or an `ALREADY upstream` claim on
+  an UNMERGED lore-posting patch — it has no identity, and inventing one is false
+  provenance, not a formatting shortcut
+- Don't hand-transcribe a patch body when the canonical `t.mbox.gz` will not fetch —
+  the candidate goes OUT `unfetchable-canonical-thread`
+- Don't let a screened candidate leave no row in the reconciliation matrix; "not
+  screened, and here is why" is a result, and an absent row reads as an oversight
 - Don't add, import or retire a patch without updating its `docs/UPSTREAM-STATUS.md`
   row — including the **Last checked** date; a status change with a stale date is not a check
 - Don't record a list-scoped lore URL, and don't re-capture the Collabora status

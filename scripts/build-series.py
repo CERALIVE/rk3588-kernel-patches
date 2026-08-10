@@ -62,6 +62,7 @@ from __future__ import annotations
 
 import argparse
 import filecmp
+import hashlib
 import re
 import sys
 import tempfile
@@ -91,6 +92,8 @@ LANE_GLOB = "*.patch"
 REGISTRY_COLUMNS = ("Patch", "Lane", "Ordinal", "Retired", "Kernel tag", "Reason")
 REGISTRY_RULE_RE = re.compile(r"^:?-{3,}:?$")
 SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+REVISION_RE = re.compile(r"^v[0-9]+$")
 
 # Slot count, not member count. 0004 was never published upstream and we keep the
 # gap so our files line up 1:1 with theirs, hence ordinals 1/9, 2/9, 3/9, 5/9, 6/9.
@@ -105,6 +108,13 @@ HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
 # A first-party patch has no originating commit anywhere, so the mbox delimiter
 # carries the null object id rather than a borrowed or invented one.
 NULL_OID = "0" * 40
+
+# An UNMERGED lore posting has no commit id at all. NULL_OID would be a lie with
+# 40 hex digits, a parent SHA would assert a merge that did not happen, and the
+# stable-tree `commit <sha> upstream.` marker would assert both. So this lane
+# carries a sentinel that cannot be mistaken for an object id, and the generated
+# header states the absence of an identity instead of inventing one.
+LORE_POSTING = "lore-posting"
 
 
 @dataclass(frozen=True)
@@ -122,18 +132,44 @@ class Backport:
 
 
 @dataclass(frozen=True)
+class LorePosting:
+    """Where an UNMERGED backports/ patch came from, and how that is checkable.
+
+    Every field is mandatory. The two thread digests are attestations of the exact
+    archive response the import consumed: ``thread_compressed_sha256`` covers the
+    ``t.mbox.gz`` bytes as served, and ``thread_mbox_sha256`` covers the mailbox
+    those bytes decompress to. They are different domains and are never
+    interchangeable. ``canonical_patch_sha256`` covers this one posting's
+    canonical mail, archived in-tree at ``canonical_mail`` so the digest can be
+    recomputed by anyone, at any time, without the network.
+    """
+
+    lore_msgid: str
+    revision: str
+    posted_date: str
+    upstream_subject: str
+    thread_compressed_sha256: str
+    thread_mbox_sha256: str
+    canonical_patch_sha256: str
+    canonical_mail: str
+    review_state: str
+    note: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class Patch:
     """One member of the series."""
 
     filename: str
     ordinal: int
     subject: str
-    provenance: str  # commit of origin: upstream's, the backported one, or NULL_OID
+    provenance: str  # commit of origin: upstream's, the backported one, NULL_OID
     author: str
     date: str
     origin: str = UPSTREAM
     rationale: tuple[str, ...] = ()  # first-party lane only: why this patch exists
-    backport: Backport | None = None  # backports lane only, and mandatory there
+    backport: Backport | None = None  # backports lane: merged-commit provenance
+    lore: LorePosting | None = None  # backports lane: unmerged-posting provenance
 
 
 SERIES: tuple[Patch, ...] = (
@@ -598,23 +634,107 @@ def validate_series() -> list[str]:
                 f"{SERIES_TOTAL}, so the N/{SERIES_TOTAL} subject would lie"
             )
         if patch.origin == BACKPORTS:
-            if patch.backport is None:
+            problems += validate_backports_entry(patch, where)
+        else:
+            if patch.backport is not None:
                 problems.append(
-                    f"{where}: the {BACKPORTS}/ lane must name its own origin; "
-                    "give it a Backport(upstream_subject=..., lore_msgid=...)"
+                    f"{where}: only the {BACKPORTS}/ lane carries a Backport"
                 )
-            # NULL_OID is 40 hex digits, so the shape test alone would let a
-            # provenance-less backport through -- and "no originating commit" is
-            # the one thing a backport cannot be.
-            if patch.provenance == NULL_OID or not SHA1_RE.match(patch.provenance):
+            if patch.lore is not None:
                 problems.append(
-                    f"{where}: a backport's provenance must be the 40-hex commit "
-                    f"it is backported from, not {patch.provenance!r}"
+                    f"{where}: only the {BACKPORTS}/ lane carries a LorePosting"
                 )
-        elif patch.backport is not None:
-            problems.append(f"{where}: only the {BACKPORTS}/ lane carries a Backport")
         if patch.origin == CERALIVE and not patch.rationale:
             problems.append(f"{where}: a first-party patch must state why it exists")
+    return problems
+
+
+def validate_backports_entry(patch: Patch, where: str) -> list[str]:
+    """The backports lane has exactly two provenance variants, never both."""
+    problems: list[str] = []
+    if patch.backport is not None and patch.lore is not None:
+        problems.append(
+            f"{where}: a backport is EITHER a merged commit OR an unmerged lore "
+            "posting; carrying both provenance variants at once claims two "
+            "mutually exclusive origins"
+        )
+        return problems
+    if patch.backport is None and patch.lore is None:
+        problems.append(
+            f"{where}: the {BACKPORTS}/ lane must name its own origin; give it a "
+            "Backport(upstream_subject=..., lore_msgid=...) for a merged commit, "
+            "or a LorePosting(...) for an unmerged posting"
+        )
+        return problems
+
+    if patch.backport is not None:
+        # NULL_OID is 40 hex digits, so the shape test alone would let a
+        # provenance-less backport through -- and "no originating commit" is
+        # the one thing a merged-commit backport cannot be.
+        if patch.provenance == NULL_OID or not SHA1_RE.match(patch.provenance):
+            problems.append(
+                f"{where}: a backport's provenance must be the 40-hex commit "
+                f"it is backported from, not {patch.provenance!r}"
+            )
+        return problems
+
+    lore = patch.lore
+    assert lore is not None
+    if patch.provenance != LORE_POSTING:
+        problems.append(
+            f"{where}: an unmerged posting has no commit id, so its provenance "
+            f"must be exactly {LORE_POSTING!r}, not {patch.provenance!r}. A 40-hex "
+            "value here -- NULL_OID, a parent, or any other -- asserts an identity "
+            "that does not exist"
+        )
+    required = {
+        "lore_msgid": lore.lore_msgid,
+        "revision": lore.revision,
+        "posted_date": lore.posted_date,
+        "upstream_subject": lore.upstream_subject,
+        "thread_compressed_sha256": lore.thread_compressed_sha256,
+        "thread_mbox_sha256": lore.thread_mbox_sha256,
+        "canonical_patch_sha256": lore.canonical_patch_sha256,
+        "canonical_mail": lore.canonical_mail,
+        "review_state": lore.review_state,
+    }
+    for name, value in required.items():
+        if not value.strip():
+            problems.append(f"{where}: LorePosting.{name} is mandatory and empty")
+    if not lore.note:
+        problems.append(f"{where}: LorePosting.note is mandatory and empty")
+    if lore.revision and not REVISION_RE.match(lore.revision):
+        problems.append(
+            f"{where}: LorePosting.revision {lore.revision!r} is not a vN revision"
+        )
+    if lore.thread_compressed_sha256 == lore.thread_mbox_sha256:
+        problems.append(
+            f"{where}: thread_compressed_sha256 equals thread_mbox_sha256; those "
+            "are different domains (the .gz response vs the mailbox it expands to) "
+            "and one of them was computed over the wrong bytes"
+        )
+    for name in (
+        "thread_compressed_sha256",
+        "thread_mbox_sha256",
+        "canonical_patch_sha256",
+    ):
+        value = required[name]
+        if value and not SHA256_RE.match(value):
+            problems.append(f"{where}: LorePosting.{name} is not a sha256 digest")
+    mail = ROOT / lore.canonical_mail
+    if lore.canonical_mail and not mail.is_file():
+        problems.append(
+            f"{where}: LorePosting.canonical_mail {lore.canonical_mail} is missing; "
+            "the archived canonical mail is what makes canonical_patch_sha256 "
+            "recomputable without the network"
+        )
+    elif lore.canonical_patch_sha256:
+        actual = hashlib.sha256(mail.read_bytes()).hexdigest()
+        if actual != lore.canonical_patch_sha256:
+            problems.append(
+                f"{where}: {lore.canonical_mail} hashes to {actual}, but "
+                f"canonical_patch_sha256 records {lore.canonical_patch_sha256}"
+            )
     return problems
 
 
@@ -848,9 +968,11 @@ def build_patch(patch: Patch, rules: list[Rule], pin: dict[str, str]) -> str:
 
     header: list[str] = [
         # mbox delimiter. For the upstream lane the hex is the upstream commit that
-        # last touched this file, and for a backport it is the commit being
+        # last touched this file, and for a merged backport it is the commit being
         # backported, so provenance is machine-readable rather than decorative; the
-        # first-party lane has no such commit and uses NULL_OID.
+        # first-party lane has no such commit and uses NULL_OID, and an unmerged
+        # lore posting uses the LORE_POSTING sentinel, which cannot be misread as
+        # an object id of any kind.
         f"From {patch.provenance} Mon Sep 17 00:00:00 2001",
         f"From: {patch.author}",
         f"Date: {patch.date}",
@@ -866,6 +988,34 @@ def build_patch(patch: Patch, rules: list[Rule], pin: dict[str, str]) -> str:
             "Authored by Ross Cawston. This CeraLive copy re-packages the file as a git",
             "mailbox so it can be applied with `git am`. Every added and removed line is",
             "byte-identical to upstream's; scripts/verify-payload-parity.py enforces that.",
+            "",
+        ]
+    elif patch.origin == BACKPORTS and patch.lore is not None:
+        lore = patch.lore
+        header += [
+            f"Backport of unmerged {lore.revision} posting.",
+            "",
+            lore.upstream_subject,
+            "",
+            *lore.note,
+            *([""] if lore.note else []),
+            f"Posted to lore on {lore.posted_date} as {lore.revision}:",
+            f"https://lore.kernel.org/r/{lore.lore_msgid}",
+            f"Review state: {lore.review_state}",
+            "",
+            "Canonical thread archive -- the only source an import may be taken",
+            f"from: https://lore.kernel.org/all/{lore.lore_msgid}/t.mbox.gz",
+            f"  thread_compressed_sha256 {lore.thread_compressed_sha256}",
+            "    (the gzip response bytes, exactly as served)",
+            f"  thread_mbox_sha256       {lore.thread_mbox_sha256}",
+            "    (the mailbox those bytes decompress to)",
+            f"  canonical_patch_sha256   {lore.canonical_patch_sha256}",
+            f"    (this posting's canonical mail, archived at {lore.canonical_mail})",
+            "",
+            f"Backported into the CeraLive series for {tag}. The source of record is",
+            f"{patch.origin}/{patch.filename}; patches/ is generated from it by",
+            "scripts/build-series.py, and scripts/verify-payload-parity.py holds it to",
+            "the same added/removed-line parity every other lane gets.",
             "",
         ]
     elif patch.origin == BACKPORTS:
@@ -931,6 +1081,18 @@ def build_patch(patch: Patch, rules: list[Rule], pin: dict[str, str]) -> str:
             "NOT upstream-bound: this is a CeraLive-maintained adaptation, not a submission",
             f"to {upstream_repo.rsplit('/', 1)[-1]}. No Signed-off-by is added, because none",
             "was given upstream and inventing one would misattribute a DCO assertion.",
+        ]
+    elif patch.origin == BACKPORTS and patch.lore is not None:
+        header += [
+            "NOT upstream: this posting has NOT been merged, so no commit id exists for",
+            "it and none is claimed. This header deliberately carries no",
+            "`commit <sha> upstream.` marker, no null object id and no parent SHA --",
+            "there is no such identity to state, and stating one would be false",
+            "provenance rather than a formatting shortcut. No Signed-off-by is added",
+            "either: the DCO chain belongs to the author on the list.",
+            "",
+            "Retire this when the posting merges AND the pinned base absorbs it -- both,",
+            "not either. Trigger and last-checked date: docs/UPSTREAM-STATUS.md.",
         ]
     elif patch.origin == BACKPORTS:
         header += [
