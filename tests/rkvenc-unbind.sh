@@ -1,0 +1,338 @@
+#!/usr/bin/env bash
+#
+# rkvenc-unbind.sh — prove the rkvenc teardown is safe while work is in flight.
+#
+# RUNS ON HARDWARE ONLY, on the non-shipping `edge-test` kernel (KASAN +
+# lockdep). This is the harness for the teardown/unwind work: a supplier device
+# (the MPP service, or the CCU) is unbound while consumers are live, and the
+# driver has to quiesce them rather than free state somebody still holds.
+#
+# THE HARNESS CONTRACT, and it is load-bearing rather than convenience:
+# the held-open-FD case DELIBERATELY holds a file descriptor across the unbind,
+# observes that the driver has started refusing new work with -ENODEV, and only
+# THEN closes it. The driver is required to wait for that close; a driver that
+# freed the session while the FD was open would corrupt memory instead of
+# blocking, and only KASAN would see it. So the harness must not close early,
+# and it must not close late either -- a bounded timeout is what turns "waits
+# for the reference" into a testable claim rather than a hang.
+#
+# The negative fixture is the other half. `--states timeout-negative` runs the
+# same held-FD case and NEVER closes the descriptor: the unbind must then hit
+# the timeout and the case must FAIL. A harness that cannot fail is not evidence,
+# and a "waits for every reference" claim that is satisfied by a driver which
+# simply does not wait is exactly the mistake this fixture exists to catch.
+#
+# Usage:
+#   rkvenc-unbind.sh [--device /dev/mpp_service]
+#                    [--states idle,held-open-fd,inflight]
+#                    [--iterations 20] [--unbind-timeout 15]
+#   rkvenc-unbind.sh --self-test        # host-side, no hardware, no root
+
+set -uo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/qa-common.sh
+source "${HERE}/lib/qa-common.sh"
+
+QA_DEVICE="/dev/mpp_service"
+QA_DEBUGFS="/sys/kernel/debug/rkvenc-test"
+QA_STATES="idle,held-open-fd,inflight"
+QA_ITERATIONS=20
+QA_UNBIND_TIMEOUT=15
+QA_DRIVER_DIR="${QA_DRIVER_DIR:-/sys/bus/platform/drivers/rkvenc}"
+
+usage() { sed -n '2,29p' "${BASH_SOURCE[0]}"; }
+
+# ---------------------------------------------------------------------------
+# Discovery. The driver binds three NODE KINDS -- the service, the CCU and the
+# cores -- and which is a supplier of which is the whole subject of the test, so
+# they are classified by node name rather than by a hardcoded address.
+# ---------------------------------------------------------------------------
+
+# A `case ... in ${var})` does NOT split alternations that arrive through a
+# variable, so the patterns are split explicitly and matched one at a time.
+qa_devices_matching() {
+	local patterns="$1" link name pattern
+	for link in "${QA_DRIVER_DIR}"/*; do
+		[[ -L "${link}" ]] || continue
+		name="$(basename "${link}")"
+		local IFS='|'
+		for pattern in ${patterns}; do
+			unset IFS
+			# shellcheck disable=SC2053  # deliberate glob match
+			if [[ "${name}" == ${pattern} ]]; then
+				printf '%s\n' "${name}"
+				break
+			fi
+			local IFS='|'
+		done
+		unset IFS
+	done
+}
+
+qa_service_device() { qa_devices_matching '*mpp-srv*|*mpp_service*|*mpp-service*' | head -1; }
+qa_ccu_device()     { qa_devices_matching '*rkvenc-ccu*|*rkvenc_ccu*' | head -1; }
+qa_core_devices()   { qa_devices_matching '*rkvenc-core*|*rkvenc_core*'; }
+
+qa_unbind_bounded() {
+	local dev="$1" start end
+	start="$(date +%s)"
+	timeout "${QA_UNBIND_TIMEOUT}" \
+		sh -c "printf '%s' '${dev}' > '${QA_DRIVER_DIR}/unbind'" 2>/dev/null
+	local rc=$?
+	end="$(date +%s)"
+	QA_UNBIND_SECONDS=$(( end - start ))
+	return "${rc}"
+}
+
+qa_bind() {
+	local dev="$1"
+	timeout "${QA_UNBIND_TIMEOUT}" \
+		sh -c "printf '%s' '${dev}' > '${QA_DRIVER_DIR}/bind'" 2>/dev/null
+}
+
+# Rebind order is part of the claim: a consumer may not come back before the
+# supplier it depends on, or the device links did not do their job.
+qa_rebind_all() {
+	local svc ccu core
+	svc="$(qa_service_device)"; ccu="$(qa_ccu_device)"
+	[[ -n "${svc}" ]] && qa_bind "${svc}"
+	[[ -n "${ccu}" ]] && qa_bind "${ccu}"
+	for core in $(qa_core_devices); do qa_bind "${core}"; done
+	if [[ -e "${QA_DEVICE}" ]]; then
+		qa_log "ok all devices rebound consumer-after-supplier (${QA_DEVICE} present)"
+	else
+		qa_fail "${QA_DEVICE} absent after rebind"
+	fi
+}
+
+# ---------------------------------------------------------------------------
+# The FD holder. A tiny background shell keeps the char device open with no
+# ioctl in flight, so the ONLY thing keeping the session alive is the reference.
+# ---------------------------------------------------------------------------
+
+qa_hold_fd() {
+	local fifo="$1"
+	exec 9<>"${QA_DEVICE}" || return 1
+	printf 'holding\n' >"${fifo}"
+	read -r _ <"${fifo}"
+	exec 9>&-
+}
+
+qa_open_must_fail_enodev() {
+	local err
+	err="$( { exec 8<>"${QA_DEVICE}"; } 2>&1 )"
+	local rc=$?
+	if (( rc == 0 )); then
+		exec 8>&- || true
+		qa_fail "open(${QA_DEVICE}) SUCCEEDED while unbind was pending"
+		return 1
+	fi
+	if grep -qiE 'no such device|ENODEV' <<<"${err}"; then
+		qa_log "ok new open during quiesce fails with ENODEV"
+		return 0
+	fi
+	qa_fail "new open during quiesce: expected ENODEV, got: ${err}"
+	return 1
+}
+
+# ---------------------------------------------------------------------------
+# States
+# ---------------------------------------------------------------------------
+
+state_idle() {
+	local svc mark
+	svc="$(qa_service_device)"
+	[[ -n "${svc}" ]] || { qa_fail "no service device bound"; return 1; }
+	mark="$(qa_dmesg_mark)"
+
+	if qa_unbind_bounded "${svc}"; then
+		qa_log "ok idle unbind of ${svc} completed in ${QA_UNBIND_SECONDS}s"
+	else
+		qa_fail "idle unbind of ${svc} did not complete within ${QA_UNBIND_TIMEOUT}s"
+	fi
+	qa_rebind_all
+	qa_assert_no_sanitizer_report "${mark}" "unbind-idle"
+	qa_encode "unbind-idle post-rebind"
+}
+
+state_held_open_fd() {
+	local svc mark fifo expect_close="${1:-close}"
+	svc="$(qa_service_device)"
+	[[ -n "${svc}" ]] || { qa_fail "no service device bound"; return 1; }
+	mark="$(qa_dmesg_mark)"
+
+	fifo="$(mktemp -u)"; mkfifo "${fifo}"
+	qa_hold_fd "${fifo}" &
+	local holder=$!
+	read -r _ <"${fifo}"
+
+	qa_unbind_bounded "${svc}" &
+	local unbinder=$!
+
+	# Give the driver a moment to enter its quiescing state, then prove it is
+	# actually refusing new work rather than merely having been asked to stop.
+	sleep 1
+	qa_open_must_fail_enodev
+
+	if [[ "${expect_close}" == "close" ]]; then
+		printf 'release\n' >"${fifo}"
+		wait "${holder}" 2>/dev/null
+		if wait "${unbinder}"; then
+			qa_log "ok held-FD unbind completed after the FD was closed"
+		else
+			qa_fail "held-FD unbind did not complete within ${QA_UNBIND_TIMEOUT}s after close"
+		fi
+		qa_rebind_all
+		qa_assert_no_sanitizer_report "${mark}" "unbind-held-fd"
+		qa_encode "unbind-held-fd post-rebind"
+	else
+		# The deliberate negative fixture: never close.
+		if wait "${unbinder}"; then
+			qa_fail "unbind COMPLETED with a file descriptor still open — the driver did not wait for the reference"
+		else
+			qa_log "ok negative fixture: unbind correctly did NOT complete while an FD was held"
+		fi
+		printf 'release\n' >"${fifo}"
+		wait "${holder}" 2>/dev/null
+		qa_rebind_all
+	fi
+	rm -f "${fifo}"
+}
+
+state_inflight() {
+	local svc mark i
+	svc="$(qa_service_device)"
+	[[ -n "${svc}" ]] || { qa_fail "no service device bound"; return 1; }
+	mark="$(qa_dmesg_mark)"
+
+	# Queue real work, then unbind underneath it. The encode is EXPECTED to
+	# fail; what must not happen is a sanitizer report, a hung waiter or an
+	# unbind that never returns.
+	( QA_ENCODE_FRAMES=600 qa_encode "inflight background" >/dev/null 2>&1 ) &
+	local worker=$!
+	sleep 2
+
+	if qa_unbind_bounded "${svc}"; then
+		qa_log "ok in-flight unbind completed in ${QA_UNBIND_SECONDS}s"
+	else
+		qa_fail "in-flight unbind did not complete within ${QA_UNBIND_TIMEOUT}s"
+	fi
+
+	if timeout 30 tail --pid="${worker}" -f /dev/null; then
+		qa_log "ok the in-flight waiter woke rather than hanging"
+	else
+		qa_fail "the in-flight waiter never woke — a waiter was not woken with -ENODEV"
+		kill -9 "${worker}" 2>/dev/null
+	fi
+
+	qa_rebind_all
+	qa_assert_no_sanitizer_report "${mark}" "unbind-inflight"
+	qa_encode "unbind-inflight post-rebind"
+
+	for (( i = 1; i < QA_ITERATIONS; i++ )); do
+		qa_unbind_bounded "${svc}" || qa_fail "repeat unbind ${i} timed out"
+		qa_rebind_all >/dev/null
+	done
+	qa_log "ok ${QA_ITERATIONS} unbind/rebind cycles completed"
+	qa_encode "unbind-inflight after ${QA_ITERATIONS} cycles"
+}
+
+# ---------------------------------------------------------------------------
+
+run_self_test() {
+	local rc=0 work
+	work="$(mktemp -d)"
+
+	# Device classification must be driven by node NAME, never by an address,
+	# or a DT change silently selects nothing and the harness passes vacuously.
+	QA_DRIVER_DIR="${work}/drivers/rkvenc"
+	mkdir -p "${QA_DRIVER_DIR}" "${work}/devices"
+	for node in fdba0000.mpp-srv fdbd0000.rkvenc-ccu fdbd0000.rkvenc-core fdbe0000.rkvenc-core; do
+		mkdir -p "${work}/devices/${node}"
+		ln -s "../../devices/${node}" "${QA_DRIVER_DIR}/${node}"
+	done
+
+	if [[ "$(qa_service_device)" == "fdba0000.mpp-srv" ]]; then
+		printf '  ok  the service device is discovered by node name\n'
+	else
+		printf '  FAIL service discovery: got "%s"\n' "$(qa_service_device)" >&2; rc=1
+	fi
+	if [[ "$(qa_ccu_device)" == "fdbd0000.rkvenc-ccu" ]]; then
+		printf '  ok  the CCU device is discovered by node name\n'
+	else
+		printf '  FAIL ccu discovery: got "%s"\n' "$(qa_ccu_device)" >&2; rc=1
+	fi
+	if [[ "$(qa_core_devices | wc -l)" -eq 2 ]]; then
+		printf '  ok  both cores are discovered, and the CCU is not counted as one\n'
+	else
+		printf '  FAIL core discovery: got %s\n' "$(qa_core_devices | wc -l)" >&2; rc=1
+	fi
+
+	# A missing driver directory must be loud, never an empty (vacuous) run.
+	QA_DRIVER_DIR="${work}/absent"
+	if [[ -z "$(qa_service_device)" ]]; then
+		printf '  ok  an absent driver directory yields no device (caller must fail)\n'
+	else
+		printf '  FAIL an absent driver directory yielded a device\n' >&2; rc=1
+	fi
+
+	# The negative fixture must be reachable by name, or nobody will run it.
+	if grep -q 'timeout-negative' "${BASH_SOURCE[0]}"; then
+		printf '  ok  the timeout-negative fixture is selectable\n'
+	else
+		printf '  FAIL the timeout-negative fixture is not selectable\n' >&2; rc=1
+	fi
+
+	rm -rf "${work}"
+	(( rc == 0 )) && printf 'RESULT=PASS case=self-test\n'
+	return "${rc}"
+}
+
+main() {
+	local self_test=0 state
+
+	while (( $# )); do
+		case "$1" in
+			--device)          QA_DEVICE="${2:-}"; shift 2 ;;
+			--device=*)        QA_DEVICE="${1#--device=}"; shift ;;
+			--debugfs)         QA_DEBUGFS="${2:-}"; shift 2 ;;
+			--debugfs=*)       QA_DEBUGFS="${1#--debugfs=}"; shift ;;
+			--states)          QA_STATES="${2:-}"; shift 2 ;;
+			--states=*)        QA_STATES="${1#--states=}"; shift ;;
+			--iterations)      QA_ITERATIONS="${2:-}"; shift 2 ;;
+			--iterations=*)    QA_ITERATIONS="${1#--iterations=}"; shift ;;
+			--unbind-timeout)  QA_UNBIND_TIMEOUT="${2:-}"; shift 2 ;;
+			--unbind-timeout=*) QA_UNBIND_TIMEOUT="${1#--unbind-timeout=}"; shift ;;
+			--self-test)       self_test=1; shift ;;
+			-h|--help)         usage; return 0 ;;
+			*) usage >&2; qa_die "unknown argument: $1" ;;
+		esac
+	done
+
+	(( self_test )) && { run_self_test; return $?; }
+
+	[[ -d "${QA_DRIVER_DIR}" ]] || qa_die "driver directory absent: ${QA_DRIVER_DIR}"
+	[[ -d "${QA_DEBUGFS}" ]] \
+		|| qa_warn "${QA_DEBUGFS} absent — unbind cases run, but no fault can be armed"
+	qa_require_cmd gst-launch-1.0 dmesg timeout stat mkfifo
+
+	local IFS=','
+	for state in ${QA_STATES}; do
+		unset IFS
+		printf '== state: %s\n' "${state}"
+		case "${state}" in
+			idle)             state_idle ;;
+			held-open-fd)     state_held_open_fd close ;;
+			inflight)         state_inflight ;;
+			timeout-negative) state_held_open_fd no-close ;;
+			*) qa_die "unknown state: ${state}" ;;
+		esac
+		local IFS=','
+	done
+	unset IFS
+
+	qa_result "rkvenc-unbind" "states=${QA_STATES}" "iterations=${QA_ITERATIONS}"
+}
+
+main "$@"

@@ -1,0 +1,468 @@
+diff --git a/drivers/dma-buf/heaps/Kconfig b/drivers/dma-buf/heaps/Kconfig
+--- a/drivers/dma-buf/heaps/Kconfig
++++ b/drivers/dma-buf/heaps/Kconfig
+@@ -37,3 +37,22 @@ config DMABUF_HEAPS_CMA
+ 	  Choose this option to enable dma-buf CMA heap. This heap is backed
+ 	  by the Contiguous Memory Allocator (CMA). If your system has these
+ 	  regions, you should say Y here.
++
++config DMABUF_HEAPS_CERALIVE_TEST
++	bool "CeraLive KUnit test for system-heap registration (TEST BUILDS ONLY)"
++	depends on DMABUF_HEAPS_SYSTEM
++	depends on KUNIT=y
++	default n
++	help
++	  Builds ceralive_system_heap_test, a KUnit suite that drives the system
++	  heap's registration sequence through an injected add function so a
++	  FAILING second registration can be observed without touching the heaps
++	  the running kernel actually exports.
++
++	  It exists because dma_heap_add() has no counterpart: there is no
++	  removal or rollback API at this kernel version, so a second
++	  registration that fails leaves the first heap registered. That partial
++	  state is the honest outcome and the test asserts it, rather than
++	  asserting an atomicity the API cannot provide.
++
++	  If unsure, say N.
+diff --git a/drivers/media/platform/rockchip/rkvenc/Kconfig b/drivers/media/platform/rockchip/rkvenc/Kconfig
+--- a/drivers/media/platform/rockchip/rkvenc/Kconfig
++++ b/drivers/media/platform/rockchip/rkvenc/Kconfig
+@@ -15,3 +15,23 @@ config VIDEO_ROCKCHIP_RKVENC
+ 
+ 	  To compile this driver as a module, choose M here: the module
+ 	  will be called rkvenc.
++
++config VIDEO_ROCKCHIP_RKVENC_CERALIVE_TEST
++	bool "CeraLive deterministic fault injection for RKVENC (TEST BUILDS ONLY)"
++	depends on VIDEO_ROCKCHIP_RKVENC
++	depends on DEBUG_FS
++	default n
++	help
++	  Adds one-shot, default-off fault controls under
++	  /sys/kernel/debug/rkvenc-test/ that force the encoder's negative paths
++	  — service and CCU attach failure, IRQ request failure, clock-enable
++	  failure, session-allocation failure and a delayed task completion —
++	  exactly once each, so the probe-unwind, teardown and resource-error
++	  handling can be proven correct under KASAN and lockdep instead of
++	  argued from source.
++
++	  This is QA instrumentation, NOT a debugging aid for a deployed device:
++	  it exists so a bench board can be made to fail on demand. Enabling it
++	  in a shipped kernel means shipping a driver that can be told to break.
++
++	  If unsure, say N.
+diff --git a/drivers/media/platform/rockchip/rkvenc/Makefile b/drivers/media/platform/rockchip/rkvenc/Makefile
+--- a/drivers/media/platform/rockchip/rkvenc/Makefile
++++ b/drivers/media/platform/rockchip/rkvenc/Makefile
+@@ -1,2 +1,3 @@
+ obj-$(CONFIG_VIDEO_ROCKCHIP_RKVENC) += rkvenc.o
+ rkvenc-objs := rkvenc_drv.o rkvenc_hw.o rkvenc_service.o rkvenc_task.o rkvenc_iommu.o
++rkvenc-$(CONFIG_VIDEO_ROCKCHIP_RKVENC_CERALIVE_TEST) += rkvenc_test.o
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c
+@@ -21,6 +21,7 @@
+ #include <linux/string.h>
+ 
+ #include "rkvenc_hw.h"
++#include "rkvenc_test.h"
+ 
+ /* ---- PM ops ---- */
+ static int __maybe_unused rkvenc_runtime_suspend(struct device *dev)
+@@ -65,6 +66,17 @@ static int rkvenc_attach_ccu(struct device *dev, struct rkvenc_dev *enc)
+ 	struct platform_device *pdev;
+ 	struct rkvenc_ccu *ccu;
+ 
++	/*
++	 * Injected before ANY state is touched, so the expected result of a
++	 * forced CCU-attach failure is a core that never joined the CCU at all
++	 * -- which is what makes the probe unwind observable rather than
++	 * entangled with a half-completed attach.
++	 */
++	if (rkvenc_test_fail_ccu_attach()) {
++		dev_warn(dev, "test: forcing CCU attach failure\n");
++		return -ENODEV;
++	}
++
+ 	np = of_parse_phandle(dev->of_node, "rockchip,ccu", 0);
+ 	if (!np || !of_device_is_available(np))
+ 		return -ENODEV;
+@@ -143,6 +155,14 @@ static int rkvenc_attach_service(struct rkvenc_dev *enc)
+ 	u32 taskqueue_node = 0;
+ 	u32 resetgroup_node = 0;
+ 
++	/* Before the queue publication below, so a forced failure leaves the
++	 * service's core count and idle slots exactly as they were.
++	 */
++	if (rkvenc_test_fail_service_attach()) {
++		dev_warn(enc->dev, "test: forcing service attach failure\n");
++		return -ENOMEM;
++	}
++
+ 	np = of_parse_phandle(enc->dev->of_node, "rockchip,srv", 0);
+ 	if (!np || !of_device_is_available(np))
+ 		return -ENODEV;
+@@ -336,8 +356,13 @@ static int rkvenc_core_probe(struct platform_device *pdev)
+ 	}
+ 
+ 	/* Register IRQ */
+-	ret = devm_request_irq(dev, enc->irq, rkvenc_hw_irq,
+-			       IRQF_SHARED, dev_name(dev), enc);
++	if (rkvenc_test_fail_irq_request()) {
++		dev_warn(dev, "test: forcing IRQ request failure\n");
++		ret = -EBUSY;
++	} else {
++		ret = devm_request_irq(dev, enc->irq, rkvenc_hw_irq,
++				       IRQF_SHARED, dev_name(dev), enc);
++	}
+ 	if (ret) {
+ 		dev_err(dev, "register interrupt failed: %d\n", ret);
+ 		goto err_hw;
+@@ -473,7 +498,26 @@ static struct platform_driver rkvenc_driver = {
+ 	},
+ };
+ 
+-module_platform_driver(rkvenc_driver);
++/*
++ * Expanded from module_platform_driver() so the test controls' debugfs
++ * directory has MODULE lifetime rather than device lifetime. Creating it in the
++ * service probe would destroy it on every unbind, and the unbind test cases are
++ * precisely the ones that need to re-arm a control while the driver is
++ * detached. Both calls compile to nothing when the test symbol is off.
++ */
++static int __init rkvenc_module_init(void)
++{
++	rkvenc_test_init();
++	return platform_driver_register(&rkvenc_driver);
++}
++module_init(rkvenc_module_init);
++
++static void __exit rkvenc_module_exit(void)
++{
++	platform_driver_unregister(&rkvenc_driver);
++	rkvenc_test_exit();
++}
++module_exit(rkvenc_module_exit);
+ 
+ MODULE_DESCRIPTION("Rockchip VEPU580 (RKVENC v2) H.265/H.264/JPEG encoder driver");
+ MODULE_LICENSE("Dual MIT/GPL");
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.c
+@@ -21,6 +21,7 @@
+ #include <linux/slab.h>
+ 
+ #include "rkvenc_hw.h"
++#include "rkvenc_test.h"
+ 
+ unsigned int rkvenc_debug;
+ module_param_named(debug, rkvenc_debug, uint, 0644);
+@@ -510,6 +511,20 @@ int rkvenc_hw_run(struct rkvenc_dev *enc, struct rkvenc_mpp_task *mpp_task)
+ 		pm_runtime_get_sync(&enc->iommu_info->pdev->dev);
+ 	pm_runtime_get_sync(enc->dev);
+ 	pm_stay_awake(enc->dev);
++
++	/*
++	 * Injected AFTER the PM references are taken and BEFORE the clocks are
++	 * enabled, so err_pm below unwinds exactly the references this function
++	 * acquired -- the point of the case is that the PM and clock counts
++	 * stay balanced across a failed run, which a fault injected outside the
++	 * acquire/release pair could not test.
++	 */
++	if (rkvenc_test_fail_clock_enable()) {
++		rkvenc_err("test: forcing clock enable failure\n");
++		ret = -EIO;
++		goto err_pm;
++	}
++
+ 	rkvenc_hw_clk_on(enc);
+ 
+ 	/* Reset group down_read if available */
+@@ -595,6 +610,7 @@ int rkvenc_hw_run(struct rkvenc_dev *enc, struct rkvenc_mpp_task *mpp_task)
+ 	if (enc->reset_group)
+ 		up_read(&enc->reset_group->rw_sem);
+ 	rkvenc_hw_clk_off(enc);
++err_pm:
+ 	pm_relax(enc->dev);
+ 	pm_runtime_mark_last_busy(enc->dev);
+ 	pm_runtime_put_autosuspend(enc->dev);
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
+@@ -23,6 +23,7 @@
+ #include <linux/wait.h>
+ 
+ #include "rkvenc_hw.h"
++#include "rkvenc_test.h"
+ 
+ /* ---- MSG v1 structure (from userspace) ---- */
+ struct mpp_msg_v1 {
+@@ -75,6 +76,11 @@ static void rkvenc_session_deinit(struct rkvenc_session *session)
+ static int rkvenc_session_attach_device(struct rkvenc_session *session,
+ 					struct rkvenc_dev *mpp)
+ {
++	if (rkvenc_test_fail_session_alloc()) {
++		rkvenc_err("test: forcing session allocation failure\n");
++		return -ENOMEM;
++	}
++
+ 	session->mpp = mpp;
+ 	session->dma = rkvenc_dma_session_create(mpp->dev,
+ 						 mpp->session_max_buffers);
+@@ -569,6 +575,7 @@ void rkvenc_task_worker_default(struct kthread_work *work)
+ 	struct rkvenc_mpp_task *mpp_task;
+ 	struct rkvenc_task *task;
+ 	struct rkvenc_session *session;
++	unsigned int delay_ms;
+ 
+ 	/* Process finished tasks (ISR bottom half) */
+ 	mpp_task = enc->cur_task;
+@@ -594,6 +601,16 @@ void rkvenc_task_worker_default(struct kthread_work *work)
+ 		if (task->irq_status & enc->hw_info->err_mask)
+ 			atomic_inc(&enc->reset_request);
+ 
++		/*
++		 * Stretches the window in which a task is finished but its
++		 * session may already be closing. This is a kthread worker, so
++		 * sleeping here is legal; the delay is one-shot and reads back
++		 * 0, so it cannot leak into the next task.
++		 */
++		delay_ms = rkvenc_test_task_completion_delay_ms();
++		if (delay_ms)
++			msleep(delay_ms);
++
+ 		rkvenc_task_finish(session, mpp_task);
+ 
+ 		set_bit(enc->core_id, &queue->core_idle);
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_test.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_test.c
+new file mode 100644
+--- /dev/null
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_test.c
+@@ -0,0 +1,137 @@
++// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
++/*
++ * Rockchip VEPU580 encoder driver - CeraLive deterministic fault injection
++ *
++ * Compiled ONLY under CONFIG_VIDEO_ROCKCHIP_RKVENC_CERALIVE_TEST. See
++ * rkvenc_test.h for the contract every control below implements.
++ *
++ * Copyright (C) 2026 CeraLive
++ */
++
++#include <linux/atomic.h>
++#include <linux/debugfs.h>
++#include <linux/module.h>
++
++#include "rkvenc_test.h"
++
++#define RKVENC_TEST_DIR_NAME "rkvenc-test"
++
++/*
++ * One-shot armed flags. atomic_cmpxchg() is what makes "one-shot" true rather
++ * than merely intended: two cores can probe concurrently and two sessions can
++ * open concurrently, so a read-then-clear would let a single armed fault fire
++ * twice and leave the consumed counter disagreeing with what actually happened.
++ */
++struct rkvenc_test_knob {
++	atomic_t armed;
++	atomic_t consumed;
++};
++
++static struct rkvenc_test_knob fail_service_attach;
++static struct rkvenc_test_knob fail_ccu_attach;
++static struct rkvenc_test_knob fail_irq_request;
++static struct rkvenc_test_knob fail_clock_enable;
++static struct rkvenc_test_knob fail_session_alloc;
++
++/*
++ * The delay is a VALUE knob rather than a flag, so its armed field carries
++ * milliseconds and is consumed with an unconditional exchange to 0.
++ */
++static struct rkvenc_test_knob delay_task_completion;
++
++static struct dentry *rkvenc_test_dir;
++
++static bool rkvenc_test_consume_flag(struct rkvenc_test_knob *knob)
++{
++	if (atomic_cmpxchg(&knob->armed, 1, 0) != 1)
++		return false;
++
++	atomic_inc(&knob->consumed);
++	return true;
++}
++
++static void rkvenc_test_add_knob(const char *name,
++				 struct rkvenc_test_knob *knob)
++{
++	char consumed_name[64];
++
++	debugfs_create_atomic_t(name, 0600, rkvenc_test_dir, &knob->armed);
++	snprintf(consumed_name, sizeof(consumed_name), "%s_consumed", name);
++	debugfs_create_atomic_t(consumed_name, 0400, rkvenc_test_dir,
++				&knob->consumed);
++}
++
++void rkvenc_test_init(void)
++{
++	if (rkvenc_test_dir)
++		return;
++
++	rkvenc_test_dir = debugfs_create_dir(RKVENC_TEST_DIR_NAME, NULL);
++
++	rkvenc_test_add_knob("fail_service_attach_once", &fail_service_attach);
++	rkvenc_test_add_knob("fail_ccu_attach_once", &fail_ccu_attach);
++	rkvenc_test_add_knob("fail_irq_request_once", &fail_irq_request);
++	rkvenc_test_add_knob("fail_clock_enable_once", &fail_clock_enable);
++	rkvenc_test_add_knob("fail_session_alloc_once", &fail_session_alloc);
++
++	/*
++	 * The delay knob's counter is named `delay_consumed` rather than
++	 * `delay_task_completion_ms_consumed`: the QA harness and the plan's
++	 * fault-control table both name it that way, and an "_ms_consumed"
++	 * counter would read as a duration, which it is not.
++	 */
++	debugfs_create_atomic_t("delay_task_completion_ms", 0600,
++				rkvenc_test_dir, &delay_task_completion.armed);
++	debugfs_create_atomic_t("delay_consumed", 0400, rkvenc_test_dir,
++				&delay_task_completion.consumed);
++
++	pr_info("rkvenc: CeraLive test controls at /sys/kernel/debug/%s (NOT a production kernel)\n",
++		RKVENC_TEST_DIR_NAME);
++}
++
++void rkvenc_test_exit(void)
++{
++	debugfs_remove_recursive(rkvenc_test_dir);
++	rkvenc_test_dir = NULL;
++}
++
++bool rkvenc_test_fail_service_attach(void)
++{
++	return rkvenc_test_consume_flag(&fail_service_attach);
++}
++
++bool rkvenc_test_fail_ccu_attach(void)
++{
++	return rkvenc_test_consume_flag(&fail_ccu_attach);
++}
++
++bool rkvenc_test_fail_irq_request(void)
++{
++	return rkvenc_test_consume_flag(&fail_irq_request);
++}
++
++bool rkvenc_test_fail_clock_enable(void)
++{
++	return rkvenc_test_consume_flag(&fail_clock_enable);
++}
++
++bool rkvenc_test_fail_session_alloc(void)
++{
++	return rkvenc_test_consume_flag(&fail_session_alloc);
++}
++
++unsigned int rkvenc_test_task_completion_delay_ms(void)
++{
++	int ms = atomic_xchg(&delay_task_completion.armed, 0);
++
++	/*
++	 * A negative value can only come from a debugfs write, and treating it
++	 * as a huge unsigned delay would wedge the encoder worker. Consume it
++	 * (so the knob still auto-resets) and report no delay.
++	 */
++	if (ms <= 0)
++		return 0;
++
++	atomic_inc(&delay_task_completion.consumed);
++	return (unsigned int)ms;
++}
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_test.h b/drivers/media/platform/rockchip/rkvenc/rkvenc_test.h
+new file mode 100644
+--- /dev/null
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_test.h
+@@ -0,0 +1,60 @@
++/* SPDX-License-Identifier: (GPL-2.0+ OR MIT) */
++/*
++ * Rockchip VEPU580 encoder driver - CeraLive deterministic fault injection
++ *
++ * PRODUCTION-ABSENT BY CONSTRUCTION. Every entry point below is a static inline
++ * that returns a compile-time constant when CONFIG_VIDEO_ROCKCHIP_RKVENC_CERALIVE_TEST
++ * is off, so each call site collapses to nothing at all: no branch, no symbol,
++ * no debugfs directory, no dead code. The whole implementation lives in
++ * rkvenc_test.c, which the Makefile only compiles under that symbol.
++ *
++ * WHY THIS EXISTS. The teardown, resource-error and bounds work in this series
++ * fixes paths that a working board never takes: a supplier that fails to bind, a
++ * clock that refuses to enable, a task still in flight when its session is
++ * closed. Those paths cannot be proven correct by inspection and cannot be
++ * reached by any amount of ordinary encoding, so each one gets a one-shot,
++ * default-off control that forces it exactly once under KASAN and lockdep.
++ *
++ * CONTRACT (identical for every control, and the QA harnesses depend on it):
++ *   - the knob lives at /sys/kernel/debug/rkvenc-test/<name>, mode 0600;
++ *   - it is ONE-SHOT: the driver consumes it atomically and it reads back 0,
++ *     so a fault can never leak into the next operation or the next test case;
++ *   - each knob has a read-only <name>_consumed counter that increments exactly
++ *     once per consumption, which is what lets a harness distinguish "the fault
++ *     fired and the driver handled it" from "the fault never fired".
++ *
++ * Copyright (C) 2026 CeraLive
++ */
++
++#ifndef __RKVENC_TEST_H__
++#define __RKVENC_TEST_H__
++
++#include <linux/types.h>
++
++#if IS_ENABLED(CONFIG_VIDEO_ROCKCHIP_RKVENC_CERALIVE_TEST)
++
++void rkvenc_test_init(void);
++void rkvenc_test_exit(void);
++
++bool rkvenc_test_fail_service_attach(void);
++bool rkvenc_test_fail_ccu_attach(void);
++bool rkvenc_test_fail_irq_request(void);
++bool rkvenc_test_fail_clock_enable(void);
++bool rkvenc_test_fail_session_alloc(void);
++unsigned int rkvenc_test_task_completion_delay_ms(void);
++
++#else /* !CONFIG_VIDEO_ROCKCHIP_RKVENC_CERALIVE_TEST */
++
++static inline void rkvenc_test_init(void) { }
++static inline void rkvenc_test_exit(void) { }
++
++static inline bool rkvenc_test_fail_service_attach(void) { return false; }
++static inline bool rkvenc_test_fail_ccu_attach(void) { return false; }
++static inline bool rkvenc_test_fail_irq_request(void) { return false; }
++static inline bool rkvenc_test_fail_clock_enable(void) { return false; }
++static inline bool rkvenc_test_fail_session_alloc(void) { return false; }
++static inline unsigned int rkvenc_test_task_completion_delay_ms(void) { return 0; }
++
++#endif /* CONFIG_VIDEO_ROCKCHIP_RKVENC_CERALIVE_TEST */
++
++#endif /* __RKVENC_TEST_H__ */
+diff --git a/drivers/media/platform/synopsys/hdmirx/Kconfig b/drivers/media/platform/synopsys/hdmirx/Kconfig
+--- a/drivers/media/platform/synopsys/hdmirx/Kconfig
++++ b/drivers/media/platform/synopsys/hdmirx/Kconfig
+@@ -35,3 +35,21 @@ config VIDEO_SYNOPSYS_HDMIRX_LOAD_DEFAULT_EDID
+ 	  non-functional until EDID will be loaded from userspace.
+ 	  Which is a wanted behavior when using this driver in a
+ 	  commercial product that should utilize own branded EDID.
++
++config VIDEO_ROCKCHIP_HDMIRX_CERALIVE_TEST
++	bool "CeraLive deterministic fault injection for HDMI-RX audio (TEST BUILDS ONLY)"
++	depends on VIDEO_SYNOPSYS_HDMIRX
++	depends on DEBUG_FS
++	default n
++	help
++	  Adds one-shot, default-off controls under
++	  /sys/kernel/debug/hdmirx-audio-test/ that stretch the audio worker and
++	  force a single audio clock-rate failure, so the worker/clock lifecycle
++	  can be exercised under lockdep — a synchronous cancel racing a running
++	  worker, and an error return the driver used to discard.
++
++	  This is QA instrumentation for a bench board, not a field debugging
++	  aid. Enabling it in a shipped kernel means shipping a receiver that
++	  can be told to fail.
++
++	  If unsure, say N.

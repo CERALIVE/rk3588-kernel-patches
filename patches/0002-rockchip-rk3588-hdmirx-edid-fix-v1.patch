@@ -1,7 +1,7 @@
 From 8478ca74ad2f340feb7f443acbb669292497cf3e Mon Sep 17 00:00:00 2001
 From: Ross Cawston <rcawston@users.noreply.github.com>
 Date: Mon, 9 Feb 2026 12:10:15 -0800
-Subject: [PATCH 2/12] media: synopsys: hdmirx: make a written EDID visible to the HDMI source
+Subject: [PATCH 2/13] media: synopsys: hdmirx: make a written EDID visible to the HDMI source
 
 Imported from https://github.com/rcawston/rockchip-rk3588-mainline-patches
 at e13a311d8ee5e8ed92ec3d4a57c21f766c61d660, file 0002-rockchip-rk3588-hdmirx-edid-fix-v1.patch.

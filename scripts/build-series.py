@@ -99,7 +99,7 @@ REVISION_RE = re.compile(r"^v[0-9]+$")
 # gap so our files line up 1:1 with theirs, hence ordinals 1/9, 2/9, 3/9, 5/9, 6/9.
 # 0007 continues the same counter into the backports/ lane, and 0008 and 0009 back
 # into ceralive/.
-SERIES_TOTAL = 12
+SERIES_TOTAL = 13
 
 DS_STORE_RE = re.compile(r"^Binary files .*\.DS_Store .* differ$")
 HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
@@ -630,6 +630,87 @@ SERIES: tuple[Patch, ...] = (
                 "N/CTS table, this one the audio enable/prepare hooks -- and applying",
                 "0011 then this one was verified clean in that order.",
             ),
+        ),
+    ),
+    Patch(
+        filename="0013-rkvenc-ceralive-test-instrumentation.patch",
+        ordinal=13,
+        subject=(
+            "media: rockchip: rkvenc: add gated deterministic fault injection "
+            "for the negative paths"
+        ),
+        provenance=NULL_OID,
+        author="CeraLive <dev@ceralive.tv>",
+        date="Sun, 10 Aug 2026 09:00:00 -0500",
+        origin=CERALIVE,
+        rationale=(
+            "*** TEST INSTRUMENTATION. Default OFF, and ABSENT from any production",
+            "build by construction. *** This patch adds three Kconfig symbols and one",
+            "new file; with all three symbols off it contributes zero bytes of code,",
+            "zero debugfs nodes and zero symbols to the built modules. That is not an",
+            "aspiration -- it is checked: a production-config build of this series",
+            "produces no rkvenc_test.o, and the string \"rkvenc-test\" appears nowhere",
+            "in rkvenc.ko.",
+            "",
+            "WHY IT EXISTS. The four patches that follow this one (0014-0017) fix code",
+            "paths a working board never executes: a supplier device that fails to",
+            "bind, a clock that refuses to enable, a session closed while a task is",
+            "still in flight, a delayed worker cancelled from under a lock. Those are",
+            "exactly the paths where a use-after-free or a lock inversion hides, and",
+            "exactly the paths no amount of ordinary encoding will reach. Without a way",
+            "to force them on demand, the only available evidence for 0014-0017 would",
+            "be source reasoning -- which is precisely the evidence that was available",
+            "before the defects they fix were written.",
+            "",
+            "So each negative path gets a one-shot, default-off control, and the whole",
+            "series is then run on a Rock 5B+ under KASAN and lockdep with every fault",
+            "forced in turn. The interface is deliberately small and completely",
+            "uniform:",
+            "",
+            "  /sys/kernel/debug/rkvenc-test/fail_service_attach_once   -> -ENOMEM",
+            "  /sys/kernel/debug/rkvenc-test/fail_ccu_attach_once       -> -ENODEV",
+            "  /sys/kernel/debug/rkvenc-test/fail_irq_request_once      -> -EBUSY",
+            "  /sys/kernel/debug/rkvenc-test/fail_clock_enable_once     -> -EIO",
+            "  /sys/kernel/debug/rkvenc-test/fail_session_alloc_once    -> -ENOMEM",
+            "  /sys/kernel/debug/rkvenc-test/delay_task_completion_ms   -> delay once",
+            "",
+            "Every knob is mode 0600, is consumed exactly once and reads back 0, and",
+            "carries a read-only <name>_consumed counter. The counter is the part that",
+            "matters: it is what lets a harness distinguish \"the fault fired and the",
+            "driver handled it\" from \"the driver ignored the knob\", and without it a",
+            "vacuous pass would be indistinguishable from a real one.",
+            "",
+            "One-shot is implemented with atomic_cmpxchg() rather than a read-then-",
+            "clear. Two cores probe concurrently and two sessions can open",
+            "concurrently, so a non-atomic consume would let a single armed fault fire",
+            "twice and leave the counter disagreeing with what actually happened.",
+            "",
+            "Placement of each injection point is chosen so the case tests what it",
+            "claims. The service and CCU faults fire BEFORE any state is published, so",
+            "a forced failure means the core never joined at all rather than joined and",
+            "half-detached. The clock fault fires after the PM references are taken and",
+            "before the clocks are enabled, so the unwind under test is exactly the",
+            "acquire/release pair this function owns -- a fault outside that pair could",
+            "not test the balance it is meant to prove.",
+            "",
+            "module_platform_driver() is expanded into an explicit init/exit pair so the",
+            "debugfs directory has MODULE lifetime rather than device lifetime. Creating",
+            "it from the service probe would destroy it on every unbind, and the unbind",
+            "cases are precisely the ones that need to re-arm a control while the driver",
+            "is detached. Both new calls are static inlines that compile to nothing when",
+            "the symbol is off, so the production init path is unchanged.",
+            "",
+            "The other two symbols added here own instrumentation implemented later in",
+            "the series, and are added now so all three arrive as one reviewable",
+            "decision rather than three scattered ones:",
+            "CONFIG_VIDEO_ROCKCHIP_HDMIRX_CERALIVE_TEST gates the two audio controls",
+            "0017 implements, and CONFIG_DMABUF_HEAPS_CERALIVE_TEST gates the KUnit",
+            "seam 0018 adds. Neither compiles anything at this patch.",
+            "",
+            "The image pipeline never builds this. The three symbols are on",
+            "image-building-pipeline manifests/kernel/forbidden-symbols.list, which the",
+            "production `edge` config is gated against, and they are enabled only by the",
+            "opt-in `edge-test` variant that its release workflow refuses to publish.",
         ),
     ),
 )
@@ -1311,8 +1392,14 @@ def write_series(out_dir: Path, pin: dict[str, str]) -> None:
         "# git-am order for the CeraLive RK3588 series.",
         "# Upstream numbering is preserved verbatim -- 0004 was never published,",
         "# so the gap is intentional. Do not renumber to close it.",
-        "# 0006, 0008 and 0009 are first-party (ceralive/); 0007 is a merged-commit",
-        "# backport and 0010-0012 are unmerged lore postings (both backports/).",
+        # Derived, never hand-written: this line named three first-party ordinals
+        # and would have silently gone stale the moment a fourth was added.
+        "# First-party (ceralive/): " + ", ".join(
+            f"{p.ordinal:04d}" for p in SERIES if p.origin == CERALIVE
+        ) + ".",
+        "# Backports (backports/): " + ", ".join(
+            f"{p.ordinal:04d}" for p in SERIES if p.origin == BACKPORTS
+        ) + " -- 0007 is a merged commit, the rest are unmerged lore postings.",
         "# All of them continue the same counter.",
         f"# Target kernel: {pin['KERNEL_TAG']} ({pin['KERNEL_COMMIT']})",
         *(
