@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Sun, 10 Aug 2026 11:00:00 -0500
-Subject: [PATCH 15/15] media: rockchip: rkvenc: fail on a missing required resource and stop swallowing runtime errors
+Subject: [PATCH 15/16] media: rockchip: rkvenc: fail on a missing required resource and stop swallowing runtime errors
 
 *** SOURCE-VERIFIED AND BUILD-CLEAN; HARDWARE VALIDATION PENDING. ***
 The required/optional split below is read out of the RK3588 binding as

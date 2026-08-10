@@ -10,11 +10,37 @@
 #   scripts/apply.sh                       # clone into ./.work/linux, then apply
 #   scripts/apply.sh /path/to/linux        # apply to an existing tree
 #   KEEP_TREE=1 scripts/apply.sh           # keep ./.work/linux for inspection
+#   scripts/apply.sh --keep <dir>          # keep the verified tree AT <dir>
 #
 # It refuses to touch a tree with local modifications, and resets to the pinned
 # tag before applying, so a rerun is always a clean run.
+#
+# --keep <dir> exists for tests/build-rkvenc-harness.sh. That harness has to
+# compile against the UAPI of the EXACT applied series, and this repository
+# holds no kernel source of its own -- so rather than let a harness build its
+# own tree (which could be anything), it is handed one this script has already
+# verified: pinned base commit, full series applied, post-apply checks passed.
+# The directory is a normal path, not a hidden scratch dir, precisely so the
+# caller can point at it and assert what it is.
 
 set -euo pipefail
+
+KEEP_DIR=""
+ARGS=()
+while (( $# )); do
+	case "$1" in
+		--keep)   KEEP_DIR="${2:-}"; shift 2 ;;
+		--keep=*) KEEP_DIR="${1#--keep=}"; shift ;;
+		*)        ARGS+=("$1"); shift ;;
+	esac
+done
+if [[ -n "${KEEP_DIR}" ]]; then
+	[[ "${KEEP_DIR}" == /* ]] \
+		|| { echo "error: --keep needs an absolute path (got '${KEEP_DIR}')" >&2; exit 2; }
+	set -- "${KEEP_DIR}" "${ARGS[@]+"${ARGS[@]}"}"
+else
+	set -- "${ARGS[@]+"${ARGS[@]}"}"
+fi
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${HERE}/.." && pwd)"
@@ -232,7 +258,9 @@ done
 
 (( fail == 0 )) || exit 1
 
-if [[ -z "${KEEP_TREE:-}" && "${TREE}" == "${WORKDIR}/linux" ]]; then
+if [[ -n "${KEEP_DIR}" ]]; then
+	log "Keeping the verified tree at ${KEEP_DIR}"
+elif [[ -z "${KEEP_TREE:-}" && "${TREE}" == "${WORKDIR}/linux" ]]; then
 	log "Removing ${WORKDIR} (set KEEP_TREE=1 to keep it)"
 	cd "${ROOT}"
 	rm -rf "${WORKDIR}"

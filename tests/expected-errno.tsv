@@ -1,0 +1,31 @@
+# tests/expected-errno.tsv — the canonical per-case expected result for
+# tests/rkvenc-invalid-ioctl.c.
+#
+# WHY THE TABLE IS DATA AND NOT A SWITCH STATEMENT. The harness and the kernel
+# change together, and a harness that carries its own expectations inline can be
+# "fixed" to agree with whatever the driver now does. Keeping the expectations in
+# a reviewed file means changing what a malformed request returns is a visible
+# diff in this table, and the host fixture validates the table BEFORE it is ever
+# copied to a board — so a duplicate, unknown, missing or malformed row fails on
+# the workstation rather than being discovered mid-drill.
+#
+# Columns, tab-separated:
+#   case      the --case name the harness accepts, unique, [a-z0-9-]+
+#   errno     the expected errno NAME, or OK for a request that must succeed
+#   what      what the request is malformed in (one line, human)
+#
+# EINVAL means the driver rejected the shape. EFAULT means it rejected the
+# buffer. ENOMEM is reserved for the injected allocation failure — a malformed
+# request must NEVER produce it, which is exactly what the old code did by
+# collapsing every rkvenc_alloc_task() failure into a bare NULL.
+#
+case	errno	what
+offset-size-wrap	EINVAL	offset + size wraps past 4 GiB, so the computed end lands below the start
+undersized-word	EINVAL	size is 1 byte, so offset + size - 4 underflows and overlaps every class
+unaligned-offset	EINVAL	offset is not 4-byte aligned, so the dword index arithmetic truncates
+class-overrun	EINVAL	the request starts inside a class and claims a size that runs past its end
+invalid-metadata	EINVAL	SET_REG_ADDR_OFFSET carries a partial trailing element
+trans-table-odd-size	EINVAL	INIT_TRANS_TABLE size is 2*MAX+1 bytes, which the element-count bound missed
+bad-user-pointer	EFAULT	the request data pointer is not a readable user address
+session-allocation-failure	ENOMEM	fail_session_alloc_once is armed, so INIT_CLIENT_TYPE cannot attach
+valid-after-failures	OK	a well-formed request issued after every case above still succeeds
