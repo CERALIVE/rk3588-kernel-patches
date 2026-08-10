@@ -29,6 +29,9 @@ backported patches continue the same counter from `0006`:
 | `0007` | iommu dte-limit fix | `backports/` | Backport of mainline `8d4346ecd495`. Sets `BIT(31)` of the IOMMU's `MMU_AUTO_GATING`, without which a DTE fetch racing a page-table update blocks the IOMMU — a black screen on the VOP, and sporadic RGA3 hangs. Merged for 7.2-rc1, absent from `v7.1.7`. |
 | `0008` | rkvenc DMA max segment size | `ceralive/` | **`UNVALIDATED` on hardware.** Sets the encoder's DMA max segment size in `rkvenc_hw_probe()`, so an imported dma-buf's recorded length stops being truncated to the `SZ_64K` default. Fixes a bookkeeping defect in `0001`; the IOVA guardrail that catches the symptom is deliberately left alone. |
 | `0009` | `system-uncached` dma-heap | `ceralive/` | **`UNVALIDATED` on hardware.** Registers a second dma-heap named exactly `system-uncached` — the name Rockchip's MPP userspace hard-codes and mainline does not provide — with non-cacheable mappings, a one-time cache clean at allocation, and the CPU-sync steps skipped only for that heap. Without it `mpph264enc` does not register at all, and cached memory under an uncached name encodes non-deterministically. |
+| `0010` | naneng-combphy RTERM erratum | `backports/` | **Unmerged lore posting** (`PATCHv1`, Shawn Lin). Forces RX-termination detect ready in `PHYREG26` so a PCIe peer's termination is seen at critical temperatures. No commit id exists and none is claimed. |
+| `0011` | dw-hdmi-qp N/CTS helper | `backports/` | **Unmerged lore posting** (standalone `PATCHv3`, Simon Wright, `Reviewed-by`+`Tested-by`). Drops dw-hdmi-qp's private audio N/CTS table, which disagrees with the shared helper at several TMDS rates, for `drm_hdmi_acr_get_n_cts()`. |
+| `0012` | dw-hdmi-qp audio `-EOPNOTSUPP` | `backports/` | **Unmerged lore posting** (`PATCHv1`, Detlev Casanova, two independent `Tested-by`). Stops the audio hooks returning `-ENODEV` with no mode set, which ASoC logs as a fault — hundreds of lines on an idle board, in the same dmesg buffer `0005`/`0006` are diagnosed from. |
 
 Plus [`overlays/rockchip-rk3588-rkvenc-mpp.dts`](overlays/rockchip-rk3588-rkvenc-mpp.dts),
 the device-tree overlay the encoder needs, carried verbatim.
@@ -61,6 +64,8 @@ deliberately unchecked: the checklist has been written, and it has not been run.
 upstream/          Ross Cawston's original diff -ruN files, byte-for-byte
 ceralive/          first-party patches with no upstream counterpart
 backports/         patches taken from mainline / a stable tree / lore
+backports/lore/    canonical mail of each unmerged posting, one directory per candidate
+tests/             stdlib unittest fixtures for the Python tooling
 retired/           patches moved out of the series, byte-unchanged, + REGISTRY.md
 patches/           the git-am series — GENERATED from the lanes, never hand-edit
 overlays/          the rkvenc/MPP device-tree overlay
@@ -328,3 +333,12 @@ above stays true.
 
 `0007` is neither ours nor Ross Cawston's: it is a straight backport of a mainline
 commit by Simon Xue, carried in `backports/` with its own provenance header.
+
+`0010`, `0011` and `0012` are likewise other people's work — Shawn Lin
+(Rockchip), Simon Wright, and Detlev Casanova (Collabora) — but taken from
+postings that have **not** been merged. They carry a different provenance variant
+for that reason: their headers say *"Backport of unmerged vN posting"* and claim
+no commit id, because none exists. Each one's canonical mail is archived beside it
+in `backports/lore/`, so the digest in its header can be recomputed offline. They
+were imported by `scripts/import-lore-series.py` from the canonical lore thread
+archive; none was transcribed by hand.

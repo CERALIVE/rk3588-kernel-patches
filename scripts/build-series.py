@@ -99,7 +99,7 @@ REVISION_RE = re.compile(r"^v[0-9]+$")
 # gap so our files line up 1:1 with theirs, hence ordinals 1/9, 2/9, 3/9, 5/9, 6/9.
 # 0007 continues the same counter into the backports/ lane, and 0008 and 0009 back
 # into ceralive/.
-SERIES_TOTAL = 9
+SERIES_TOTAL = 12
 
 DS_STORE_RE = re.compile(r"^Binary files .*\.DS_Store .* differ$")
 HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
@@ -461,6 +461,175 @@ SERIES: tuple[Patch, ...] = (
             "should be separately switchable, and a dedicated symbol is what lets the image",
             "pipeline's verify-kernel-config.sh gate prove the heap survived olddefconfig",
             "into the shipped kernel instead of merely proving its parent did.",
+        ),
+    ),
+    Patch(
+        filename="0010-phy-rockchip-naneng-combphy-force-rterm-det-rdy.patch",
+        ordinal=10,
+        subject=(
+            "phy: rockchip: naneng-combphy: force RX-termination detect ready "
+            "for the TX-detect erratum"
+        ),
+        provenance=LORE_POSTING,
+        author="Shawn Lin <shawn.lin@rock-chips.com>",
+        date="Wed, 25 Mar 2026 15:23:03 +0800",
+        origin=BACKPORTS,
+        lore=LorePosting(
+            lore_msgid="1774423383-36599-1-git-send-email-shawn.lin@rock-chips.com",
+            revision="v1",
+            posted_date="Wed, 25 Mar 2026 15:23:03 +0800",
+            upstream_subject=(
+                "phy: rockchip: naneng-combphy: Fix TX detect RX termination errata"
+            ),
+            thread_compressed_sha256=(
+                "edcf4285fd7f02670ae5329f48d79a4536ede75439aa3ec60a497be4b47926eb"
+            ),
+            thread_mbox_sha256=(
+                "c59343ef5f34882d49a1830272cbd293a08cad248cca8b1ff45494d0dd0d9abb"
+            ),
+            canonical_patch_sha256=(
+                "b2ef18765558fb27ddbb00c14ed3fc40e93bbc200a45e337e864326973df249b"
+            ),
+            canonical_mail="backports/lore/U3/01.mbox",
+            review_state=(
+                "posted 2026-03-25, author Signed-off-by only; Vinod Koul asked for a "
+                "Fixes: tag and an erratum reference on 2026-05-10 and the author has "
+                "not answered. No Reviewed-by, no Nacked-by, no reroll."
+            ),
+            note=(
+                "Matrix alias U3. Some naneng-combphy revisions fail to detect the peer",
+                "receiver's RTERM at critical temperatures, so a PCIe link that should",
+                "come up simply does not. The posting sets FORCE_RTERM_DET_RDY in",
+                "PHYREG26 for every SoC whose cfg opts in, RK3588 included -- and RK3588",
+                "is where CeraLive's NVMe and USB3 capture links live.",
+                "",
+                "Screened against v7.1.7: applies with no fuzz base-only AND stacked on",
+                "top of this series, touches one file no other member touches, and",
+                "introduces no symbol the base lacks (rockchip_combphy_updatel and the",
+                "RK3568_PHYREG* block are already there; PHYREG26 is defined by the",
+                "patch itself). Zero prerequisites.",
+                "",
+                "The two mainline commits that landed on this file since the posting --",
+                "0b31f297557f (Consolidate SSC configuration) and be2b5b17b705 (Always",
+                "configure SSC spread direction) -- are both absent from v7.1.7 and",
+                "neither touches the RTERM path, so no landed fix supersedes this.",
+                "",
+                "The open maintainer question is about the commit message, not the",
+                "payload: a Fixes: tag and an erratum reference change what the log says,",
+                "not what the register write does. That is why this is carried and the",
+                "still-being-argued candidates in the same screening round are not.",
+            ),
+        ),
+    ),
+    Patch(
+        filename="0011-dw-hdmi-qp-acr-n-cts-helper.patch",
+        ordinal=11,
+        subject=(
+            "drm/bridge: dw-hdmi-qp: use drm_hdmi_acr_get_n_cts() for audio N/CTS"
+        ),
+        provenance=LORE_POSTING,
+        author="Simon Wright <simon@symple.nz>",
+        date="Thu, 21 May 2026 19:36:47 +1200",
+        origin=BACKPORTS,
+        lore=LorePosting(
+            lore_msgid="86fcf349-0a7a-4618-9001-612371b0f71b@symple.nz",
+            revision="v3",
+            posted_date="Thu, 21 May 2026 19:36:47 +1200",
+            upstream_subject=(
+                "[PATCH v3] drm/bridge: dw-hdmi-qp: use drm_hdmi_acr_get_n_cts() "
+                "helper for audio N/CTS"
+            ),
+            thread_compressed_sha256=(
+                "70168ad154f4c2e92c2042ba96ff2e185a65a83c6f1710f28160b59e772960c9"
+            ),
+            thread_mbox_sha256=(
+                "9b2beae10fd643d26a1f286e33825fd8e36ba3c521acd3f9ed1e6f4bb753d54c"
+            ),
+            canonical_patch_sha256=(
+                "c20e395c4c8a67b3aff0a18bd28fbffedba8f91f42eb99fda2bc7ad2e83c1108"
+            ),
+            canonical_mail="backports/lore/U5/01.mbox",
+            review_state=(
+                "Reviewed-by and Tested-by Cristian Ciocaltea (Collabora), 2026-06-03, "
+                "on the patch itself: \"The patch looks good to me.\" No change was "
+                "requested and no reroll followed."
+            ),
+            note=(
+                "Matrix alias U5. A STANDALONE posting: no cover letter and no sibling",
+                "patches -- the thread is the patch plus one review reply, and this",
+                "series records it that way rather than inventing a 0/N identity for it.",
+                "",
+                "dw-hdmi-qp carried its own pre-computed N/CTS table, which disagrees",
+                "with the shared helper for several TMDS rates and silently produces the",
+                "wrong audio clock regeneration. The posting deletes the private table",
+                "and calls drm_hdmi_acr_get_n_cts(), which v7.1.7 already exports from",
+                "drivers/gpu/drm/display/drm_hdmi_helper.c -- so the symbol it needs is",
+                "in the base and there are zero prerequisites.",
+                "",
+                "Screened against v7.1.7: applies with no fuzz base-only AND stacked.",
+                "The only mainline commit on this file since the posting is fb145be7964d",
+                "(Use the common TMDS char rate constant), which does not touch the N/CTS",
+                "path and does not supersede this.",
+            ),
+        ),
+    ),
+    Patch(
+        filename="0012-dw-hdmi-qp-audio-eopnotsupp.patch",
+        ordinal=12,
+        subject=(
+            "drm/bridge: dw-hdmi-qp: return -EOPNOTSUPP from the audio hooks "
+            "with no active TMDS rate"
+        ),
+        provenance=LORE_POSTING,
+        author="Detlev Casanova <detlev.casanova@collabora.com>",
+        date="Tue, 19 May 2026 14:00:11 -0400",
+        origin=BACKPORTS,
+        lore=LorePosting(
+            lore_msgid="20260519-fix-hdmi-audio-warnings-v1-1-9608966c993f@collabora.com",
+            revision="v1",
+            posted_date="Tue, 19 May 2026 14:00:11 -0400",
+            upstream_subject=(
+                "[PATCH] drm/bridge: dw-hdmi-qp: Return -EOPNOTSUPP in HDMI audio "
+                "functions"
+            ),
+            thread_compressed_sha256=(
+                "5704fdbfe53ee5320e1cbc0cc1498ef982056008e0d46643b6b43bf06e7bf977"
+            ),
+            thread_mbox_sha256=(
+                "0ddf71d9eefd23424355be91d994b362a464113d7fbe5ef3e5ddb8cc0b0dabd9"
+            ),
+            canonical_patch_sha256=(
+                "ba499367da7479e4d68ca9473d23b479b741140e4656496701549c002e87b2d7"
+            ),
+            canonical_mail="backports/lore/U6/01.mbox",
+            review_state=(
+                "Tested-by Maud Spierings (2026-07-06, Orange Pi 5+) and Tested-by "
+                "Diederik de Haas (2026-08-08). Sebastian Reichel (Collabora) asked "
+                "only for a Fixes: tag on 2026-06-01; no change to the payload was "
+                "requested, and the author nudged the thread on 2026-08-06."
+            ),
+            note=(
+                "Matrix alias U6. With no mode set, dw_hdmi_qp_audio_prepare() returned",
+                "-ENODEV, which ASoC treats as a real error and logs on every attempt:",
+                "reporters counted hundreds of \"ASoC error (-19) at",
+                "snd_soc_dai_prepare() on i2s-hifi\" lines filling dmesg on an idle board",
+                "with nothing plugged into HDMI. -EOPNOTSUPP is the code ASoC reads as",
+                "\"this link cannot do that right now\", so the condition stops being",
+                "logged as a fault. dw_hdmi_qp_audio_enable() gets the same treatment,",
+                "and additionally stops clearing the audio SW-disable bit when there is",
+                "no active TMDS rate to clear it for.",
+                "",
+                "This matters here beyond log hygiene: a dmesg buffer flooded by a",
+                "non-fault is a dmesg buffer that has dropped whatever the HDMI-RX",
+                "capture path was trying to report, and this series' own audio work",
+                "(0005/0006) is diagnosed from exactly that buffer.",
+                "",
+                "Screened against v7.1.7: applies with no fuzz base-only AND stacked,",
+                "two hunks in one file, no new symbol, zero prerequisites. It touches",
+                "the same file as 0011 and the two do not overlap -- 0011 rewrites the",
+                "N/CTS table, this one the audio enable/prepare hooks -- and applying",
+                "0011 then this one was verified clean in that order.",
+            ),
         ),
     ),
 )
@@ -1142,8 +1311,9 @@ def write_series(out_dir: Path, pin: dict[str, str]) -> None:
         "# git-am order for the CeraLive RK3588 series.",
         "# Upstream numbering is preserved verbatim -- 0004 was never published,",
         "# so the gap is intentional. Do not renumber to close it.",
-        "# 0006, 0008 and 0009 are first-party (ceralive/) and 0007 is a",
-        "# backport (backports/); all four continue the same counter.",
+        "# 0006, 0008 and 0009 are first-party (ceralive/); 0007 is a merged-commit",
+        "# backport and 0010-0012 are unmerged lore postings (both backports/).",
+        "# All of them continue the same counter.",
         f"# Target kernel: {pin['KERNEL_TAG']} ({pin['KERNEL_COMMIT']})",
         *(
             f"# Retired slot {e.ordinal}: {e.filename} -- see retired/REGISTRY.md"

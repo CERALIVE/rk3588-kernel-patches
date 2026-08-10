@@ -65,8 +65,13 @@ against a source**, not the date the patch was last touched.
 
 ## Current series members
 
-The series has eight members. `0004` is a deliberate ordinal gap — upstream never
+The series has eleven members. `0004` is a deliberate ordinal gap — upstream never
 published one — and is not a row here for the same reason it is not a patch.
+
+Three of them (`0010`–`0012`) are **unmerged lore postings**, a provenance variant
+distinct from `0007`'s merged-commit backport: they have no commit id, none is
+claimed, and their retire trigger needs the posting to merge *and* the base to
+absorb it. See [`backports/README.md`](../backports/README.md).
 
 A row may carry an **`UNVALIDATED`** marker. That is a statement about *our* patch,
 not about an upstream counterpart: it means the patch is source-correct and compiles
@@ -86,6 +91,11 @@ the marker for a given patch is written down, per patch, in
 | `0007` iommu dte-limit fix | `backports/` lane — **backported from mainline** `8d4346ecd4950ae08cc76a6de327c264e846758c` "iommu/rockchip: disable fetch dte time limit", Simon Xue via Sven Püschel (Pengutronix), PATCHv2, <https://lore.kernel.org/r/20260428-spu-iommudtefix-v2-1-f592f579e508@pengutronix.de> | `merged@7.2-rc1` — `Acked-by` Heiko Stuebner, applied by Joerg Roedel 2026-06-02. **Absent from the base**: it carries no `Fixes:` tag and no `Cc: stable`, so `7.1.y` never picked it up | **Drop when base ≥ `v7.2`.** The base absorbing it is the whole retire condition — there is no merit question left, it is already mainline | 2026-08-08 | Sets `BIT(31)` of `MMU_AUTO_GATING` in `rk_iommu_enable()`, the vendor workaround for the RK356x/RK3588 blocked-VOP-and-black-screen and RK3588 RGA3 hang. Base check at `v7.1.7`: `DISABLE_FETCH_DTE_TIME_LIMIT` absent, `RK_MMU_AUTO_GATING` present. Applies forward with **no fuzz and no context adaptation**; **zero prerequisite commits**. Fixes:-tag sweep over mainline found **no follow-up** |
 | `0008` rkvenc DMA max segment size — **`VALIDATED` on Rock 5B+ (2026-08-09), `UNVALIDATED` on Orange Pi 5+** | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Fixes a bookkeeping defect in `0001`, so its upstream position is the `0001` row's. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — upstream rkvenc is `WIP` (Collabora's Mesa/Vulkan work, the same tracker as `0001`), and there is no upstream VEPU580 H.264 driver to backport a fix from | Only if `0001` itself retires, i.e. if an upstream VEPU580 driver ever replaces it wholesale. **Do not retire it on the strength of "upstream rkvenc landed"** — see [§ `0001`](#0001--do-not-retire-on-rkvenc-landing), which applies verbatim | 2026-08-09 | Adds `dma_set_max_seg_size(dev, DMA_BIT_MASK(32))` to `rkvenc_hw_probe()`, then **reads it back** with `dma_get_max_seg_size()` and fails the probe with `-EINVAL` if it did not take. Defect 2 of the 3 stacked in the pipeline's "MPP hardware video encode" KNOWN ISSUE. The IOVA guardrail in `rkvenc_service.c` is **deliberately untouched** — it correctly catches the symptom, and on a real board it never fired across 1080p, 4K, dual-core or a 10-minute soak. Read [§ `0008`](#0008--validated-on-rock-5b-and-what-that-does-and-does-not-mean). Hardware legs: [`BOARD-QUALIFICATION.md` §4](BOARD-QUALIFICATION.md) |
 | `0009` `system-uncached` dma-heap — **`VALIDATED` on Rock 5B+ (2026-08-09), `UNVALIDATED` on Orange Pi 5+** | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Ported in shape from the ACK/Rockchip uncached heap; no upstream Linux counterpart exists — mainline `drivers/dma-buf/heaps/` carries `system`, `system_cc_shared` and CMA only. Its reason to exist is the same `0001`/MPP stack, so its upstream position is the `0001` row's | `first-party-no-upstream` — upstream rkvenc is `WIP` (Collabora's Mesa/Vulkan work, the same tracker as `0001`), and no mainline series proposes an uncached system heap | Retire when **either** mainline registers an uncached system heap under exactly the name `system-uncached`, **or** `0001` retires wholesale, **or** the userspace stops hard-coding the name (a `librockchip-mpp` with a heap-name override or a working cached-heap fallback). Not before: the shipped `librockchip-mpp1 1.5.0-1` has neither | 2026-08-09 | Registers a second dma-heap from `system_heap.c` using the file's existing per-heap drvdata mechanism: `pgprot_writecombine()` mappings, a one-time `arch_dma_prep_coherent()` clean at allocation, and `DMA_ATTR_SKIP_CPU_SYNC` + skipped `dma_sync_sgtable_*` **only** for that heap. Defects **1 and 3** of the 3 stacked in the pipeline's "MPP hardware video encode" KNOWN ISSUE (`0008` is defect 2). Gated by its own `CONFIG_DMABUF_HEAPS_SYSTEM_UNCACHED`, which `depends on ARCH_HAS_DMA_PREP_COHERENT` so it cannot build where it would silently hand back cached memory. Confirmed a genuine second heap (minor `250,1`, not an alias of `system`'s `250,0`) that does not draw from CMA. Read [§ `0009`](#0009--validated-on-rock-5b-and-why-orange-pi-5-and-a-real-hdmi-source-stay-open) |
+| `0010` naneng-combphy RTERM erratum | `backports/` lane — **unmerged lore posting**, `PATCHv1` by Shawn Lin (Rockchip), <https://lore.kernel.org/r/1774423383-36599-1-git-send-email-shawn.lin@rock-chips.com>. Imported by `scripts/import-lore-series.py` from the canonical thread archive; canonical mail kept at `backports/lore/U3/01.mbox`. **No commit id exists and none is claimed** | `sent-v1` — `Signed-off-by` author only. Vinod Koul asked for a `Fixes:` tag and an erratum reference on 2026-05-10; unanswered, no reroll. The question is about the commit message, not the register write | Posting merges **and** the pinned base absorbs it. Both — a merge alone leaves `v7.1.7` still missing it | 2026-08-10 | Matrix alias **U3**. Sets `FORCE_RTERM_DET_RDY` in `PHYREG26` for the SoCs whose cfg opts in, RK3588 included, so a PCIe peer's RX termination is detected at critical temperatures. Zero prerequisites; applies with no fuzz base-only and stacked; no other member touches `drivers/phy/`. Read [§ matrix U3](#u3) |
+| `0011` dw-hdmi-qp N/CTS helper | `backports/` lane — **unmerged lore posting**, standalone `PATCHv3` by Simon Wright with **no cover letter and zero siblings**, <https://lore.kernel.org/r/86fcf349-0a7a-4618-9001-612371b0f71b@symple.nz>. Canonical mail at `backports/lore/U5/01.mbox`. **No commit id exists and none is claimed** | `sent-v3` — `Reviewed-by` **and** `Tested-by` Cristian Ciocaltea (Collabora), 2026-06-03, with no change requested | Posting merges **and** the pinned base absorbs it | 2026-08-10 | Matrix alias **U5**. Deletes dw-hdmi-qp's private N/CTS table, which disagrees with the shared helper at several TMDS rates, and calls `drm_hdmi_acr_get_n_cts()` — already exported by the base. Shares `dw-hdmi-qp.c` with `0012` without colliding. Read [§ matrix U5](#u5) |
+| `0012` dw-hdmi-qp audio `-EOPNOTSUPP` | `backports/` lane — **unmerged lore posting**, `PATCHv1` by Detlev Casanova (Collabora), <https://lore.kernel.org/r/20260519-fix-hdmi-audio-warnings-v1-1-9608966c993f@collabora.com>. Canonical mail at `backports/lore/U6/01.mbox`. **No commit id exists and none is claimed** | `sent-v1` — two independent `Tested-by` (Maud Spierings 2026-07-06 on Orange Pi 5+, Diederik de Haas 2026-08-08). Sebastian Reichel asked only for a `Fixes:` tag; the payload was not contested | Posting merges **and** the pinned base absorbs it | 2026-08-10 | Matrix alias **U6**. With no mode set the audio hooks returned `-ENODEV`, which ASoC logs as a fault — reporters counted hundreds of `ASoC error (-19) … on i2s-hifi` lines on an idle board. Beyond log hygiene this protects the dmesg buffer that `0005`/`0006` are diagnosed from. Read [§ matrix U6](#u6) |
+
+
 ### `0001` — do not retire on rkvenc landing
 
 The Collabora table's VEPU580 H.264 entry is `WIP`, and the linked thread says
@@ -1019,3 +1029,80 @@ Row-by-row evidence is in the matrix above. The screening base was a real
 `v7.1.7` checkout, and the apply results quoted there are `git apply` output.
 
 
+### What the round changed
+
+Three imports, all unmerged lore postings, all through
+`scripts/import-lore-series.py` and none hand-transcribed: `0010` (U3), `0011`
+(U5) and `0012` (U6). Ordinals continue after `0009`; the `0004` gap is untouched.
+
+**No merged candidate was imported, and that is a result, not an omission.** M1 and
+M5 are already in `v7.1.7` and were verified so against the real tree rather than
+assumed; M6 has been carried as `0007` since its own import; M2 repairs a
+regression the base does not have; M8 is out of scope; M3, M4 and M7 were excluded
+by owner decision before screening.
+
+**U1 and U2 are both already in the base**, so the "U2 before U1" prerequisite
+order never becomes an import order. `scripts/check-series-ledger.py
+--require-before U2:U1` still asserts it: the ordering must hold if both are ever
+carried, and until then both must carry a recorded non-`IN` disposition rather
+than simply be absent.
+
+---
+
+## Honest gaps
+
+**As of 2026-08-08, in the Collabora mainline-status table and the lore threads it
+links** (that qualifier is the whole point of this section — it is a statement
+about two named sources on one named date, not a universal negative about the
+kernel):
+
+- **No RK3588 Bluetooth backport candidates found.** The Collabora table carries
+  no Bluetooth row at all, and no linked thread in either the pending or merged
+  improvements list concerns RK3588 Bluetooth. This is consistent with the shipped
+  boards, where Bluetooth is **USB-side and handled in userspace** — so there is
+  nothing for a kernel-patch repository to carry here regardless.
+- **GPU (panthor), DFI and thermal-ADC metrics are already in `v7.1.y`.** The
+  capture shows GPU `6.10-rc1`, DFI `6.7-rc1` ("DDR memory utilization for perf"),
+  Thermal ADC `6.4-rc1`, plain ADC `6.5-rc1` — all well below the pinned base, so
+  there is nothing to backport.
+- **DMC and deeper power telemetry are upstream-TODO — nothing importable.** The
+  capture lists DMC (Dynamic Memory Controller, memory frequency scaling) as
+  `TODO` with no linked series. There is no posting to backport; this is an
+  absence upstream, not a gap in this repository.
+
+None of the three is a work item, and none should be turned into one. They are
+recorded so the next person does not repeat the search and reach the same three
+dead ends.
+
+### Sources checked for this sweep
+
+| Source | How | Snapshot |
+|---|---|---|
+| Collabora `mainline-status.md` | Fetched 2026-08-08 with a real browser (Playwright 1.61.1 / Chromium) — the page sits behind an Anubis proof-of-work gate that a plain `curl` cannot pass | `.omo/evidence/image-pipeline-quality/collabora-mainline-status-2026-08-08.md` (untracked; `.omo/` is gitignored) — sha256 `729b87afb5a4fb097713b79e264a3688e25f3f971a8b9fcbc6c73d49340dccb9` |
+| Every lore thread linked from the rows above | `https://lore.kernel.org/r/<message-id>` resolution check, 2026-08-08 | All 12 Message-IDs resolved (HTTP 302 to `/all/…`); zero 404s |
+| The `0005` counterpart thread, **read in full** | `https://lore.kernel.org/all/<message-id>/t.mbox.gz` — the gzipped thread mbox is served to plain `curl`, unlike the HTML views and `/raw` (both 403). `patchwork.kernel.org`'s API returns **zero** results for this Message-ID, so T10's patchwork route does not work here | 34 messages, 4 patches, 3 human reviewers + `sashiko-bot`; every `Reviewed-by`/`Tested-by` quoted in [`EVAL-0005-AUDIO.md`](EVAL-0005-AUDIO.md) |
+| The pinned kernel tree at `v7.1.7` | Path + content checks per patch | [`REBASE-v7.1.7.md` § Patch-ID / content check](REBASE-v7.1.7.md#patch-id--content-check-against-the-new-base) — 0 of 5 absorbed |
+| Both T12 import-candidate threads, **read in full** | Same `t.mbox.gz` route as the `0005` row. `lore.kernel.org`'s *search* endpoint (`/all/?q=…&x=m`) is **also 403** — only a thread fetched by a known Message-ID is served, so a "Fixes: sweep" cannot be run against lore | IOMMU: 3 messages (`Acked-by` Heiko, "Applied, thanks" from Joerg). MCLK: the v3 thread is 9 messages, and the **v4** thread it became is 18, including the post-merge regression report |
+| All four T13 candidate threads, **read in full** | Same `t.mbox.gz` route, one fetch per Message-ID, all HTTP 200 to plain `curl`. Every reply body read, not just the patches — which is where three of the four verdicts came from | fdinfo 12 unique msgs (24 raw) · tracepoints 22 (44) · PCIe PM 11 (22) · SCDC 10 (10). **Zero** `Reviewed-by`/`Acked-by`/`Tested-by` across the first three; five review tags across SCDC, none of them on its payload patch |
+| Applicability + symbol existence for all 29 T13 patches | `git apply --check` forward **and** reverse per patch against a clean `v7.1.7` worktree, then a stacked `git apply` of each candidate's minimal useful set, then an identifier probe of the base for every symbol the payloads name (per T12's "applies ≠ compiles" rule) | 12 of 29 fail even a textual forward apply. Minimal stacks: fdinfo **applies**; tracepoints stops at `03/11`; PCIe PM stops at `7/8`; SCDC stops at `4/5` |
+| Is `debugfs` mounted on the shipped image? (the SCDC gate) | Direct inspection of `image-building-pipeline/v2/mkosi` — the built base layer's systemd unit tree and the image's own unit-masking policy — plus the pipeline's real-hardware notes | **Yes.** `sys-kernel-debug.mount` present *and* in `sysinit.target.wants/`; not among the six units `suppress_unusable_boot_units` masks; `/sys/kernel/debug/...` demonstrably read on a live Rock 5B+ |
+| Mainline commit resolution and the **`Fixes:` sweep** | `api.github.com/search/commits` over `torvalds/linux` for identity (author date matched to the posting, to the second), `…/compare/<sha>…v7.2-rc1` for containment (`status: ahead`, `behind_by: 0`), then `…/commits?path=<file>&since=<merge-date>` per touched file — a bounded per-file sweep, which is what makes "no follow-up exists" a measured claim rather than an absent search hit | 6 SHAs resolved, all contained in `v7.2-rc1`. Sweep over all five touched files: **zero** commits carrying a `Fixes:` tag naming any of them; the only extra commit surfaced was `32d1d88c4165`, which is a *prerequisite* of the MCLK series, not a fix to it |
+
+**The Collabora capture is a snapshot, not a live feed.** Re-capture it — with a
+browser, not `curl` — at every base bump, and move the "Last checked" dates in the
+same change. A stale date is the honest signal that a row has not been re-verified.
+
+---
+
+## Updating a row
+
+1. Re-capture the Collabora table (browser required) and re-resolve the row's
+   Message-ID.
+2. Update **Upstream status** and **Last checked** together. A status change with
+   an unchanged date is not a check.
+3. If the retire trigger has fired, do the retirement through
+   [`retired/REGISTRY.md`](../retired/REGISTRY.md) — **move** the source file, add
+   the registry row, drop the `SERIES` entry, regenerate `patches/`. Then point
+   this row's Notes at the registry entry.
+4. If an import lands, replace the candidate row's placeholder provenance with the
+   real `commit <sha> upstream.` value recorded in the `backports/` header.

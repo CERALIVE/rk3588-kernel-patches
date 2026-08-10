@@ -4,11 +4,12 @@ The third source lane. `upstream/` is Ross Cawston's import, `ceralive/` is
 first-party work, and this is everything else: a patch lifted from mainline, a
 stable tree, or a posting on lore that the pinned kernel does not carry yet.
 
-One member today, `0007-iommu-rockchip-disable-fetch-dte-time-limit.patch`,
-backported from mainline `8d4346ecd495`. The lane exists so that a backport does
-not get dropped into `upstream/`, which would break the one claim this repository
-cannot afford to lose — that `upstream/` is byte-identical to what was published
-at `UPSTREAM_PATCHES_REV`.
+Four members today: `0007-iommu-rockchip-disable-fetch-dte-time-limit.patch`,
+backported from mainline `8d4346ecd495`, plus `0010`, `0011` and `0012`, which are
+**unmerged lore postings**. The lane exists so that a backport does not get
+dropped into `upstream/`, which would break the one claim this repository cannot
+afford to lose — that `upstream/` is byte-identical to what was published at
+`UPSTREAM_PATCHES_REV`.
 
 ## Two provenance variants, and they are not interchangeable
 

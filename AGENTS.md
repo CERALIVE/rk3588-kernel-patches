@@ -4,10 +4,11 @@
 
 Holds the **mainline-track RK3588 kernel patch series** for CeraLive: VEPU580
 hardware encoder plus three HDMI-RX fixes imported from upstream, one backported
-IOMMU fix, and three first-party patches — the device-tree half that makes HDMI-RX
-audio actually capturable, a DMA segment-size fix to the encoder driver, and the
-`system-uncached` dma-heap the Rockchip MPP userspace requires by name —
-converted to a `git am` mailbox series and pinned to an exact kernel tag.
+IOMMU fix, three backported **unmerged lore postings** (a combphy erratum and two
+dw-hdmi-qp audio fixes), and three first-party patches — the device-tree half that
+makes HDMI-RX audio actually capturable, a DMA segment-size fix to the encoder
+driver, and the `system-uncached` dma-heap the Rockchip MPP userspace requires by
+name — converted to a `git am` mailbox series and pinned to an exact kernel tag.
 
 Produces **patch text only** — no `.deb`, no kernel, no image artifact. It is
 therefore **NOT in the device image `REPOS` array** and has **no `versions.yaml`
@@ -214,9 +215,9 @@ verbatim by CI, so it cannot rot the same way.
 There is no `0004` upstream. **Do NOT renumber to close the gap** — the 1:1 filename
 correspondence with upstream is what makes the import auditable. First-party and
 backported patches continue the same counter (`0006`, `0008` and `0009` =
-`ceralive/`, `0007` = `backports/`), so the ordinals read `1/9`, `2/9`, `3/9`,
-`5/9`, `6/9`, `7/9`, `8/9`, `9/9` — the gap at 4 stays visible, which is the whole
-point.
+`ceralive/`; `0007`, `0010`, `0011` and `0012` = `backports/`), so the ordinals
+read `1/12`, `2/12`, `3/12`, `5/12` … `12/12` — the gap at 4 stays visible, which
+is the whole point.
 
 **`0005` is driver-only; `0006` is what makes HDMI-RX audio reachable.** Upstream's
 `0005` registers an ASoC `hdmi-audio-codec` child under `hdmi_receiver@fdee0000`

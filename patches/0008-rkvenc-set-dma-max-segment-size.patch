@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Sat, 8 Aug 2026 12:00:00 -0500
-Subject: [PATCH 8/9] media: rockchip: rkvenc: set the DMA max segment size in the hardware probe
+Subject: [PATCH 8/12] media: rockchip: rkvenc: set the DMA max segment size in the hardware probe
 
 *** VALIDATED on Rock 5B+ (2026-08-09) -- UNVALIDATED on Orange Pi 5+. ***
 A real 1080p/60-frame encode produced 1,854,524 bytes (7.1.5 produced 0 bytes

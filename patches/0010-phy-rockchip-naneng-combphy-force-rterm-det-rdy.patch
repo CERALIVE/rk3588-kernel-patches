@@ -1,0 +1,132 @@
+From lore-posting Mon Sep 17 00:00:00 2001
+From: Shawn Lin <shawn.lin@rock-chips.com>
+Date: Wed, 25 Mar 2026 15:23:03 +0800
+Subject: [PATCH 10/12] phy: rockchip: naneng-combphy: force RX-termination detect ready for the TX-detect erratum
+
+Backport of unmerged v1 posting.
+
+phy: rockchip: naneng-combphy: Fix TX detect RX termination errata
+
+Matrix alias U3. Some naneng-combphy revisions fail to detect the peer
+receiver's RTERM at critical temperatures, so a PCIe link that should
+come up simply does not. The posting sets FORCE_RTERM_DET_RDY in
+PHYREG26 for every SoC whose cfg opts in, RK3588 included -- and RK3588
+is where CeraLive's NVMe and USB3 capture links live.
+
+Screened against v7.1.7: applies with no fuzz base-only AND stacked on
+top of this series, touches one file no other member touches, and
+introduces no symbol the base lacks (rockchip_combphy_updatel and the
+RK3568_PHYREG* block are already there; PHYREG26 is defined by the
+patch itself). Zero prerequisites.
+
+The two mainline commits that landed on this file since the posting --
+0b31f297557f (Consolidate SSC configuration) and be2b5b17b705 (Always
+configure SSC spread direction) -- are both absent from v7.1.7 and
+neither touches the RTERM path, so no landed fix supersedes this.
+
+The open maintainer question is about the commit message, not the
+payload: a Fixes: tag and an erratum reference change what the log says,
+not what the register write does. That is why this is carried and the
+still-being-argued candidates in the same screening round are not.
+
+Posted to lore on Wed, 25 Mar 2026 15:23:03 +0800 as v1:
+https://lore.kernel.org/r/1774423383-36599-1-git-send-email-shawn.lin@rock-chips.com
+Review state: posted 2026-03-25, author Signed-off-by only; Vinod Koul asked for a Fixes: tag and an erratum reference on 2026-05-10 and the author has not answered. No Reviewed-by, no Nacked-by, no reroll.
+
+Canonical thread archive -- the only source an import may be taken
+from: https://lore.kernel.org/all/1774423383-36599-1-git-send-email-shawn.lin@rock-chips.com/t.mbox.gz
+  thread_compressed_sha256 edcf4285fd7f02670ae5329f48d79a4536ede75439aa3ec60a497be4b47926eb
+    (the gzip response bytes, exactly as served)
+  thread_mbox_sha256       c59343ef5f34882d49a1830272cbd293a08cad248cca8b1ff45494d0dd0d9abb
+    (the mailbox those bytes decompress to)
+  canonical_patch_sha256   b2ef18765558fb27ddbb00c14ed3fc40e93bbc200a45e337e864326973df249b
+    (this posting's canonical mail, archived at backports/lore/U3/01.mbox)
+
+Backported into the CeraLive series for v7.1.7. The source of record is
+backports/0010-phy-rockchip-naneng-combphy-force-rterm-det-rdy.patch; patches/ is generated from it by
+scripts/build-series.py, and scripts/verify-payload-parity.py holds it to
+the same added/removed-line parity every other lane gets.
+
+NOT upstream: this posting has NOT been merged, so no commit id exists for
+it and none is claimed. This header deliberately carries no
+`commit <sha> upstream.` marker, no null object id and no parent SHA --
+there is no such identity to state, and stating one would be false
+provenance rather than a formatting shortcut. No Signed-off-by is added
+either: the DCO chain belongs to the author on the list.
+
+Retire this when the posting merges AND the pinned base absorbs it -- both,
+not either. Trigger and last-checked date: docs/UPSTREAM-STATUS.md.
+
+---
+diff --git a/drivers/phy/rockchip/phy-rockchip-naneng-combphy.c b/drivers/phy/rockchip/phy-rockchip-naneng-combphy.c
+index b60d6bf..76d4994 100644
+--- a/drivers/phy/rockchip/phy-rockchip-naneng-combphy.c
++++ b/drivers/phy/rockchip/phy-rockchip-naneng-combphy.c
+@@ -106,6 +106,9 @@
+ #define RK3568_PHYREG18				0x44
+ #define RK3568_PHYREG18_PLL_LOOP		0x32
+ 
++#define RK3568_PHYREG26				0x64
++#define RK3568_PHYREG26_FORCE_RTERM_DET_RDY	BIT(5)
++
+ #define RK3568_PHYREG30				0x74
+ #define RK3568_PHYREG30_GATE_TX_PCK_SEL         BIT(7)
+ #define RK3568_PHYREG30_GATE_TX_PCK_DLY_PLL_OFF BIT(7)
+@@ -193,6 +196,7 @@ struct rockchip_combphy_cfg {
+ 	unsigned int num_phys;
+ 	unsigned int phy_ids[3];
+ 	const struct rockchip_combphy_grfcfg *grfcfg;
++	bool force_rxterm_det_rdy;
+ 	int (*combphy_cfg)(struct rockchip_combphy_priv *priv);
+ };
+ 
+@@ -264,6 +268,17 @@ static int rockchip_combphy_init(struct phy *phy)
+ 
+ 	switch (priv->type) {
+ 	case PHY_TYPE_PCIE:
++		/*
++		 * Hardware Errata: TX fails to detect peer RX termination.
++		 * Some PHY revisions may fail to detect remote RX's RTERM
++		 * (receiver termination resistor) under certain critical
++		 * temperature conditions. Set force rterm detect ready to
++		 * fix it.
++		 */
++		if (priv->cfg->force_rxterm_det_rdy)
++			rockchip_combphy_updatel(priv, RK3568_PHYREG26_FORCE_RTERM_DET_RDY,
++					RK3568_PHYREG26_FORCE_RTERM_DET_RDY, RK3568_PHYREG26);
++		fallthrough;
+ 	case PHY_TYPE_USB3:
+ 	case PHY_TYPE_SATA:
+ 	case PHY_TYPE_SGMII:
+@@ -745,6 +760,7 @@ static const struct rockchip_combphy_cfg rk3562_combphy_cfgs = {
+ 	},
+ 	.grfcfg		= &rk3562_combphy_grfcfgs,
+ 	.combphy_cfg	= rk3562_combphy_cfg,
++	.force_rxterm_det_rdy  = true,
+ };
+ 
+ static int rk3568_combphy_cfg(struct rockchip_combphy_priv *priv)
+@@ -962,6 +978,7 @@ static const struct rockchip_combphy_cfg rk3568_combphy_cfgs = {
+ 	},
+ 	.grfcfg		= &rk3568_combphy_grfcfgs,
+ 	.combphy_cfg	= rk3568_combphy_cfg,
++	.force_rxterm_det_rdy  = true,
+ };
+ 
+ static int rk3576_combphy_cfg(struct rockchip_combphy_priv *priv)
+@@ -1231,6 +1248,7 @@ static const struct rockchip_combphy_cfg rk3576_combphy_cfgs = {
+ 	},
+ 	.grfcfg		= &rk3576_combphy_grfcfgs,
+ 	.combphy_cfg	= rk3576_combphy_cfg,
++	.force_rxterm_det_rdy  = true,
+ };
+ 
+ static int rk3588_combphy_cfg(struct rockchip_combphy_priv *priv)
+@@ -1418,6 +1436,7 @@ static const struct rockchip_combphy_cfg rk3588_combphy_cfgs = {
+ 	},
+ 	.grfcfg		= &rk3588_combphy_grfcfgs,
+ 	.combphy_cfg	= rk3588_combphy_cfg,
++	.force_rxterm_det_rdy  = true,
+ };
+ 
+ static const struct of_device_id rockchip_combphy_of_match[] = {

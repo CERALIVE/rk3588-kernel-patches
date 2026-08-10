@@ -1,0 +1,85 @@
+From lore-posting Mon Sep 17 00:00:00 2001
+From: Detlev Casanova <detlev.casanova@collabora.com>
+Date: Tue, 19 May 2026 14:00:11 -0400
+Subject: [PATCH 12/12] drm/bridge: dw-hdmi-qp: return -EOPNOTSUPP from the audio hooks with no active TMDS rate
+
+Backport of unmerged v1 posting.
+
+[PATCH] drm/bridge: dw-hdmi-qp: Return -EOPNOTSUPP in HDMI audio functions
+
+Matrix alias U6. With no mode set, dw_hdmi_qp_audio_prepare() returned
+-ENODEV, which ASoC treats as a real error and logs on every attempt:
+reporters counted hundreds of "ASoC error (-19) at
+snd_soc_dai_prepare() on i2s-hifi" lines filling dmesg on an idle board
+with nothing plugged into HDMI. -EOPNOTSUPP is the code ASoC reads as
+"this link cannot do that right now", so the condition stops being
+logged as a fault. dw_hdmi_qp_audio_enable() gets the same treatment,
+and additionally stops clearing the audio SW-disable bit when there is
+no active TMDS rate to clear it for.
+
+This matters here beyond log hygiene: a dmesg buffer flooded by a
+non-fault is a dmesg buffer that has dropped whatever the HDMI-RX
+capture path was trying to report, and this series' own audio work
+(0005/0006) is diagnosed from exactly that buffer.
+
+Screened against v7.1.7: applies with no fuzz base-only AND stacked,
+two hunks in one file, no new symbol, zero prerequisites. It touches
+the same file as 0011 and the two do not overlap -- 0011 rewrites the
+N/CTS table, this one the audio enable/prepare hooks -- and applying
+0011 then this one was verified clean in that order.
+
+Posted to lore on Tue, 19 May 2026 14:00:11 -0400 as v1:
+https://lore.kernel.org/r/20260519-fix-hdmi-audio-warnings-v1-1-9608966c993f@collabora.com
+Review state: Tested-by Maud Spierings (2026-07-06, Orange Pi 5+) and Tested-by Diederik de Haas (2026-08-08). Sebastian Reichel (Collabora) asked only for a Fixes: tag on 2026-06-01; no change to the payload was requested, and the author nudged the thread on 2026-08-06.
+
+Canonical thread archive -- the only source an import may be taken
+from: https://lore.kernel.org/all/20260519-fix-hdmi-audio-warnings-v1-1-9608966c993f@collabora.com/t.mbox.gz
+  thread_compressed_sha256 5704fdbfe53ee5320e1cbc0cc1498ef982056008e0d46643b6b43bf06e7bf977
+    (the gzip response bytes, exactly as served)
+  thread_mbox_sha256       0ddf71d9eefd23424355be91d994b362a464113d7fbe5ef3e5ddb8cc0b0dabd9
+    (the mailbox those bytes decompress to)
+  canonical_patch_sha256   ba499367da7479e4d68ca9473d23b479b741140e4656496701549c002e87b2d7
+    (this posting's canonical mail, archived at backports/lore/U6/01.mbox)
+
+Backported into the CeraLive series for v7.1.7. The source of record is
+backports/0012-dw-hdmi-qp-audio-eopnotsupp.patch; patches/ is generated from it by
+scripts/build-series.py, and scripts/verify-payload-parity.py holds it to
+the same added/removed-line parity every other lane gets.
+
+NOT upstream: this posting has NOT been merged, so no commit id exists for
+it and none is claimed. This header deliberately carries no
+`commit <sha> upstream.` marker, no null object id and no parent SHA --
+there is no such identity to state, and stating one would be false
+provenance rather than a formatting shortcut. No Signed-off-by is added
+either: the DCO chain belongs to the author on the list.
+
+Retire this when the posting merges AND the pinned base absorbs it -- both,
+not either. Trigger and last-checked date: docs/UPSTREAM-STATUS.md.
+
+---
+diff --git a/drivers/gpu/drm/bridge/synopsys/dw-hdmi-qp.c b/drivers/gpu/drm/bridge/synopsys/dw-hdmi-qp.c
+index d649a1cf07f5..270c8c47d853 100644
+--- a/drivers/gpu/drm/bridge/synopsys/dw-hdmi-qp.c
++++ b/drivers/gpu/drm/bridge/synopsys/dw-hdmi-qp.c
+@@ -469,8 +469,10 @@ static int dw_hdmi_qp_audio_enable(struct drm_bridge *bridge,
+ {
+ 	struct dw_hdmi_qp *hdmi = dw_hdmi_qp_from_bridge(bridge);
+ 
+-	if (hdmi->tmds_char_rate)
+-		dw_hdmi_qp_mod(hdmi, 0, AVP_DATAPATH_PACKET_AUDIO_SWDISABLE, GLOBAL_SWDISABLE);
++	if (!hdmi->tmds_char_rate)
++		return -EOPNOTSUPP;
++
++	dw_hdmi_qp_mod(hdmi, 0, AVP_DATAPATH_PACKET_AUDIO_SWDISABLE, GLOBAL_SWDISABLE);
+ 
+ 	return 0;
+ }
+@@ -484,7 +486,7 @@ static int dw_hdmi_qp_audio_prepare(struct drm_bridge *bridge,
+ 	bool ref2stream = false;
+ 
+ 	if (!hdmi->tmds_char_rate)
+-		return -ENODEV;
++		return -EOPNOTSUPP;
+ 
+ 	if (fmt->bit_clk_provider | fmt->frame_clk_provider) {
+ 		dev_err(hdmi->dev, "unsupported clock settings\n");
