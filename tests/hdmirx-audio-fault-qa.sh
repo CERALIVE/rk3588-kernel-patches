@@ -38,7 +38,11 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/qa-common.sh
 source "${HERE}/lib/qa-common.sh"
+# shellcheck source=lib/qa-fixture.sh
+source "${HERE}/lib/qa-fixture.sh"
 
+# shellcheck disable=SC2034  # read by lib/qa-common.sh to pick this driver's control table
+QA_DRIVER=hdmirx
 QA_DEBUGFS="/sys/kernel/debug/hdmirx-audio-test"
 QA_DELAY_MS=1000
 QA_ITERATIONS=50
@@ -70,7 +74,7 @@ run_delay_case() {
 	local card="$1" mark i
 	mark="$(qa_dmesg_mark)"
 
-	qa_arm delay_worker_ms "${QA_DELAY_MS}" delay_worker_consumed || return 1
+	qa_arm delay_worker_ms "${QA_DELAY_MS}" || return 1
 
 	for (( i = 0; i < QA_ITERATIONS; i++ )); do
 		qa_audio_cycle "${card}"
@@ -85,7 +89,7 @@ run_clock_case() {
 	local card="$1" mark
 	mark="$(qa_dmesg_mark)"
 
-	qa_arm fail_clk_set_rate_once 1 fail_clk_set_rate_consumed || return 1
+	qa_arm fail_clk_set_rate_once 1 || return 1
 	qa_audio_cycle "${card}"
 	qa_assert_consumed
 
@@ -99,16 +103,45 @@ run_clock_case() {
 }
 
 run_self_test() {
-	local rc=0 work
-	work="$(mktemp -d)"
+	local rc=0 work knob
 
+	work="$(mktemp -d)"
 	QA_DEBUGFS="${work}/hdmirx-audio-test"
-	mkdir -p "${QA_DEBUGFS}"
-	printf '0\n' >"${QA_DEBUGFS}/fail_clk_set_rate_once"
-	printf '0\n' >"${QA_DEBUGFS}/fail_clk_set_rate_consumed"
+	qa_fixture_make "${QA_DEBUGFS}" hdmirx
+
+	# This driver names its counters WITHOUT the `_once` that rkvenc keeps,
+	# and assuming one convention for both is what cost a board session. The
+	# names come from the shared table, which is cross-checked against the
+	# driver sources, and the fixture is built from that same table.
+	QA_FAILURES=0
+	qa_verify_controls_against_patches "${HERE}/.." >/dev/null 2>&1
+	case $? in
+		0) printf '  ok  the fault-control table matches the driver sources in patches/\n' ;;
+		77) printf '  WARN patches/ not present; the driver-source cross-check was skipped\n' >&2 ;;
+		*) printf '  FAIL the fault-control table disagrees with the driver sources\n' >&2; rc=1 ;;
+	esac
+
+	if [[ "$(qa_counter_for fail_clk_set_rate_once)" == fail_clk_set_rate_consumed \
+		&& "$(qa_counter_for delay_worker_ms)" == delay_worker_consumed ]]; then
+		printf '  ok  the HDMI-RX counters are the driver'\''s own names\n'
+	else
+		printf '  FAIL the HDMI-RX counter names drifted\n' >&2; rc=1
+	fi
+
+	for knob in fail_clk_set_rate_once delay_worker_ms; do
+		QA_FAILURES=0
+		qa_arm "${knob}" 1 >/dev/null 2>&1
+		qa_fixture_consume "${QA_DEBUGFS}" hdmirx "${knob}"
+		qa_assert_consumed >/dev/null 2>&1
+		if (( QA_FAILURES == 0 )); then
+			printf '  ok  fixture: %s arms, fires once and auto-resets\n' "${knob}"
+		else
+			printf '  FAIL fixture: %s did not pass a clean cycle\n' "${knob}" >&2; rc=1
+		fi
+	done
 
 	QA_FAILURES=0
-	qa_arm fail_clk_set_rate_once 1 fail_clk_set_rate_consumed >/dev/null
+	qa_arm fail_clk_set_rate_once 1 >/dev/null 2>&1
 	qa_assert_consumed >/dev/null 2>&1
 	if (( QA_FAILURES > 0 )); then
 		printf '  ok  an ignored clock knob is reported as a FAILURE\n'
@@ -117,13 +150,30 @@ run_self_test() {
 	fi
 
 	QA_FAILURES=0
-	printf '1\n' >"${QA_DEBUGFS}/fail_clk_set_rate_consumed"
 	printf '0\n' >"${QA_DEBUGFS}/fail_clk_set_rate_once"
+	qa_arm fail_clk_set_rate_once 1 >/dev/null 2>&1
+	qa_fixture_consume_twice "${QA_DEBUGFS}" hdmirx fail_clk_set_rate_once
 	qa_assert_consumed >/dev/null 2>&1
-	if (( QA_FAILURES == 0 )); then
-		printf '  ok  a consumed, auto-reset clock knob passes\n'
+	if (( QA_FAILURES > 0 )); then
+		printf '  ok  a counter that moved twice is reported as a FAILURE\n'
 	else
-		printf '  FAIL a correctly consumed clock knob was rejected\n' >&2; rc=1
+		printf '  FAIL a double-consumed knob passed\n' >&2; rc=1
+	fi
+
+	# The same set -u trap that aborted the rkvenc run mid-case lives in the
+	# shared library, so it is asserted from this harness too.
+	if bash -c '
+		set -Eeuo pipefail
+		source "'"${HERE}"'/lib/qa-common.sh"
+		QA_DRIVER=hdmirx
+		QA_DEBUGFS="'"${work}"'/absent"
+		qa_arm fail_clk_set_rate_once 1 >/dev/null 2>&1 || true
+		qa_assert_consumed >/dev/null 2>&1 || true
+		printf reached
+	' 2>/dev/null | grep -q reached; then
+		printf '  ok  an unreadable knob does not abort the harness under set -u\n'
+	else
+		printf '  FAIL an unreadable knob still aborts under set -u\n' >&2; rc=1
 	fi
 
 	# Card discovery must be by NAME. A fixture whose hdmirx card is NOT index

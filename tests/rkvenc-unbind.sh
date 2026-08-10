@@ -34,6 +34,8 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/qa-common.sh
 source "${HERE}/lib/qa-common.sh"
 
+# shellcheck disable=SC2034  # read by lib/qa-common.sh to pick this driver's control table
+QA_DRIVER=rkvenc
 QA_DEVICE="/dev/mpp_service"
 QA_DEBUGFS="/sys/kernel/debug/rkvenc-test"
 QA_STATES="idle,held-open-fd,inflight"
@@ -121,18 +123,21 @@ qa_hold_fd() {
 
 qa_open_must_fail_enodev() {
 	local err
-	err="$( { exec 8<>"${QA_DEVICE}"; } 2>&1 )"
+	err="$( { export LC_ALL=C; exec 8<>"${QA_DEVICE}"; } 2>&1 )"
 	local rc=$?
 	if (( rc == 0 )); then
 		exec 8>&- || true
 		qa_fail "open(${QA_DEVICE}) SUCCEEDED while unbind was pending"
 		return 1
 	fi
-	if grep -qiE 'no such device|ENODEV' <<<"${err}"; then
+	# ENODEV's strerror string is a PREFIX of ENXIO's, so the old substring
+	# match accepted "No such device or address" — a different failure — as a
+	# pass. qa_errno_matches compares the phrase whole.
+	if qa_errno_matches ENODEV "${err}"; then
 		qa_log "ok new open during quiesce fails with ENODEV"
 		return 0
 	fi
-	qa_fail "new open during quiesce: expected ENODEV, got: ${err}"
+	qa_fail "new open during quiesce: expected ENODEV, got $(qa_errno_from_text "${err}" || printf unrecognised): ${err}"
 	return 1
 }
 
@@ -275,6 +280,19 @@ run_self_test() {
 		printf '  ok  an absent driver directory yields no device (caller must fail)\n'
 	else
 		printf '  FAIL an absent driver directory yielded a device\n' >&2; rc=1
+	fi
+
+	# The quiesce assertion reads an errno out of a shell diagnostic, and the
+	# two errnos it has to tell apart differ only by a trailing "or address".
+	if qa_errno_matches ENODEV 'bash: /dev/mpp_service: No such device'; then
+		printf '  ok  the real ENODEV diagnostic is recognised\n'
+	else
+		printf '  FAIL the real ENODEV diagnostic was not recognised\n' >&2; rc=1
+	fi
+	if qa_errno_matches ENODEV 'bash: /dev/mpp_service: No such device or address'; then
+		printf '  FAIL ENXIO was accepted as ENODEV\n' >&2; rc=1
+	else
+		printf '  ok  ENXIO is not accepted as ENODEV\n'
 	fi
 
 	# The negative fixture must be reachable by name, or nobody will run it.

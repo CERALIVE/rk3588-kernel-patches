@@ -32,6 +32,9 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${HERE}/.." && pwd)"
 SOURCE="${HERE}/rkvenc-invalid-ioctl.c"
 TABLE="${HERE}/expected-errno.tsv"
+# Needs no kernel UAPI at all — it is plain POSIX — but it is built here so it
+# lands beside the ioctl harness and reaches the board in the same copy.
+ERRNO_SOURCE="${HERE}/qa-write-errno.c"
 
 KERNEL_TREE=""
 OUT_DIR="${ROOT}/.work/harness"
@@ -248,6 +251,30 @@ run_self_test() {
 		printf '  ok  a tree at the wrong base is refused\n'
 	fi
 
+	# The errno helper is what turns "the message said something about memory"
+	# into "write(2) returned 12", so it is compiled and EXERCISED here rather
+	# than merely shipped: /dev/full is a kernel-guaranteed ENOSPC.
+	if command -v cc >/dev/null 2>&1 &&
+		cc -O2 -Wall -Wextra -Werror "${ERRNO_SOURCE}" -o "${work}/qa-write-errno" 2>/dev/null; then
+		if [[ "$("${work}/qa-write-errno" /dev/full x 2>&1)" == 28 ]]; then
+			printf '  ok  qa-write-errno reports the raw errno of a real failed write (ENOSPC=28)\n'
+		else
+			printf '  FAIL qa-write-errno did not report errno 28 for /dev/full\n' >&2; rc=1
+		fi
+		if "${work}/qa-write-errno" /dev/null x >/dev/null 2>&1; then
+			printf '  ok  qa-write-errno is silent and exits 0 on a write that succeeds\n'
+		else
+			printf '  FAIL qa-write-errno failed a write that should succeed\n' >&2; rc=1
+		fi
+		if [[ "$("${work}/qa-write-errno" "${work}/absent/x" y 2>&1)" == 2 ]]; then
+			printf '  ok  a missing attribute is ENOENT, never created and silently written\n'
+		else
+			printf '  FAIL a missing attribute was not reported as ENOENT\n' >&2; rc=1
+		fi
+	else
+		printf '  WARN no host cc; qa-write-errno was not exercised\n' >&2
+	fi
+
 	if command -v "${CC}" >/dev/null 2>&1; then
 		printf '  ok  cross compiler present: %s\n' "${CC}"
 	else
@@ -294,9 +321,14 @@ main() {
 		"${SOURCE}" -o "${OUT_DIR}/rkvenc-invalid-ioctl" \
 		|| die "harness compilation failed"
 
+	"${CC}" -O2 -Wall -Wextra -Werror "${ERRNO_SOURCE}" \
+		-o "${OUT_DIR}/qa-write-errno" \
+		|| die "qa-write-errno compilation failed"
+
 	cp "${TABLE}" "${OUT_DIR}/expected-errno.tsv"
 
 	log "built ${OUT_DIR}/rkvenc-invalid-ioctl"
+	log "built ${OUT_DIR}/qa-write-errno"
 	log "beside it: ${OUT_DIR}/expected-errno.tsv"
 	printf 'RESULT=PASS case=build-rkvenc-harness tree=%s out=%s\n' \
 		"${KERNEL_TREE}" "${OUT_DIR}"
