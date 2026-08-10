@@ -229,44 +229,33 @@ check fails.
 
 **There are three first-party patches upstream does not have.** `0006` adds the
 device-tree sound card that turns upstream's `0005` HDMI-RX audio codec into a
-capturable ALSA card. Upstream `0005` is driver-only; on a Rock 5B+ running the
-full series the codec device is bound with no cable attached
-(`/sys/devices/platform/fdee0000.hdmi_receiver/hdmi-audio-codec.7.auto`) while
-`/proc/asound/cards` shows no HDMI-RX capture card, because nothing in the device
-tree binds that codec to a DAI. `0006` adds `#sound-dai-cells` to
-`hdmi_receiver`, adds an `hdmirx-sound` `simple-audio-card`, and enables it plus
-`i2s7_8ch` on the two CeraLive boards. It lives in `ceralive/`, is clearly marked
-first-party in its own mail header, and carries no upstream attribution.
+capturable ALSA card — without it the codec binds but `/proc/asound/cards` shows
+no HDMI-RX capture card, because nothing in the tree binds the codec to a DAI.
+`0006` adds `#sound-dai-cells` to `hdmi_receiver`, an `hdmirx-sound`
+`simple-audio-card`, and enables it plus `i2s7_8ch` on both boards.
 
-`0008` is the second, and it repairs `0001` rather than extending it.
-`rkvenc_dma_import_fd()` records an imported dma-buf's length as
-`sg_dma_len(sgt->sgl)` — the first mapped segment only — and `0001` never told the
-DMA layer how long a segment may be, so `dma_get_max_seg_size()` answered the
-`SZ_64K` default, iommu-dma stopped coalescing there, and every import over 64 KiB
-was recorded as exactly `0x10000` bytes. `0008` sets the cap in `rkvenc_hw_probe()`
-and reads it back, failing the probe if it did not take. It leaves the driver's
-IOVA guardrail alone on purpose: the guardrail was correctly rejecting a register
-that pointed outside the (truncated) window, so silencing it would hide the bug
-rather than fix it. It is marked **`UNVALIDATED`** in its own mail header and in
-[`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) — it compiles into a real
-kernel package, and its runtime effect has never been observed on a board.
+`0008` repairs `0001` rather than extending it: `rkvenc_dma_import_fd()` recorded
+an imported dma-buf's length from the first mapped segment only, and `0001` never
+set a DMA max segment size, so every import over 64 KiB was truncated to exactly
+`0x10000` bytes. `0008` sets and reads back the cap in `rkvenc_hw_probe()`,
+failing the probe if it did not take, and deliberately leaves the IOVA guardrail
+that caught the symptom alone. Marked **`UNVALIDATED`** in
+[`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) — compiles into a real
+kernel package; its runtime effect had never been observed on a board when it
+was written.
 
-`0009` is the third, and it is the other two thirds of the same problem. Rockchip's
-MPP userspace picks a dma-heap by hard-coded name and asks for `system-uncached`,
-which mainline does not register at all — so the H.264 encoder's init-time buffer
-allocation fails and `mpph264enc` never even registers as a GStreamer element. And
-because MPP does no CPU cache maintenance on a heap it believes is uncached, simply
-pointing it at cached memory produces different output for identical input plus
-intermittent CABAC decode failures. `0009` registers a second heap under exactly
-that name, reusing the extension point `system_heap.c` already has for
-`system_cc_shared`: non-cacheable mappings, a one-time cache clean at allocation,
-and the CPU-sync steps skipped **only** for that heap. It is likewise marked
-**`UNVALIDATED`**, and the marker carries more weight here than anywhere else in
-the series: the kernel's cacheable linear-map alias of those pages is left in
-place, so getting the cache handling subtly wrong yields silent intermittent
-corruption rather than an error, and no compile can rule that out. What a real
-board has to demonstrate before anyone calls this working is enumerated in
-[`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md).
+`0009` is the other two-thirds of the same problem: Rockchip's MPP userspace
+hard-codes a `system-uncached` dma-heap name mainline does not provide, so
+`mpph264enc` failed to register at all, and MPP performs no CPU cache
+maintenance on a heap it believes is uncached, so cached memory under that name
+encoded non-deterministically. `0009` registers a second heap under exactly
+that name — non-cacheable mappings, a one-time cache clean at allocation, and
+skipped CPU-sync only for that heap — reusing the `system_heap.c` extension
+point `system_cc_shared` already has. Also **`UNVALIDATED`**: the kernel's
+cacheable linear-map alias of those pages is left in place, so getting the
+cache handling subtly wrong yields silent intermittent corruption rather than
+an error, and no compile can rule that out. What a real board must demonstrate
+first: [`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md).
 
 ### Why not the `sfqr0414` fork
 

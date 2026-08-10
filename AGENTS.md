@@ -4,11 +4,10 @@
 
 Holds the **mainline-track RK3588 kernel patch series** for CeraLive: VEPU580
 hardware encoder plus three HDMI-RX fixes imported from upstream, one backported
-IOMMU fix, three backported **unmerged lore postings** (a combphy erratum and two
-dw-hdmi-qp audio fixes), and three first-party patches — the device-tree half that
-makes HDMI-RX audio actually capturable, a DMA segment-size fix to the encoder
-driver, and the `system-uncached` dma-heap the Rockchip MPP userspace requires by
-name — converted to a `git am` mailbox series and pinned to an exact kernel tag.
+IOMMU fix, three backported **unmerged lore postings** (a combphy erratum and
+two dw-hdmi-qp audio fixes), and first-party patches for HDMI-RX audio DT,
+encoder DMA/dma-heap fixes, and rkvenc/HDMI-RX quality hardening — converted to
+a `git am` mailbox series and pinned to an exact kernel tag.
 
 Produces **patch text only** — no `.deb`, no kernel, no image artifact. It is
 therefore **NOT in the device image `REPOS` array** and has **no `versions.yaml`
@@ -121,16 +120,13 @@ archive means OUT `unfetchable-canonical-thread` rather than a hand-typed patch.
 Details, digest domains and the refusal list: [`backports/README.md`](backports/README.md).
 
 **`backports/` carries provenance per patch, because it cannot inherit one.** The
-`upstream/` lane hard-codes a single credit block — *"Imported from
-`UPSTREAM_PATCHES_REPO` at `UPSTREAM_PATCHES_REV` … Authored by Ross Cawston"* —
-which is true of every file in that directory and of nothing else. So every
-`backports/` member must name its own origin: `provenance` is the 40-hex commit it
-is backported from (never `NULL_OID`, which is 40 hex digits and would otherwise
-pass the shape test), and a `Backport(upstream_subject=…, lore_msgid=…, note=…)`
-supplies the rest. The generated header emits the stable-tree
-`commit <sha> upstream.` marker plus a `https://lore.kernel.org/r/<msgid>` link.
-The build refuses a `backports/` entry that lacks any of it.
-Details: [`backports/README.md`](backports/README.md).
+`upstream/` lane hard-codes a single credit block true of every file in that
+directory and of nothing else, so every `backports/` member must name its own
+origin: `provenance` is the 40-hex commit it is backported from (never
+`NULL_OID`, which is 40 hex digits and would otherwise pass the shape test),
+and `Backport(upstream_subject=…, lore_msgid=…, note=…)` supplies the rest. The
+generated header emits `commit <sha> upstream.` plus a lore link. The build
+refuses an entry lacking any of it. Details: [`backports/README.md`](backports/README.md).
 
 **Retirement, not deletion — `retired/` + a registry row is the ONLY way out.**
 Deleting a source file would make "`upstream/` is byte-identical to what was
@@ -158,15 +154,13 @@ proof-of-work gate, so re-capturing it needs a real browser, not `curl`.
 
 **`0002` has exactly ONE upstream answer, we already ship it, and it is not a
 replacement.** `7dd27810eea0` ("hdmirx: Fix HPD lane hold time", in the base since
-`v7.1.6`) **is** the 7.2-rc1 "HDMI-RX EDID fix" — it is the stable backport of
-mainline `d1162a5adbb5`, which is what the Collabora table's EDID row actually
-points at. They are not two efforts; the table names the symptom while the patch
-names the mechanism. It applies to `v7.1.7` as a **no-op**, and its 2-line HPD-hold
-change shares no mechanism with `0002`'s IRQ masking, lock-loop rework and DMA
-reset, so there is nothing to adopt and nothing to retire. Whether `0002` is still
-*needed* on top of it remains a behavioural judgement that needs an RK3588 board
-and an HDMI source — do not resolve that from the source alone. Verdict and
-evidence: [`docs/EVAL-0002-EDID.md`](docs/EVAL-0002-EDID.md); see also
+`v7.1.6`) **is** the 7.2-rc1 "HDMI-RX EDID fix" — the stable backport of mainline
+`d1162a5adbb5`. The table names the symptom, the patch names the mechanism; it
+applies to `v7.1.7` as a **no-op** and shares no mechanism with `0002`'s IRQ
+masking, lock-loop rework and DMA reset, so there is nothing to adopt and
+nothing to retire. Whether `0002` is still *needed* on top of it is a
+behavioural judgement needing an RK3588 board and an HDMI source — do not
+resolve that from source alone. Verdict: [`docs/EVAL-0002-EDID.md`](docs/EVAL-0002-EDID.md); see also
 [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) § `0002` and
 [`docs/REBASE-v7.1.7.md`](docs/REBASE-v7.1.7.md) § Stable overlap.
 
@@ -231,62 +225,50 @@ all of them post-apply, per board, because the failure mode is silent — everyt
 probes, nothing errors, there is simply no capture device.
 
 **The upstream HDMI-audio series does NOT supersede `0006` — it would break the
-pairing.** There is a real, fully-reviewed lore series
+pairing.** A real, fully-reviewed lore series
 (<https://lore.kernel.org/r/20260721064115.64809-1-royalnet026@gmail.com>,
-`[PATCH v4 0/4]`, Igor Paunovic) that does what `0005` does *and* carries its own
-DT patches, so it looks at first glance like it retires both of ours. It does not,
-for one blunt reason: its 4/4 is titled *"enable HDMI RX audio capture on Orange
-Pi 5 Plus"* and enables the card on that board **only**. Rock 5B+ — the other
-board in `ARMBIAN_BOARDS` — gets nothing, which is exactly the bound-codec-no-card
-state above. The two DT halves also cannot coexist: `0006` and its 3/4 edit the
-same two regions of `rk3588-extra.dtsi` and disagree on the cell arity
-(`#sound-dai-cells = <0>` vs `<1>`), so `git apply --check` of `0006` onto an
-upstream-applied tree fails outright. The series is otherwise adoptable — all four
-patches apply clean to `v7.1.7` — and it is still declined, because it also drops
-multichannel handling, jack reporting and `hdmirx_plugout()` teardown. Full
-six-criteria verdict: [`docs/EVAL-0005-AUDIO.md`](docs/EVAL-0005-AUDIO.md). Do not
-re-open this on the strength of "but it's upstream-shaped" — re-open it when the
-series is *merged* and Rock 5B+ is covered.
+`[PATCH v4 0/4]`, Igor Paunovic) does what `0005` does and carries its own DT
+patches, but its 4/4 enables the card on Orange Pi 5 Plus **only** — Rock 5B+
+gets nothing, the exact bound-codec-no-card state above. The two DT halves also
+disagree on cell arity (`#sound-dai-cells = <0>` vs `<1>`) and cannot coexist.
+Adoptable mechanically — all four patches apply clean — but declined: it also
+drops multichannel handling, jack reporting and `hdmirx_plugout()` teardown.
+Full six-criteria verdict: [`docs/EVAL-0005-AUDIO.md`](docs/EVAL-0005-AUDIO.md).
+Re-open only when the series is *merged* and Rock 5B+ is covered.
 
-**`0008` fixes `0001`, is marked `UNVALIDATED`, and does NOT make the edge-track
-encoder work.** `rkvenc_dma_import_fd()` records an imported dma-buf's length as
-`sg_dma_len(sgt->sgl)` — the FIRST mapped segment only — and `0001` never set a max
-segment size, so `dma_get_max_seg_size()` answered the `SZ_64K` default, iommu-dma's
-`__finalise_sg()` stopped coalescing there, and every import over 64 KiB was recorded
-as exactly `0x10000` bytes. `0008` sets the cap in `rkvenc_hw_probe()` and **reads it
-back**, failing the probe with `-EINVAL` if it did not take — at `v7.1.7`
-`dma_set_max_seg_size()` returns `void`, so checking the effect is the only check
-available and is the stronger one anyway.
+**`0008` fixes `0001`, is marked `UNVALIDATED`, and does NOT alone make the
+edge-track encoder work.** `rkvenc_dma_import_fd()` recorded an imported dma-buf's
+length from the FIRST mapped segment only, and `0001` never set a max segment
+size, so every import over 64 KiB was recorded as exactly `0x10000` bytes.
+`0008` sets the cap in `rkvenc_hw_probe()` and **reads it back**, failing the
+probe with `-EINVAL` if it did not take — `dma_set_max_seg_size()` returns
+`void` at `v7.1.7`, so checking the effect is the only check available.
 
 Two things about it are easy to get wrong:
 
 - **The IOVA guardrail in `rkvenc_service.c` is deliberately NOT touched, and must
-  stay that way.** It was correct every time it fired: with the window truncated to
-  64 KiB, an NV12 chroma-plane offset really is outside `[iova, iova+len)`. Silencing
-  it hides the defect and trades a clean `-EINVAL` for a DMA write past the end of a
-  mapping. `0008` touches exactly one file (`rkvenc_hw.c`).
+  stay that way.** With the window truncated to 64 KiB, an NV12 chroma-plane
+  offset really is outside `[iova, iova+len)`, so the guardrail was correct every
+  time it fired. Silencing it trades a clean `-EINVAL` for a DMA write past the
+  end of a mapping. `0008` touches exactly one file (`rkvenc_hw.c`).
 - **This is one of THREE stacked defects.** The other two — `librockchip-mpp`
-  hard-coding a `system-uncached` dma-heap mainline does not register, and mainline
-  having no uncached heap to fall back to — are answered in source by `0009`, which
-  is **also `UNVALIDATED`**. So all three defects now have a source-level fix and
-  **none** has a hardware one: `0008` is necessary, `0008`+`0009` is plausibly
-  sufficient, and neither claim has been observed on a board. Do not describe MPP
-  hardware encode as fixed on the `edge` track. Full three-defect analysis: the CeraLive `image-building-pipeline`
-  `AGENTS.md` KNOWN ISSUE "MPP hardware video encode does not work on the edge
-  kernel". Marker and clearing conditions:
-  [`docs/UPSTREAM-STATUS.md` § `0008`](docs/UPSTREAM-STATUS.md#0008--unvalidated-and-what-that-does-and-does-not-mean).
+  hard-coding a `system-uncached` dma-heap mainline does not register, and
+  mainline having no uncached heap to fall back to — are answered in source by
+  `0009`, also **`UNVALIDATED`**. Do not describe MPP hardware encode as fixed
+  on the `edge` track until both are cleared together. Full three-defect
+  analysis: the `image-building-pipeline` `AGENTS.md` KNOWN ISSUE "MPP hardware
+  video encode does not work on the edge kernel". Marker and clearing
+  conditions: [`docs/UPSTREAM-STATUS.md` § `0008`](docs/UPSTREAM-STATUS.md#0008--unvalidated-and-what-that-does-and-does-not-mean).
 
 **`0009` is defects 1+3 of the same three, is `UNVALIDATED`, and its NAME is a
-userspace ABI.** `librockchip-mpp` picks a dma-heap by hard-coded name and asks for
-`system-uncached`, which mainline does not register — so the H.264 HAL's init-time
-allocation fails and `mpph264enc` never registers as a GStreamer element at all
-(defect 1). And because MPP does no CPU cache maintenance on a heap it believes is
-uncached, cached memory under that name produces different output for identical
-input plus intermittent CABAC failures (defect 3). `0009` registers a second heap
-out of `system_heap.c` using the per-heap drvdata mechanism the file already has
-for `system_cc_shared`: `pgprot_writecombine()` mappings, one `arch_dma_prep_coherent()`
-clean at allocation (because `__GFP_ZERO` dirties the lines), and
-`DMA_ATTR_SKIP_CPU_SYNC` plus skipped `dma_sync_sgtable_*` **only** for that heap.
+userspace ABI.** `librockchip-mpp` hard-codes the `system-uncached` dma-heap
+name, which mainline does not register — so `mpph264enc` never registered at
+all (defect 1) — and MPP performs no CPU cache maintenance on a heap it
+believes is uncached, so cached memory under that name produced non-deterministic
+output (defect 3). `0009` registers a second heap out of `system_heap.c`'s
+existing per-heap drvdata mechanism: non-cacheable mappings, a one-time
+`arch_dma_prep_coherent()` clean at allocation, and skipped CPU-sync **only**
+for that heap.
 
 Four things about it are easy to get wrong:
 
@@ -351,11 +333,10 @@ consumers must pin the same tag**, not follow `linux-7.1.y`.
 
 **The `edge` mapping was verified fresh, and the family config is a trap.**
 `config/sources/families/rockchip-rk3588.conf` handles only `legacy` and `vendor`
-in its own `case $BRANCH` — reading it alone suggests `edge` is unsupported. In
-fact it sources `rockchip64_common.inc` on line 10, and *that* file's `edge)` arm
-sets `KERNEL_MAJOR_MINOR=7.1`. `preflight.sh` asserts the absence of an `edge)` case
-in the family config precisely so a future Armbian change there cannot silently
-invalidate the derivation.
+in its own `case $BRANCH`, which alone suggests `edge` is unsupported — but it
+sources `rockchip64_common.inc`, whose `edge)` arm sets `KERNEL_MAJOR_MINOR=7.1`.
+`preflight.sh` asserts the absence of an `edge)` case in the family config so a
+future Armbian change there cannot silently invalidate the derivation.
 
 **This does NOT change the shipped image's kernel.** The shipped image is locked to
 the Armbian **vendor** BSP (`rk-6.1-rkr5.1`, `linux-image-vendor-rk35xx`) — image
@@ -412,13 +393,11 @@ pinned to latest stable major; the ~2 GB kernel clone cached. Jobs:
 broken instruction is a red build.
 
 **No workflow restates a pinned coordinate.** The `apply` matrix used to be
-`tag: [v7.1.5]`, which meant a `KERNEL_TAG` bump left CI proving the series against
-a kernel nobody ships — and doing it *green*, which is the worst kind of failure.
-The `pin` job now reads the tag from `kernel-pin.env` and the matrix is
-`fromJSON(needs.pin.outputs.tags)`. There is no literal kernel tag anywhere in
-`.github/`, and adding one back is a regression. `apply` still cross-checks its
-matrix entry against `KERNEL_TAG`, because the cached commit it verifies against is
-`KERNEL_COMMIT` and that is the commit of `KERNEL_TAG` and of nothing else.
+`tag: [v7.1.5]`, which meant a `KERNEL_TAG` bump left CI proving the series
+against a kernel nobody ships — green, the worst kind of failure. The `pin` job
+now reads the tag from `kernel-pin.env` (`fromJSON(needs.pin.outputs.tags)`); no
+literal kernel tag exists anywhere in `.github/`, and adding one back is a
+regression. `apply` still cross-checks its matrix entry against `KERNEL_TAG`.
 
 There is **no build job**, deliberately. Adding one means a cross-compiler, a
 defconfig, and a 30-minute job to prove something the image pipeline proves better.
