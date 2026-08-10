@@ -3,76 +3,39 @@ From: CeraLive <dev@ceralive.tv>
 Date: Sun, 10 Aug 2026 12:00:00 -0500
 Subject: [PATCH 16/18] media: rockchip: rkvenc: bound every userspace-supplied register request
 
-*** SOURCE-VERIFIED AND BUILD-CLEAN; HARDWARE VALIDATION PENDING. ***
-Every defect below is reachable by any process that can open
-/dev/mpp_service, which on a CeraLive device is the video group. The
-harness that proves each one is tests/rkvenc-invalid-ioctl.c; that run
-has NOT happened yet and this patch does not claim it.
+MOTIVATION. req->offset and req->size arrive verbatim from
+userspace in mpp_msg_v1 and were used unchecked, reachable by any
+process that can open /dev/mpp_service (the video group on a
+CeraLive device). The most serious instance: rkvenc_result()
+located a read request's register class by its START offset only,
+then copy_to_user()'d the caller's own claimed size -- a request
+beginning one dword inside a class and claiming a large size read
+past the end of a kmalloc'd buffer into whatever followed it on the
+kernel heap and handed the result to userspace: an information
+disclosure, not merely a robustness issue.
 
-req->offset and req->size arrive verbatim from userspace in mpp_msg_v1
-and were used unchecked by every consumer. That breaks the arithmetic in
-three independent ways, all of which are exploitable rather than merely
-wrong:
+BEHAVIOUR. Also fixes: offset+size underflow (size<4) and wrap;
+unaligned-offset dword truncation; an element-vs-byte bound
+mismatch in MPP_CMD_INIT_TRANS_TABLE (one-byte overrun); three
+discarded parser/attach error returns that let a malformed blob
+build and run a half-parsed task; and every allocation failure
+collapsed to -ENOMEM, now an ERR_PTR carrying the real errno.
+**Userspace-visible change**: a caller matching on ENOMEM will now
+see EINVAL or EFAULT.
 
-  - size < 4 makes `offset + size - 4` UNDERFLOW, so a one-byte request
-    produces an end address just below 4 GiB and overlaps every register
-    class at once;
-  - offset + size can WRAP, producing an end address BELOW the start,
-    which silently passes an overlap test it should fail;
-  - an unaligned offset truncates the dword index arithmetic, so a copy
-    lands at the wrong register and then runs for `size` bytes.
+NON-GOALS. Does not change the ioctl's wire format or add new
+capabilities -- only bounds what was already accepted.
 
-THE SERIOUS ONE IS THE RESULT COPY. rkvenc_result() located a read
-request's class by its START offset only, then did
-copy_to_user(req->data, reg, req->size) -- with req->size still the
-caller's own number. A request that begins one dword inside a class and
-claims a large size therefore read PAST THE END of a kmalloc'd buffer,
-into whatever followed it on the kernel heap, and handed the result
-straight to userspace. That is an information disclosure, not a
-robustness issue. Both copies now resolve their window through one
-helper that reconciles the two independent size sources -- the class
-buffer sized from the hardware description, and the request sized by
-userspace -- and refuses anything not wholly contained.
+PROVENANCE. First-party CeraLive fix to the imported 0001 UAPI
+parser; no upstream counterpart.
 
-rkvenc_update_req() computed `e - s + 4` on ranges it assumed
-intersected; on an empty intersection that underflows into a ~4 GiB size
-the copy would then use. It now asserts the intersection instead of
-assuming it, and returns an error.
-
-MPP_CMD_INIT_TRANS_TABLE bounded the ELEMENT count and then copied the
-BYTE count: an odd size of 2*MPP_MAX_REG_TRANS_NUM + 1 rounds the count
-down, passes the check, and overruns trans_table by one byte. The bound
-is now on the bytes, which is what the copy consumes.
-
-Errors that were computed and then discarded are now propagated. Both
-metadata parsers -- rkvenc_extract_reg_offset_info() and
-rkvenc2_extract_rcb_info() -- returned a rejection the caller threw away,
-so a malformed blob produced a task built from a HALF-PARSED offset table
-which then ran. rkvenc_session_attach_device()'s return was discarded
-too, leaving a session with mpp set and dma NULL: attached-looking, and
-failing every import thereafter.
-
-rkvenc_alloc_task() collapsed every failure into a bare NULL that the
-ioctl reported as -ENOMEM. A malformed request is not an out-of-memory
-condition, and a harness that asserts an expected errno per case cannot
-tell the two apart -- so it now returns an ERR_PTR and the real errno
-reaches userspace. This is a visible behaviour change: a caller that was
-matching on ENOMEM will now see EINVAL or EFAULT, which is the truth.
-
-The harness is three files. rkvenc-invalid-ioctl.c drives one malformed
-request per defect above plus a PROT_NONE data pointer (EFAULT), the
-injected session-allocation failure (ENOMEM), and -- last, deliberately --
-one WELL-FORMED request, because the claim is not merely that each
-malformed request is rejected but that the session still works after all
-of them. expected-errno.tsv owns the expectations as reviewed DATA rather
-than as inline constants a maintainer could quietly bring into line with
-whatever the driver now does. build-rkvenc-harness.sh takes a MANDATORY
---kernel-tree and validates it before invoking the compiler -- base
-commit equals the pinned SHA, and the applied log subjects equal
-patches/series in order -- because this repository carries no kernel
-source, and a harness compiled against an unverified tree proves nothing
-about this series. scripts/apply.sh grows --keep <dir> to produce exactly
-such a tree.
+EVIDENCE POINTER. Source-verified and build-clean; hardware
+validation pending. Harness: tests/rkvenc-invalid-ioctl.c (one
+malformed request per defect, plus a well-formed request proving
+the session still works) with tests/expected-errno.tsv owning the
+expectations as reviewed data. build-rkvenc-harness.sh requires a
+verified --kernel-tree (pinned SHA, applied log matches
+patches/series) before compiling.
 
 First-party: authored by CeraLive against v7.1.7, with no upstream
 counterpart in rockchip-rk3588-mainline-patches. The source of record is

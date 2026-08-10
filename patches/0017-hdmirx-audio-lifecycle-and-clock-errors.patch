@@ -3,81 +3,45 @@ From: CeraLive <dev@ceralive.tv>
 Date: Sun, 10 Aug 2026 13:00:00 -0500
 Subject: [PATCH 17/18] media: synopsys: hdmirx: fix the audio work and clock lifecycle under lockdep
 
-*** SOURCE-VERIFIED AND BUILD-CLEAN; HARDWARE VALIDATION PENDING. ***
-The lock order below is enumerated from v7.1.7's own
-sound/soc/codecs/hdmi-codec.c, not assumed. The deadlock it describes is
-argued, not observed -- it is the shape a synchronous cancel WOULD take
-if added naively, and the reason this patch does not add one there.
-tests/hdmirx-audio-fault-qa.sh is the lockdep run; it has NOT happened
-yet.
+MOTIVATION. hdmi-codec invokes ->hook_plugged_cb() under the ASoC
+card mutex, and the installed callback reports a jack under the
+card's DAPM locks -- so any path holding work_lock that calls into
+the codec closes a cycle (card -> work_lock -> DAPM), the same
+shape that already deadlocked the CeraLive vendor series, firing
+only when audio is present. Separately, hdmirx_plugout()'s
+cancel_delayed_work() does not wait for a running worker, and the
+worker unconditionally reschedules itself, so audio work kept
+polling and reporting present after every plugout.
 
-THE LOCK ORDER, WRITTEN DOWN.
+BEHAVIOUR. A synchronous cancel of delayed_work_audio is never
+performed under work_lock (enforced via
+lockdep_assert_not_held()); hook_plugged_cb() publishes the
+callback under the lock and invokes it with the lock dropped. An
+explicit armed gate replaces the ineffective async cancel: the
+worker checks it on entry and before re-arming, with a separate
+synchronous drain each caller makes after dropping work_lock.
+clk_set_rate() returns are now propagated instead of discarded, so
+a refused rate no longer updates audio_state as if it had taken.
+768000 is removed from supported_fs (CEA-861 tops out at 192 kHz;
+its only effect was letting a garbage ACR-derived frequency pass
+is_validfs()). audio_state's clock rate and audio_present move
+under a dedicated leaf lock, published before the codec callback
+rather than after.
 
-  work_lock  -> audio_lock       (hotplug disarms the audio work)
-  audio_lock -> nothing          (leaf; never sleeps, never calls out)
+NON-GOALS. Does not add a synchronous cancel under work_lock --
+that path is exactly what the lock order forbids. Does not touch
+the audio FIFO/ACR sample-rate recovery logic 0005 owns.
 
-The ASoC codec locks sit OUTSIDE both, and that is the whole problem.
-hdmi-codec invokes ->hook_plugged_cb() from its component probe and
-remove, i.e. under the ASoC card mutex, and the callback it installs
-(plugged_cb) reports a jack, which takes the card's DAPM locks. So any
-path that holds work_lock and then calls into the codec establishes
-card -> work_lock -> DAPM and closes a cycle:
+PROVENANCE. First-party CeraLive fix to the imported 0005 audio
+path; no upstream counterpart -- the PATCHv4 counterpart to 0005
+does not carry this audio worker at all.
 
-  ASoC   holds the card mutex -> blocks on work_lock (hook_plugged_cb)
-  driver holds work_lock      -> waits for the audio worker
-  worker                      -> blocks on the DAPM lock ASoC holds
-
-This is the same shape that already bit the CeraLive VENDOR series, where
-a flush_delayed_work() from an ASoC callback deadlocked -- and it fired
-ONLY when audio was actually present, because the no-audio path never
-reaches plugged_cb(). Two rules now follow, and both are enforced rather
-than hoped for: a SYNCHRONOUS cancel of delayed_work_audio is never
-performed under work_lock (hdmirx_audio_drain() carries a
-lockdep_assert_not_held()), and hook_plugged_cb() publishes the callback
-under the lock and invokes it with the lock DROPPED.
-
-THE ASYNC CANCEL WAS NOT MERELY WEAK, IT WAS INEFFECTIVE.
-hdmirx_plugout() used cancel_delayed_work() -- which does not wait for a
-running worker -- and the worker unconditionally reschedules itself at
-its exit label. So the work came straight back after every plugout and
-kept polling audio registers on a receiver whose interrupts were off and
-whose HPD was down, re-reporting audio-present through the codec after
-plugout had just reported the opposite. An explicit armed gate fixes
-that: the worker checks it on entry and before re-arming, disarming is
-non-blocking and therefore safe under work_lock, and the synchronous
-drain is a separate call each caller makes after dropping the lock.
-
-CLOCK RETURNS WERE DISCARDED. hdmirx_audio_set_fs() ignored
-clk_set_rate(), so a REFUSED rate still updated audio_state -- leaving
-the driver believing it had a recovered audio clock it does not have, and
-every subsequent ppm correction computed from a rate the hardware never
-accepted. It now returns the error, keeps the previously programmed rate,
-and its callers only adopt a new format once the clock has actually taken
-it. hdmirx_audio_clk_ppm_inc() likewise leaves the recorded rate untouched
-on refusal, which is what keeps the drift loop convergent instead of
-walking it away from reality.
-
-768000 IS NOT AN HDMI RATE. CEA-861 tops out at 192 kHz, and the receiver
-cannot produce 768000 either -- set_fs would ask the audio clock for
-98.304 MHz. Its only reachable effect was through is_validfs(), where it
-let a garbage ACR-derived frequency be accepted as valid and programmed.
-Removed.
-
-SHARED STATE. audio_state's clock rate and audio_present were read and
-written from the worker, the ASoC callbacks and the hotplug path with no
-coordination. They are now covered by a dedicated leaf spinlock (or
-READ_ONCE/WRITE_ONCE where a single bool is all that is shared), and
-audio_present is published BEFORE the codec callback rather than after,
-so a concurrent reader cannot observe the callback and the old state
-together.
-
-The two default-off controls from 0013's HDMI-RX symbol are implemented
-here: delay_worker_ms widens the worker's window so a cancel races a
-RUNNING worker rather than an idle one, and fail_clk_set_rate_once forces
-the single rate refusal real hardware will not perform on demand. Both
-have the same one-shot, auto-reset, consumed-counter semantics as the
-rkvenc controls, and both compile to nothing when the symbol is off --
-checked, not asserted: a production build produces no snps_hdmirx_test.o.
+EVIDENCE POINTER. Source-verified and build-clean; hardware
+validation pending. Lock order enumerated from v7.1.7's own
+sound/soc/codecs/hdmi-codec.c. Two 0013-gated controls
+(delay_worker_ms, fail_clk_set_rate_once) force the races on
+demand; harness: tests/hdmirx-audio-fault-qa.sh under lockdep. See
+docs/BOARD-QUALIFICATION.md.
 
 First-party: authored by CeraLive against v7.1.7, with no upstream
 counterpart in rockchip-rk3588-mainline-patches. The source of record is

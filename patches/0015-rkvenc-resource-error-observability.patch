@@ -3,75 +3,36 @@ From: CeraLive <dev@ceralive.tv>
 Date: Sun, 10 Aug 2026 11:00:00 -0500
 Subject: [PATCH 15/18] media: rockchip: rkvenc: fail on a missing required resource and stop swallowing runtime errors
 
-*** SOURCE-VERIFIED AND BUILD-CLEAN; HARDWARE VALIDATION PENDING. ***
-The required/optional split below is read out of the RK3588 binding as
-the series itself ships it (0001, arch/arm64/boot/dts/rockchip/
-rk3588-base.dtsi), not assumed. The injected clock-enable failure is
-exercised by 0013's fail_clock_enable_once and
-tests/rkvenc-fault-qa.sh --case fail-clock-enable; that run has NOT
-happened yet.
+MOTIVATION. The driver treated almost every resource the 0001
+binding actually REQUIRES (reg, interrupts, three clocks, three
+resets, iommus, rockchip,srv/ccu) as optional: clock-get failures
+were logged and silently replaced with NULL, a failed IOMMU probe
+left iommu_info NULL and probe continued, reset acquisition turned
+every error into "no reset", and clk_prepare_enable() /
+pm_runtime_get_sync() / rkvenc_hw_finish() / rkvenc_hw_reset()
+returns were all discarded.
 
-WHAT THE DEVICE TREE ACTUALLY SAYS. Both rkvenc-core nodes declare, and
-therefore REQUIRE: reg, interrupts, three clocks (aclk_vcodec,
-hclk_vcodec, clk_core), three resets (video_a, video_h, video_core),
-iommus, rockchip,srv and rockchip,ccu. Neither node declares
-rockchip,sram or rockchip,rcb-iova -- so the SRAM row-cache buffer is
-genuinely OPTIONAL and genuinely absent on the shipped boards.
+BEHAVIOUR. Required-vs-optional is now read from the binding 0001
+itself ships (rockchip,sram / rockchip,rcb-iova stay genuinely
+optional, with one explicit log line naming an absent property).
+Clock, IOMMU and runtime-PM failures now propagate through
+dev_err_probe() / fatal error paths instead of shipping a
+permanently-bound device with no clock or no IOMMU; a refused
+runtime clock enable now unwinds the clocks it did enable and
+aborts the task; a failed status readback is recorded on the task
+and forces a reset rather than handing userspace stale registers.
 
-The driver treated almost all of that as optional.
+NON-GOALS. Does not change which DT properties are required --
+only how their absence or failure is reported. Optional SRAM
+behaviour is unchanged.
 
-CLOCKS. rkvenc_hw_init_clocks() logged each devm_clk_get() failure,
-replaced the clock with NULL and returned 0 regardless, and
-rkvenc_clk_safe_enable() then skipped a NULL clock in silence. The common
-case is not a missing clock at all -- it is -EPROBE_DEFER because the CRU
-has not probed yet, which this turned into a permanently bound device
-with no clock, writing to an unclocked register block. All three are now
-propagated through dev_err_probe(), so a deferral defers instead of
-shipping a broken bind.
+PROVENANCE. First-party CeraLive fix to the imported 0001 driver;
+no upstream counterpart.
 
-IOMMU. rkvenc_hw_probe() set iommu_info = NULL on failure and carried on.
-Every buffer this driver touches is imported through that IOMMU, so the
-result is a core that binds, advertises itself to userspace and then
-fails every import. It is required by the binding and is now fatal.
-
-RESETS. Fetched with the _optional() accessor because they feed only the
-CRU fallback in rkvenc_hw_reset(), and a board variant may legitimately
-omit one -- so an ABSENT reset (NULL) is still accepted, but it is now
-NAMED in the log instead of ignored. An ERROR is a different thing and is
-propagated: the old code turned -EPROBE_DEFER into "no reset", silently
-and permanently removing the only recovery path from a hung core.
-
-CLOCK ENABLE AT RUNTIME. rkvenc_hw_clk_on() returned void and discarded
-every clk_prepare_enable() return, so a refused clock produced a task
-that ran against dead hardware and timed out. It now returns an error,
-unwinds the clocks it did enable, and rkvenc_hw_run() aborts on it --
-releasing exactly the PM references it had taken, which is the balance
-0013's fail_clock_enable_once case exists to prove.
-
-PM RESUME. pm_runtime_get_sync() returns were discarded in both
-rkvenc_hw_probe() and rkvenc_hw_run(). That call INCREMENTS the usage
-count even when it fails, so every failed resume also leaked a reference
-and left the power domain pinned on. Both sites now check and
-pm_runtime_put_noidle() on the error path.
-
-RESET AND FINISH. rkvenc_hw_finish()'s return was discarded by
-rkvenc_task_finish(), so a failed status readback handed userspace STALE
-registers that look like a successful encode. It is now recorded on the
-task and forces a reset. rkvenc_hw_reset() always returned 0, so a
-soft-reset timeout on a core with no CRU fallback -- which 0015's own
-reset change above makes possible to detect -- was indistinguishable from
-a clean reset; it now reports that case. The teardown that follows still
-runs in full either way: clocks and PM references must be released
-whatever the hardware said, or a bad frame becomes a leaked power
-reference as well.
-
-SRAM. Preserved exactly as optional, with one explicit info line naming
-the absent property, so "no SRAM row-cache buffer" is a stated fact in
-the boot log rather than something inferred from silence. The one
-genuinely malformed shape -- rockchip,rcb-iova present WITHOUT
-rockchip,sram -- is called out as malformed rather than reported as a
-missing optional resource: the first property says where to map and the
-second says what to map, so one without the other is a device-tree bug.
+EVIDENCE POINTER. Source-verified and build-clean; hardware
+validation pending. Forced by 0013's fail_clock_enable_once and
+exercised by tests/rkvenc-fault-qa.sh --case fail-clock-enable. See
+docs/BOARD-QUALIFICATION.md.
 
 First-party: authored by CeraLive against v7.1.7, with no upstream
 counterpart in rockchip-rk3588-mainline-patches. The source of record is

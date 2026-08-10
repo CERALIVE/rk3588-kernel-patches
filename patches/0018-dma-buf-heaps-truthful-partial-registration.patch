@@ -3,68 +3,37 @@ From: CeraLive <dev@ceralive.tv>
 Date: Sun, 10 Aug 2026 14:00:00 -0500
 Subject: [PATCH 18/18] dma-buf: heaps: report partial system-heap registration truthfully
 
-*** THE KUNIT SUITE IS VALIDATED, THE BOOT PATH IS NOT. *** All four
-cases of ceralive_system_heap_test PASS under qemu-system-aarch64 on the
-applied series (tools/testing/kunit/kunit.py run --arch=arm64), including
-the one that matters. What has not been done is booting this on a Rock
-5B+ and confirming the real heaps are still distinct and an encode still
-works -- that is Wave 8, and this patch does not claim it.
+MOTIVATION. 0009 added a second dma_heap_add() to
+system_heap_create(). If it fails, the "system" heap registered
+immediately before it is already live and cannot be withdrawn --
+dma_heap_add() has no counterpart at this base (no removal, no
+unregister, no atomic multi-add). The function returned the error
+and said nothing about the partial state, so nothing claims the
+pair is atomic in a comment nobody can check.
 
-THERE IS NO REMOVAL API, AND THIS PATCH DOES NOT INVENT ONE.
+BEHAVIOUR. States the behaviour instead of hiding it: the error
+message now names the partial state explicitly (first heap REMAINS
+REGISTERED and cannot be withdrawn), and the retire condition is
+written beside the function -- when the pinned base gains a real
+removal API, unwind on failure and assert the unwind instead of the
+retention. The registration sequence moves behind an internal
+add_fn seam so the failure path is reachable from a test at all.
 
-0009 added a second dma_heap_add() to system_heap_create(). If it fails,
-the "system" heap registered immediately before it is ALREADY LIVE and
-cannot be withdrawn: at this base dma_heap_add() has no counterpart --
-no dma_heap_remove(), no unregister, and no atomic multi-add. The
-function returned the error and said nothing about that, so a reader of
-the code, and of dmesg, had no way to know which heaps the kernel was
-left holding.
+NON-GOALS. No atomicity is invented or claimed. No rollback is
+added -- the API cannot support one, and a fake cleanup that leaves
+the heap present while reporting removal would be worse than none.
 
-Two wrong fixes were available and are named here so they are not tried
-later. Adding a rollback would mean writing an unregister the API cannot
-support, and a "cleanup" that leaves the heap present while reporting
-that it removed it is worse than no cleanup at all. Claiming the pair is
-atomic in a comment would be false in a place nobody can check.
+PROVENANCE. First-party CeraLive fix restructuring the registration
+0009 extends; no upstream counterpart -- mainline has no removal
+API to align with.
 
-So the behaviour is stated instead. The error message now names the
-partial state explicitly -- the first heap REMAINS REGISTERED and cannot
-be withdrawn -- and the retire condition is written down beside the
-function: when the pinned base gains a real removal API, unwind on
-failure and change the test to assert the unwind rather than the
-retention.
-
-THE SEAM. The registration sequence moves behind an internal add_fn
-parameter, and __init keeps only the one-line wrapper that passes the
-real dma_heap_add(). This is not abstraction for its own sake: a failing
-second registration is not something a running kernel can be asked to
-produce, so without an injection point the entire failure path is
-unreachable from any test, and "we handle it truthfully" is an
-unfalsifiable claim.
-
-THE TEST. ceralive_system_heap_test (built in under
-CONFIG_DMABUF_HEAPS_CERALIVE_TEST, added by 0013) drives a fake add_fn
-that fails on the Nth call. Its four cases assert: the second-add failure
-returns the error unchanged AND leaves the first heap registered AND
-attempts nothing further; a first-add failure registers nothing at all;
-the success path registers the exact NAMES userspace binds to by string;
-and -- the non-vacuity case -- the sequence really does call the injected
-function, so a refactor back to a direct dma_heap_add() fails the suite
-instead of silently making every other case test nothing and start
-registering real heaps from a KUnit run.
-
-NOTHING REAL IS TOUCHED. Every add in the test goes through the injected
-function and returns a sentinel token that is never dereferenced;
-dma_heap_add() is not reached, so the boot's actual /dev/dma_heap nodes
-are unaffected by the suite running. tests/check-kunit-heap.sh re-asserts
-that from userspace afterwards, and parses the TAP result with an ANCHORED
-match -- "not ok 1 - <suite>" contains "ok 1 - <suite>", so an
-unanchored grep reports a failure as a pass.
-
-The test file is #included into system_heap.c rather than built as its
-own translation unit because it drives file-local state (the three
-system_heap_priv instances) and a static helper -- the same arrangement
-other in-tree KUnit suites use for static internals. It compiles to
-nothing without the symbol.
+EVIDENCE POINTER. KUnit-validated, boot path pending. All four
+cases of ceralive_system_heap_test (built under
+CONFIG_DMABUF_HEAPS_CERALIVE_TEST) PASS under qemu-system-aarch64
+on the applied series, including a non-vacuity case proving the
+injection seam is actually used; nothing real is registered by the
+suite. tests/check-kunit-heap.sh re-asserts the boot's actual heaps
+from userspace with an anchored TAP match.
 
 First-party: authored by CeraLive against v7.1.7, with no upstream
 counterpart in rockchip-rk3588-mainline-patches. The source of record is

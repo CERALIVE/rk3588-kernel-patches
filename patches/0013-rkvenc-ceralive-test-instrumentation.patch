@@ -3,73 +3,38 @@ From: CeraLive <dev@ceralive.tv>
 Date: Sun, 10 Aug 2026 09:00:00 -0500
 Subject: [PATCH 13/18] media: rockchip: rkvenc: add gated deterministic fault injection for the negative paths
 
-*** TEST INSTRUMENTATION. Default OFF, and ABSENT from any production
-build by construction. *** This patch adds three Kconfig symbols and one
-new file; with all three symbols off it contributes zero bytes of code,
-zero debugfs nodes and zero symbols to the built modules. That is not an
-aspiration -- it is checked: a production-config build of this series
-produces no rkvenc_test.o, and the string "rkvenc-test" appears nowhere
-in rkvenc.ko.
+MOTIVATION. 0014-0017 fix negative paths a working board never
+executes (supplier bind failure, refused clock enable, a session
+closed mid-task, a worker cancelled under a lock) -- exactly where a
+use-after-free or lock inversion hides, and exactly what ordinary
+encoding cannot reach. Without a way to force each on demand, the only
+evidence for those five patches would be source reasoning alone.
 
-WHY IT EXISTS. The four patches that follow this one (0014-0017) fix code
-paths a working board never executes: a supplier device that fails to
-bind, a clock that refuses to enable, a session closed while a task is
-still in flight, a delayed worker cancelled from under a lock. Those are
-exactly the paths where a use-after-free or a lock inversion hides, and
-exactly the paths no amount of ordinary encoding will reach. Without a way
-to force them on demand, the only available evidence for 0014-0017 would
-be source reasoning -- which is precisely the evidence that was available
-before the defects they fix were written.
+BEHAVIOUR. Adds three Kconfig symbols and one new file: six one-shot,
+mode-0600 debugfs controls under /sys/kernel/debug/rkvenc-test/
+(fail_service_attach_once, fail_ccu_attach_once, fail_irq_request_once,
+fail_clock_enable_once, fail_session_alloc_once,
+delay_task_completion_ms), each consumed via atomic_cmpxchg() and
+paired with a read-only <name>_consumed counter so a harness can tell
+a fired fault from an ignored knob. CONFIG_VIDEO_ROCKCHIP_HDMIRX_CERALIVE_TEST
+and CONFIG_DMABUF_HEAPS_CERALIVE_TEST are added here as symbols only,
+owning instrumentation 0017 and 0018 implement later.
 
-So each negative path gets a one-shot, default-off control, and the whole
-series is then run on a Rock 5B+ under KASAN and lockdep with every fault
-forced in turn. The interface is deliberately small and completely
-uniform:
+NON-GOALS. Not a production feature: with all three symbols off this
+patch contributes zero bytes of code, zero debugfs nodes and zero
+symbols to the built modules -- checked, not asserted: a
+production-config build produces no rkvenc_test.o and no
+"rkvenc-test" string in rkvenc.ko. The image pipeline never builds
+this: all three symbols are on manifests/kernel/forbidden-symbols.list,
+enabled only by the opt-in `edge-test` variant its release workflow
+refuses to publish.
 
-  /sys/kernel/debug/rkvenc-test/fail_service_attach_once   -> -ENOMEM
-  /sys/kernel/debug/rkvenc-test/fail_ccu_attach_once       -> -ENODEV
-  /sys/kernel/debug/rkvenc-test/fail_irq_request_once      -> -EBUSY
-  /sys/kernel/debug/rkvenc-test/fail_clock_enable_once     -> -EIO
-  /sys/kernel/debug/rkvenc-test/fail_session_alloc_once    -> -ENOMEM
-  /sys/kernel/debug/rkvenc-test/delay_task_completion_ms   -> delay once
+PROVENANCE. First-party CeraLive test scaffolding for the imported
+0001 driver; no upstream counterpart.
 
-Every knob is mode 0600, is consumed exactly once and reads back 0, and
-carries a read-only <name>_consumed counter. The counter is the part that
-matters: it is what lets a harness distinguish "the fault fired and the
-driver handled it" from "the driver ignored the knob", and without it a
-vacuous pass would be indistinguishable from a real one.
-
-One-shot is implemented with atomic_cmpxchg() rather than a read-then-
-clear. Two cores probe concurrently and two sessions can open
-concurrently, so a non-atomic consume would let a single armed fault fire
-twice and leave the counter disagreeing with what actually happened.
-
-Placement of each injection point is chosen so the case tests what it
-claims. The service and CCU faults fire BEFORE any state is published, so
-a forced failure means the core never joined at all rather than joined and
-half-detached. The clock fault fires after the PM references are taken and
-before the clocks are enabled, so the unwind under test is exactly the
-acquire/release pair this function owns -- a fault outside that pair could
-not test the balance it is meant to prove.
-
-module_platform_driver() is expanded into an explicit init/exit pair so the
-debugfs directory has MODULE lifetime rather than device lifetime. Creating
-it from the service probe would destroy it on every unbind, and the unbind
-cases are precisely the ones that need to re-arm a control while the driver
-is detached. Both new calls are static inlines that compile to nothing when
-the symbol is off, so the production init path is unchanged.
-
-The other two symbols added here own instrumentation implemented later in
-the series, and are added now so all three arrive as one reviewable
-decision rather than three scattered ones:
-CONFIG_VIDEO_ROCKCHIP_HDMIRX_CERALIVE_TEST gates the two audio controls
-0017 implements, and CONFIG_DMABUF_HEAPS_CERALIVE_TEST gates the KUnit
-seam 0018 adds. Neither compiles anything at this patch.
-
-The image pipeline never builds this. The three symbols are on
-image-building-pipeline manifests/kernel/forbidden-symbols.list, which the
-production `edge` config is gated against, and they are enabled only by the
-opt-in `edge-test` variant that its release workflow refuses to publish.
+EVIDENCE POINTER. Run on a Rock 5B+ under KASAN and lockdep with every
+fault forced in turn; see tests/rkvenc-unbind.sh, tests/rkvenc-fault-qa.sh
+and docs/BOARD-QUALIFICATION.md.
 
 First-party: authored by CeraLive against v7.1.7, with no upstream
 counterpart in rockchip-rk3588-mainline-patches. The source of record is

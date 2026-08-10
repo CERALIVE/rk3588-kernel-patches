@@ -1,0 +1,27 @@
+# v2-path-allowlist.txt — rk3588-kernel-patches (Repo B)
+#
+# Wave 7 (pipeline-restructure-kernel-backports, todo41). Repo-B-LOCAL: this
+# file is NOT shared with Repo A's identically-named
+# image-building-pipeline/docs/v2-path-allowlist.txt from Wave 1's todo6 —
+# different repo, different content, verified separately.
+#
+# Checked with the SAME generic tool Wave 1 built, reused UNMODIFIED:
+#   git grep -n 'image-building-pipeline/v2\|\bv2/' >hits.txt
+#   python3 /mnt/development/ceralive/.omo/tools/check-path-allowlist.py \
+#     --hits hits.txt --allow docs/v2-path-allowlist.txt
+#
+# Every remaining hit below is a stale-path mention this repository keeps on
+# purpose: it is prose describing a SPECIFIC, dated, already-executed hardware
+# validation run (RUN 1, Rock 5B+, 2026-08-09), quoting the exact build
+# command and image-pipeline paths that run actually used. image-pipeline's
+# `v2/` prefix was later promoted to the pipeline root (Wave 1, that repo),
+# but rewriting these citations to the post-promotion path would misrepresent
+# what RUN 1 actually ran — these are historical transcripts, not current
+# instructions. Each row is escaped (`\x2f` for `/`) per the tool's
+# self-reference convention so this file does not match its own documented
+# pattern.
+
+docs/BOARD-QUALIFICATION.md:74:- [x] Image built with `.\x2fv2\x2fbuild <board> --variant edge` from
+docs/UPSTREAM-STATUS.md:663:image-building-pipeline\x2fv2\x2fmkosi/build/base/usr/lib/systemd/system/
+docs/UPSTREAM-STATUS.md:669:`v2\x2fmkosi/customize/postinst.d/services.sh` masks exactly six units
+docs/UPSTREAM-STATUS.md:1102:| Is `debugfs` mounted on the shipped image? (the SCDC gate) | Direct inspection of `image-building-pipeline\x2fv2/mkosi` — the built base layer's systemd unit tree and the image's own unit-masking policy — plus the pipeline's real-hardware notes | **Yes.** `sys-kernel-debug.mount` present *and* in `sysinit.target.wants/`; not among the six units `suppress_unusable_boot_units` masks; `/sys/kernel/debug/...` demonstrably read on a live Rock 5B+ |
