@@ -992,3 +992,30 @@ Discovery snapshot sha256: 729b87afb5a4fb097713b79e264a3688e25f3f971a8b9fcbc6c73
 
 <!-- candidate-matrix: end -->
 
+### Merged candidates: nothing was imported, and that is the result
+
+Of the eight merged-side candidates, **none** produced an import, and each has a
+different reason:
+
+- **M1** and **M5** are already in `v7.1.7`. Both were checked against the real
+  checkout rather than assumed: each reverse-applies cleanly with
+  `git apply -R --check`, which only succeeds when every hunk's post-image is
+  already the base. M1 carried `Cc: stable`, so 7.1.y picked it up; M5 arrived as
+  `7dd27810eea0` at `v7.1.6`.
+- **M6** has been carried as `0007` since its own import; it is verified, not
+  re-imported.
+- **M2** repairs a regression that the pinned base does not have. `v7.1.7` still
+  writes the SSC spread direction unconditionally inside each per-type `switch`;
+  the consolidation commit that broke it, `0b31f297557f`, is not in the base.
+  Importing the fix would be importing a fix for nothing.
+- **M8** is thirteen device-tree patches across roughly fifty boards, wiring an
+  HDMI **output** FRL voltage-bias GPIO. The driver half is already in the base
+  and the binding says an absent GPIO simply means TMDS-only, so declining costs
+  no working behaviour on a capture appliance.
+- **M3**, **M4** and **M7** were excluded by owner decision before technical
+  screening; their rows record that as the finding rather than leaving a gap.
+
+Row-by-row evidence is in the matrix above. The screening base was a real
+`v7.1.7` checkout, and the apply results quoted there are `git apply` output.
+
+
