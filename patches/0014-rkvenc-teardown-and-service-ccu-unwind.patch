@@ -1,0 +1,992 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: CeraLive <dev@ceralive.tv>
+Date: Sun, 10 Aug 2026 10:00:00 -0500
+Subject: [PATCH 14/14] media: rockchip: rkvenc: fix session teardown and unwind probe stages in reverse
+
+*** SOURCE-VERIFIED AND BUILD-CLEAN; HARDWARE VALIDATION PENDING. ***
+The defects below were each read out of the driver as it stands after
+0001, and the fixes compile clean at W=1 in both a test-enabled and a
+production configuration. The negative paths they repair are forced by
+0013's controls and exercised by tests/rkvenc-unbind.sh under KASAN and
+lockdep; that run has NOT happened yet. Do not read this patch as
+board-validated.
+
+SIX DEFECTS, all in the code that runs when something goes away.
+
+1. THE SESSION IS FREED WHILE TASKS STILL POINT AT IT.
+   rkvenc_dev_release() drains each pending task with a 2-second
+   wait_event_timeout() and then calls rkvenc_session_deinit()
+   unconditionally -- on the timeout path too. The worker's
+   rkvenc_task_finish() and rkvenc_free_task_callback() both dereference
+   task->session afterwards (the latter does atomic_dec on
+   session->task_count), so a task that took longer than two seconds
+   leaves the worker writing into freed memory. The session is now
+   kref'd: the file descriptor holds one reference and every task holds
+   one more, so a timed-out drain is survivable instead of fatal.
+
+2. THE DRAIN SLEEPS UNDER THE LOCK THE COMPLETION PATH NEEDS.
+   That wait_event_timeout() ran with session->pending_lock held, and
+   rkvenc_wait_result()/rkvenc_task_finish() take the same lock to pop a
+   finished task -- so the timeout was not a safety net, it was the only
+   exit. Each task is now popped under the lock and waited on with the
+   lock dropped.
+
+3. A FAILED CCU ATTACH LEAVES A DANGLING LIST ENTRY.
+   rkvenc_attach_ccu() adds this core to ccu->core_list and increments
+   core_num BEFORE the shared-IOMMU work that can fail; on failure it
+   returned straight out, the caller jumped to a label that only called
+   rkvenc_hw_remove(), and devm then freed the rkvenc_dev that list entry
+   points at. The next walk of ccu->core_list follows it.
+
+4. REMOVE UNPUBLISHES ALMOST NOTHING.
+   rkvenc_core_remove() dropped the core from the CCU list and unmapped
+   SRAM. It did not clear queue->cores[core_id], core_count, core_idle or
+   core_id_max, did not detach the shared IOMMU domain, and did not clear
+   srv->sub_devices[MPP_DEVICE_RKVENC] -- so after unbinding the main
+   core, rkvenc_dev_open() still finds a sub_device pointing at freed
+   memory and hands it to userspace.
+
+5. THE SERVICE TEARS ITSELF DOWN UNDER OPEN FILE DESCRIPTORS.
+   rkvenc_service_remove() destroys the cdev and class with sessions
+   still open, and srv is devm-allocated, so it disappears the instant
+   remove() returns while every open session still holds session->srv.
+   There was no state that could make a new open fail, and no wait for
+   the existing ones.
+
+6. THE IRQ OUTLIVES THE STATE IT TOUCHES.
+   The handler is devm_request_irq()'d, so the driver core frees it AFTER
+   remove() returns -- meaning it stays live across the whole of remove,
+   including rkvenc_hw_remove()'s pm_runtime_disable() and IOMMU release.
+
+THE FIX HAS THREE PARTS.
+
+DEVICE LINKS. Each core adds a device_link_add() to its service and CCU
+suppliers with DL_FLAG_AUTOREMOVE_CONSUMER | DL_FLAG_PM_RUNTIME. The
+driver core then unbinds consumers before their supplier and orders
+runtime PM between them, and the link releases itself (and the supplier
+reference it holds) when the consumer unbinds -- so there is no teardown
+path that can forget it. This also fixes a plain leak: the
+of_find_device_by_node() references taken to find those suppliers were
+never dropped.
+
+A SERVICE LIFETIME STATE, guarded by the EXISTING session_lock rather
+than a new lock of its own. LIVE -> QUIESCING -> DEAD: quiescing refuses
+new opens and new submissions, wakes every task waiter so it can reach
+its own release() (a waiter parked on TASK_STATE_DONE would otherwise
+sleep until a task that will never run completes), drains the worker, and
+only then waits for every open file to pass through release. Nothing
+supplier-owned is released until that wait returns. It is idempotent, so
+remove(), shutdown() and the main core's unwind may all call it. The
+waiter change is visible to userspace: an aborted task now reports
+-ENODEV rather than a success carrying no result.
+
+A PROBE STAGE LEDGER. Every completed step sets a bit, and ONE unwind
+function walks those bits in the exact inverse order -- stop worker and
+disable+synchronize IRQ, release SRAM/IOMMU, detach secondary cores from
+the shared domain BEFORE its owning main core, leave the CCU, remove the
+queue publication, then release the hardware/service allocation. The same
+function serves probe failure and remove, which is what stops the two
+drifting apart again; each step is guarded by and clears its own bit, so
+it is idempotent and a partially-completed probe unwinds exactly what it
+actually did.
+
+Two details worth keeping. core_id_max is a HIGH-WATER MARK and is
+recomputed rather than decremented, so removing core 0 does not lower it
+while core 1 is still present. And the service publication
+(srv->sub_devices[]) is now the LAST thing probe does and the FIRST thing
+the unwind undoes, because it is what makes the core reachable from
+userspace at all.
+
+tests/rkvenc-unbind.sh drives idle, held-open-FD and queued/in-flight
+supplier unbinds. Its held-FD case deliberately keeps the descriptor open
+across the unbind, proves new opens are refused with -ENODEV, and only
+then closes -- and its `timeout-negative` fixture never closes at all, so
+an unbind that completes anyway is reported as a FAILURE. A harness that
+cannot fail is not evidence.
+
+First-party: authored by CeraLive against v7.1.7, with no upstream
+counterpart in rockchip-rk3588-mainline-patches. The source of record is
+ceralive/0014-rkvenc-teardown-and-service-ccu-unwind.patch; patches/ is generated from it by
+scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the
+same added/removed-line parity the upstream lane gets.
+
+NOT upstream-bound: this targets the CeraLive device tree only and is not a
+submission to linux-media, linux-rockchip or the fork parent. No Signed-off-by
+is added, because a DCO assertion belongs to whoever actually submits it.
+
+---
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c
+@@ -8,6 +8,7 @@
+  */
+ 
+ #include <linux/delay.h>
++#include <linux/device.h>
+ #include <linux/interrupt.h>
+ #include <linux/iommu.h>
+ #include <linux/iopoll.h>
+@@ -87,14 +88,36 @@ static int rkvenc_attach_ccu(struct device *dev, struct rkvenc_dev *enc)
+ 		return -ENODEV;
+ 
+ 	ccu = platform_get_drvdata(pdev);
+-	if (!ccu)
++	if (!ccu) {
++		put_device(&pdev->dev);
+ 		return -EPROBE_DEFER;
++	}
++
++	/*
++	 * A device link, not a bare pointer. Without it the CCU can unbind
++	 * while cores still dereference enc->ccu, and nothing orders runtime PM
++	 * between them. DL_FLAG_AUTOREMOVE_CONSUMER drops the link (and the
++	 * supplier reference it holds) when this core unbinds, so there is no
++	 * teardown path that can forget to release it; DL_FLAG_PM_RUNTIME makes
++	 * the supplier resume before the consumer and suspend after it.
++	 */
++	enc->ccu_link = device_link_add(dev, &pdev->dev,
++					DL_FLAG_AUTOREMOVE_CONSUMER |
++					DL_FLAG_PM_RUNTIME);
++	/* The link holds its own supplier reference; ours has done its job. */
++	put_device(&pdev->dev);
++	if (!enc->ccu_link) {
++		dev_err(dev, "failed to link this core to its CCU supplier\n");
++		return -ENODEV;
++	}
+ 
+ 	INIT_LIST_HEAD(&enc->core_link);
+ 	mutex_lock(&ccu->lock);
+ 	ccu->core_num++;
+ 	list_add_tail(&enc->core_link, &ccu->core_list);
+ 	mutex_unlock(&ccu->lock);
++	enc->ccu = ccu;
++	set_bit(RKVENC_STAGE_CCU_ATTACHED, &enc->probe_stages);
+ 
+ 	/* First core becomes the main core */
+ 	if (!ccu->main_core) {
+@@ -109,6 +132,14 @@ static int rkvenc_attach_ccu(struct device *dev, struct rkvenc_dev *enc)
+ 		shared = main_iommu ? main_iommu->domain : NULL;
+ 		if (!shared || !sec_iommu || !sec_iommu->group) {
+ 			dev_err(dev, "missing IOMMU info for shared domain\n");
++			/*
++			 * This core is ALREADY on ccu->core_list by now. The
++			 * original code returned straight out of here, leaving
++			 * a list entry pointing at a devm allocation the failed
++			 * probe was about to free -- a dangling list head the
++			 * next core walk would follow. The caller's unwind
++			 * removes it, because the stage bit above is set.
++			 */
+ 			return -ENODEV;
+ 		}
+ 
+@@ -133,8 +164,8 @@ static int rkvenc_attach_ccu(struct device *dev, struct rkvenc_dev *enc)
+ 			sec_iommu->rw_sem = &sec_iommu->rw_sem_self;
+ 			return ret;
+ 		}
++		set_bit(RKVENC_STAGE_IOMMU_SHARED, &enc->probe_stages);
+ 	}
+-	enc->ccu = ccu;
+ 
+ 	dev_info(dev, "attach ccu as core %d%s\n", enc->core_id,
+ 		 enc == ccu->main_core ? " [main]" :
+@@ -173,10 +204,26 @@ static int rkvenc_attach_service(struct rkvenc_dev *enc)
+ 		return -ENODEV;
+ 
+ 	srv = platform_get_drvdata(pdev);
+-	if (!srv)
++	if (!srv) {
++		put_device(&pdev->dev);
+ 		return -EPROBE_DEFER;
++	}
++
++	/* Same contract as the CCU link above: unbinding the service quiesces
++	 * its consumers first, and the link releases itself when this core
++	 * unbinds.
++	 */
++	enc->srv_link = device_link_add(enc->dev, &pdev->dev,
++					DL_FLAG_AUTOREMOVE_CONSUMER |
++					DL_FLAG_PM_RUNTIME);
++	put_device(&pdev->dev);
++	if (!enc->srv_link) {
++		dev_err(enc->dev, "failed to link this core to its service supplier\n");
++		return -ENODEV;
++	}
+ 
+ 	enc->srv = srv;
++	set_bit(RKVENC_STAGE_SERVICE_ATTACHED, &enc->probe_stages);
+ 
+ 	of_property_read_u32(enc->dev->of_node, "rockchip,taskqueue-node", &taskqueue_node);
+ 	of_property_read_u32(enc->dev->of_node, "rockchip,resetgroup-node", &resetgroup_node);
+@@ -191,11 +238,14 @@ static int rkvenc_attach_service(struct rkvenc_dev *enc)
+ 
+ 	/* Register core in the task queue */
+ 	if (enc->core_id >= 0 && enc->core_id < MPP_MAX_CORE_NUM) {
++		mutex_lock(&queue->dev_lock);
+ 		queue->cores[enc->core_id] = enc;
+ 		queue->core_count++;
+ 		if (enc->core_id > queue->core_id_max)
+ 			queue->core_id_max = enc->core_id;
+ 		set_bit(enc->core_id, &queue->core_idle);
++		mutex_unlock(&queue->dev_lock);
++		set_bit(RKVENC_STAGE_QUEUE_PUBLISHED, &enc->probe_stages);
+ 	}
+ 
+ 	/* Attach to reset group */
+@@ -296,6 +346,152 @@ static int rkvenc2_alloc_rcbbuf(struct platform_device *pdev, struct rkvenc_dev
+ 	return 0;
+ }
+ 
++
++/* ---- Reverse-order core unwind ----------------------------------------
++ *
++ * ONE function serves probe failure AND remove, walking the stage ledger in the
++ * exact inverse of acquisition order. Two separate unwinds is how this driver
++ * arrived at a probe error path that undid one of the six steps it had taken
++ * while remove undid a different two, leaving a queue slot, a CCU list entry
++ * and a published sub_device all pointing at freed memory.
++ *
++ * Every step is guarded by its own stage bit and clears it, so the function is
++ * IDEMPOTENT -- calling it twice, or after a partial probe, is a no-op for
++ * anything that never completed.
++ */
++static void rkvenc_core_unwind(struct rkvenc_dev *enc)
++{
++	struct rkvenc_service *srv = enc->srv;
++	struct rkvenc_taskqueue *queue = enc->queue;
++	struct rkvenc_ccu *ccu = enc->ccu;
++
++	/* 8. Stop advertising this core to userspace before anything else: a
++	 * new open must not be able to reach a core that is going away.
++	 */
++	if (test_and_clear_bit(RKVENC_STAGE_SERVICE_PUBLISHED, &enc->probe_stages) && srv) {
++		mutex_lock(&srv->session_lock);
++		if (srv->sub_devices[MPP_DEVICE_RKVENC] == enc) {
++			srv->sub_devices[MPP_DEVICE_RKVENC] = NULL;
++			clear_bit(MPP_DEVICE_RKVENC, &srv->hw_support);
++		}
++		mutex_unlock(&srv->session_lock);
++		rkvenc_service_quiesce(srv);
++	}
++
++	/* 7. Silence the hardware. disable_irq() waits for a handler already
++	 * running on another CPU, and synchronize_irq() covers a threaded tail;
++	 * releasing the handler with devm alone would leave it live all the way
++	 * through the steps below, which free the state it touches.
++	 */
++	if (test_and_clear_bit(RKVENC_STAGE_IRQ_REQUESTED, &enc->probe_stages)) {
++		disable_irq(enc->irq);
++		synchronize_irq(enc->irq);
++		devm_free_irq(enc->dev, enc->irq, enc);
++	}
++	if (queue && queue->kworker_task)
++		kthread_flush_worker(&queue->worker);
++	enc->cur_task = NULL;
++
++	/* 6. SRAM/IOMMU mapping owned by this core. */
++	if (test_and_clear_bit(RKVENC_STAGE_SRAM_MAPPED, &enc->probe_stages) &&
++	    enc->iommu_info && enc->iommu_info->domain) {
++		struct iommu_domain *domain = enc->iommu_info->domain;
++
++		if (enc->rcb_page) {
++			size_t page_size = PAGE_ALIGN(enc->sram_used - enc->sram_size);
++
++			iommu_unmap(domain, enc->sram_iova + enc->sram_size, page_size);
++			__free_pages(enc->rcb_page, get_order(page_size));
++			enc->rcb_page = NULL;
++		}
++		iommu_unmap(domain, enc->sram_iova, enc->sram_size);
++		enc->sram_iova = 0;
++		enc->sram_size = 0;
++		enc->sram_used = 0;
++	}
++
++	/* 5. Secondary cores leave the SHARED domain before its owner does.
++	 * If this core is the main one, every secondary is detached here
++	 * first -- the domain belongs to the main core's IOMMU, so releasing
++	 * it while a secondary is still attached detaches nothing and leaves
++	 * the secondary programmed against page tables that are going away.
++	 */
++	if (ccu && ccu->main_core == enc) {
++		struct rkvenc_dev *sec;
++
++		mutex_lock(&ccu->lock);
++		list_for_each_entry(sec, &ccu->core_list, core_link) {
++			if (sec == enc)
++				continue;
++			if (test_and_clear_bit(RKVENC_STAGE_IOMMU_SHARED,
++					       &sec->probe_stages) &&
++			    sec->iommu_info && sec->iommu_info->domain &&
++			    sec->iommu_info->group) {
++				iommu_detach_group(sec->iommu_info->domain,
++						   sec->iommu_info->group);
++				sec->iommu_info->domain = NULL;
++				sec->iommu_info->rw_sem = &sec->iommu_info->rw_sem_self;
++			}
++		}
++		mutex_unlock(&ccu->lock);
++	}
++	if (test_and_clear_bit(RKVENC_STAGE_IOMMU_SHARED, &enc->probe_stages) &&
++	    enc->iommu_info && enc->iommu_info->domain && enc->iommu_info->group) {
++		iommu_detach_group(enc->iommu_info->domain, enc->iommu_info->group);
++		enc->iommu_info->domain = NULL;
++		enc->iommu_info->rw_sem = &enc->iommu_info->rw_sem_self;
++	}
++
++	/* 4. Leave the CCU. */
++	if (test_and_clear_bit(RKVENC_STAGE_CCU_ATTACHED, &enc->probe_stages) && ccu) {
++		mutex_lock(&ccu->lock);
++		list_del_init(&enc->core_link);
++		if (ccu->core_num)
++			ccu->core_num--;
++		if (ccu->main_core == enc)
++			ccu->main_core = NULL;
++		mutex_unlock(&ccu->lock);
++	}
++	enc->ccu = NULL;
++
++	/* 3. Remove the queue publication: slot, count, id_max and idle bit. */
++	if (test_and_clear_bit(RKVENC_STAGE_QUEUE_PUBLISHED, &enc->probe_stages) && queue) {
++		u32 i;
++
++		mutex_lock(&queue->dev_lock);
++		if (enc->core_id >= 0 && enc->core_id < MPP_MAX_CORE_NUM &&
++		    queue->cores[enc->core_id] == enc) {
++			queue->cores[enc->core_id] = NULL;
++			clear_bit(enc->core_id, &queue->core_idle);
++			if (queue->core_count)
++				queue->core_count--;
++		}
++		/* core_id_max is a HIGH-WATER MARK, so it has to be recomputed
++		 * rather than decremented: removing core 0 must not lower it
++		 * while core 1 is still present.
++		 */
++		queue->core_id_max = 0;
++		for (i = 0; i < MPP_MAX_CORE_NUM; i++)
++			if (queue->cores[i])
++				queue->core_id_max = i;
++		mutex_unlock(&queue->dev_lock);
++	}
++
++	/* 2. Forget the suppliers. The device links themselves are
++	 * AUTOREMOVE_CONSUMER, so the driver core drops them (and the supplier
++	 * references they hold) as this consumer unbinds.
++	 */
++	clear_bit(RKVENC_STAGE_SERVICE_ATTACHED, &enc->probe_stages);
++	enc->srv = NULL;
++	enc->queue = NULL;
++	enc->srv_link = NULL;
++	enc->ccu_link = NULL;
++
++	/* 1. Hardware/PM allocation. */
++	if (test_and_clear_bit(RKVENC_STAGE_HW, &enc->probe_stages))
++		rkvenc_hw_remove(enc);
++}
++
+ /* ---- Core probe ---- */
+ static int rkvenc_core_probe(struct platform_device *pdev)
+ {
+@@ -322,19 +518,20 @@ static int rkvenc_core_probe(struct platform_device *pdev)
+ 	ret = rkvenc_hw_probe(enc, pdev);
+ 	if (ret)
+ 		return ret;
++	set_bit(RKVENC_STAGE_HW, &enc->probe_stages);
+ 
+ 	/* Attach to service */
+ 	ret = rkvenc_attach_service(enc);
+ 	if (ret) {
+ 		dev_err_probe(dev, ret, "failed to attach service\n");
+-		goto err_hw;
++		goto err_unwind;
+ 	}
+ 
+ 	/* Attach core to CCU */
+ 	ret = rkvenc_attach_ccu(dev, enc);
+ 	if (ret) {
+ 		dev_err_probe(dev, ret, "attach ccu failed\n");
+-		goto err_hw;
++		goto err_unwind;
+ 	}
+ 
+ 	/*
+@@ -351,8 +548,12 @@ static int rkvenc_core_probe(struct platform_device *pdev)
+ 		enc->sram_enabled = -1;
+ 		dev_info(dev, "sram inherited from main core: iova %pad size %u used %u\n",
+ 			 &enc->sram_iova, enc->sram_size, enc->sram_used);
+-	} else {
+-		rkvenc2_alloc_rcbbuf(pdev, enc);
++	} else if (!rkvenc2_alloc_rcbbuf(pdev, enc)) {
++		/* SRAM is optional, so a failure is not fatal -- but a SUCCESS
++		 * creates an IOMMU mapping and possibly a page allocation that
++		 * the unwind now owns.
++		 */
++		set_bit(RKVENC_STAGE_SRAM_MAPPED, &enc->probe_stages);
+ 	}
+ 
+ 	/* Register IRQ */
+@@ -365,21 +566,28 @@ static int rkvenc_core_probe(struct platform_device *pdev)
+ 	}
+ 	if (ret) {
+ 		dev_err(dev, "register interrupt failed: %d\n", ret);
+-		goto err_hw;
++		goto err_unwind;
+ 	}
++	set_bit(RKVENC_STAGE_IRQ_REQUESTED, &enc->probe_stages);
+ 
+-	/* If this is the main core, register with the service */
++	/* LAST, and deliberately so: publishing the core to the service is what
++	 * makes it reachable from userspace, so nothing may be published until
++	 * every earlier stage has actually succeeded.
++	 */
+ 	if (enc->ccu && enc == enc->ccu->main_core) {
++		mutex_lock(&enc->srv->session_lock);
+ 		enc->srv->sub_devices[MPP_DEVICE_RKVENC] = enc;
+ 		set_bit(MPP_DEVICE_RKVENC, &enc->srv->hw_support);
++		mutex_unlock(&enc->srv->session_lock);
++		set_bit(RKVENC_STAGE_SERVICE_PUBLISHED, &enc->probe_stages);
+ 	}
+ 
+ 	dev_info(dev, "rkvenc core %d probe success (hw_id: %08x)\n",
+ 		 enc->core_id, enc->hw_info->hw.hw_id);
+ 	return 0;
+ 
+-err_hw:
+-	rkvenc_hw_remove(enc);
++err_unwind:
++	rkvenc_core_unwind(enc);
+ 	return ret;
+ }
+ 
+@@ -391,28 +599,8 @@ static int rkvenc_core_remove(struct platform_device *pdev)
+ 	if (!enc)
+ 		return 0;
+ 
+-	if (enc->ccu) {
+-		mutex_lock(&enc->ccu->lock);
+-		list_del_init(&enc->core_link);
+-		enc->ccu->core_num--;
+-		mutex_unlock(&enc->ccu->lock);
+-	}
+-
+-	/* Free SRAM — only the core that mapped it (main or standalone) */
+-	if (enc->sram_iova && enc->iommu_info && enc->iommu_info->domain &&
+-	    (!enc->ccu || enc == enc->ccu->main_core)) {
+-		struct iommu_domain *domain = enc->iommu_info->domain;
+-
+-		if (enc->rcb_page) {
+-			size_t page_size = PAGE_ALIGN(enc->sram_used - enc->sram_size);
+-
+-			iommu_unmap(domain, enc->sram_iova + enc->sram_size, page_size);
+-			__free_pages(enc->rcb_page, get_order(page_size));
+-		}
+-		iommu_unmap(domain, enc->sram_iova, enc->sram_size);
+-	}
+-
+-	rkvenc_hw_remove(enc);
++	/* The SAME ledger the probe error path walks. */
++	rkvenc_core_unwind(enc);
+ 	dev_info(&pdev->dev, "rkvenc core removed\n");
+ 	return 0;
+ }
+@@ -468,6 +656,7 @@ static void rkvenc_shutdown(struct platform_device *pdev)
+ 
+ 	dev_info(dev, "shutdown device\n");
+ 	atomic_inc(&enc->srv->shutdown_request);
++	rkvenc_service_quiesce(enc->srv);
+ 
+ 	ret = readx_poll_timeout(atomic_read, &enc->task_count,
+ 				 val, val == 0, 20000, 200000);
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h b/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h
+@@ -414,6 +414,28 @@ struct rkvenc_grf_info {
+ 	u32 val;
+ };
+ 
++/*
++ * Service lifetime.
++ *
++ * LIVE      normal operation.
++ * QUIESCING teardown has begun: new opens and new submissions are refused,
++ *           queued and in-flight work is being cancelled and every waiter is
++ *           being woken with -ENODEV. Existing file descriptors stay VALID --
++ *           userspace still has to close them, and until it does the service
++ *           must not release anything they can reach.
++ * DEAD      every open file has passed through release. Only now may
++ *           supplier-owned state be torn down.
++ *
++ * Guarded by the EXISTING session_lock rather than a new lock of its own: that
++ * lock already serialises the session list this state decides the fate of, and
++ * a second lock over the same data is how an ordering cycle gets introduced.
++ */
++enum rkvenc_service_state {
++	RKVENC_SRV_LIVE = 0,
++	RKVENC_SRV_QUIESCING,
++	RKVENC_SRV_DEAD,
++};
++
+ /* ---- MPP service ---- */
+ struct rkvenc_service {
+ 	struct device *dev;
+@@ -433,11 +455,17 @@ struct rkvenc_service {
+ 
+ 	struct mutex session_lock;
+ 	struct list_head session_list;
++	enum rkvenc_service_state state;
++	u32 session_count;
++	wait_queue_head_t quiesce_wait;
+ 
+ 	u32 timing_en;
+ 	atomic_t shutdown_request;
+ };
+ 
++bool rkvenc_service_is_live(struct rkvenc_service *srv);
++void rkvenc_service_quiesce(struct rkvenc_service *srv);
++
+ /* ---- MPP task ---- */
+ struct rkvenc_mpp_task {
+ 	struct list_head pending_link;
+@@ -604,8 +632,21 @@ struct rkvenc_session {
+ 	/* Session private data */
+ 	void *priv;
+ 
++	/*
++	 * Lifetime. The file descriptor holds one reference and every task
++	 * holds one more, so a session outlives its FD for exactly as long as
++	 * some task still points at it. Without this the release path's bounded
++	 * drain could time out and free a session the worker was about to
++	 * dereference through task->session -- which is a use-after-free that
++	 * only ever fires when a task is slow, i.e. under load.
++	 */
++	struct kref ref;
+ };
+ 
++void rkvenc_session_get(struct rkvenc_session *session);
++void rkvenc_session_put(struct rkvenc_session *session);
++void rkvenc_session_abort(struct rkvenc_session *session);
++
+ /* ---- Task messages ---- */
+ struct rkvenc_task_msgs {
+ 	struct list_head list;
+@@ -721,6 +762,18 @@ struct rkvenc_dev {
+ 	struct reset_control *rst_h;
+ 	struct reset_control *rst_core;
+ 
++	/*
++	 * Probe stage ledger. Each bit records a step that COMPLETED, so the
++	 * unwind is the exact inverse of what actually happened rather than of
++	 * what the happy path would have done. It is the same ledger on probe
++	 * failure and on remove, which is what stops the two drifting apart --
++	 * historically the probe error path unwound one of the six steps it had
++	 * taken, and remove unwound a different two.
++	 */
++	unsigned long probe_stages;
++	struct device_link *srv_link;
++	struct device_link *ccu_link;
++
+ 	/* Multi-core */
+ 	struct rkvenc_ccu *ccu;
+ 	struct list_head core_link;
+@@ -749,6 +802,16 @@ struct rkvenc_dev {
+ 	u32 disable;
+ };
+ 
++/* Probe stages, in ACQUISITION order. The unwind walks them in reverse. */
++#define RKVENC_STAGE_HW			0
++#define RKVENC_STAGE_SERVICE_ATTACHED	1
++#define RKVENC_STAGE_QUEUE_PUBLISHED	2
++#define RKVENC_STAGE_CCU_ATTACHED	3
++#define RKVENC_STAGE_IOMMU_SHARED	4
++#define RKVENC_STAGE_SRAM_MAPPED	5
++#define RKVENC_STAGE_IRQ_REQUESTED	6
++#define RKVENC_STAGE_SERVICE_PUBLISHED	7
++
+ /* ---- Helper macros ---- */
+ static inline u32 rkvenc_read(struct rkvenc_dev *mpp, u32 reg)
+ {
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
+@@ -50,14 +50,15 @@ static struct rkvenc_session *rkvenc_session_init(void)
+ 	INIT_LIST_HEAD(&session->session_link);
+ 	atomic_set(&session->task_count, 0);
+ 	atomic_set(&session->release_request, 0);
++	kref_init(&session->ref);
+ 
+ 	return session;
+ }
+ 
+-static void rkvenc_session_deinit(struct rkvenc_session *session)
++static void rkvenc_session_release(struct kref *ref)
+ {
+-	if (!session)
+-		return;
++	struct rkvenc_session *session =
++		container_of(ref, struct rkvenc_session, ref);
+ 
+ 	if (session->dma) {
+ 		rkvenc_dma_session_destroy(session->dma);
+@@ -72,6 +73,35 @@ static void rkvenc_session_deinit(struct rkvenc_session *session)
+ 	kfree(session);
+ }
+ 
++void rkvenc_session_get(struct rkvenc_session *session)
++{
++	kref_get(&session->ref);
++}
++
++void rkvenc_session_put(struct rkvenc_session *session)
++{
++	if (session)
++		kref_put(&session->ref, rkvenc_session_release);
++}
++
++/*
++ * Wake every waiter parked on one of this session's tasks. Used by the quiesce
++ * path: a waiter blocked in wait_event_interruptible() on TASK_STATE_DONE would
++ * otherwise sleep until its task completes, and during teardown that task may
++ * never run.
++ */
++void rkvenc_session_abort(struct rkvenc_session *session)
++{
++	struct rkvenc_mpp_task *task;
++
++	mutex_lock(&session->pending_lock);
++	list_for_each_entry(task, &session->pending_list, pending_link) {
++		atomic_set(&task->abort_request, 1);
++		wake_up(&task->wait);
++	}
++	mutex_unlock(&session->pending_lock);
++}
++
+ /* ---- Attach session to encoder device ---- */
+ static int rkvenc_session_attach_device(struct rkvenc_session *session,
+ 					struct rkvenc_dev *mpp)
+@@ -518,6 +548,8 @@ static struct rkvenc_task *rkvenc_alloc_task(struct rkvenc_session *session,
+ 	mpp_task->task_id = atomic_inc_return(&mpp->queue->task_id);
+ 	atomic_inc(&session->task_count);
+ 	atomic_inc(&mpp->task_count);
++	/* Paired with the put in rkvenc_free_task_callback(). */
++	rkvenc_session_get(session);
+ 
+ 	return task;
+ 
+@@ -898,12 +930,21 @@ static int rkvenc_wait_result(struct rkvenc_session *session,
+ 	if (!enc_task->task_split || enc_task->task_split_done) {
+ task_done_ret:
+ 		ret = wait_event_interruptible(task->wait,
+-					       test_bit(TASK_STATE_DONE, &task->state));
++					       test_bit(TASK_STATE_DONE, &task->state) ||
++					       atomic_read(&task->abort_request));
+ 		if (ret == -ERESTARTSYS)
+ 			rkvenc_err("wait task break by signal\n");
+ 
+-		/* Copy results to userspace */
+-		rkvenc_result(task->mpp, task);
++		/*
++		 * An aborted task never ran, so there is no result to copy
++		 * back. Reporting -ENODEV rather than a stale success is what
++		 * lets userspace tell "the device went away" from "the encode
++		 * produced nothing".
++		 */
++		if (!ret && atomic_read(&task->abort_request))
++			ret = -ENODEV;
++		else if (!ret)
++			rkvenc_result(task->mpp, task);
+ 
+ 		/* Pop from pending list */
+ 		mutex_lock(&session->pending_lock);
+@@ -919,11 +960,14 @@ static int rkvenc_wait_result(struct rkvenc_session *session,
+ 	do {
+ 		ret = wait_event_interruptible(task->wait,
+ 					       kfifo_out(&enc_task->slice_info,
+-							 &slice_info, 1));
++							 &slice_info, 1) ||
++					       atomic_read(&task->abort_request));
+ 		if (ret == -ERESTARTSYS) {
+ 			rkvenc_err("wait task break by signal in slice mode\n");
+ 			return 0;
+ 		}
++		if (atomic_read(&task->abort_request))
++			goto task_done_ret;
+ 
+ 		enc_task->slice_rd_cnt++;
+ 
+@@ -949,6 +993,15 @@ static long rkvenc_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long
+ 		return -EBUSY;
+ 	if (atomic_read(&session->srv->shutdown_request) > 0)
+ 		return -EBUSY;
++	/*
++	 * Once quiescing starts no new submission may enter the driver. This is
++	 * a plain read of a state that only ever advances LIVE -> QUIESCING ->
++	 * DEAD, so a racing transition can at worst admit one more submission,
++	 * which the quiesce then drains -- the authoritative check that no
++	 * submission is outstanding is the reference wait, not this.
++	 */
++	if (!rkvenc_service_is_live(session->srv))
++		return -ENODEV;
+ 
+ 	/* Init msgs */
+ 	memset(&msgs, 0, sizeof(msgs));
+@@ -1016,14 +1069,20 @@ static int rkvenc_dev_open(struct inode *inode, struct file *filp)
+ 
+ 	session->srv = srv;
+ 
+-	if (!srv->sub_devices[MPP_DEVICE_RKVENC]) {
+-		rkvenc_session_deinit(session);
++	mutex_lock(&srv->session_lock);
++	/*
++	 * Both checks belong under this lock. sub_devices[] is cleared by the
++	 * core's unwind and `state` by the service's, so testing either one
++	 * outside the lock races the very teardown this is guarding against.
++	 */
++	if (srv->state != RKVENC_SRV_LIVE || !srv->sub_devices[MPP_DEVICE_RKVENC]) {
++		mutex_unlock(&srv->session_lock);
++		rkvenc_session_put(session);
+ 		return -ENODEV;
+ 	}
+-
+-	mutex_lock(&srv->session_lock);
+ 	list_add_tail(&session->service_link, &srv->session_list);
+ 	session->index = atomic_inc_return(&srv->sub_devices[MPP_DEVICE_RKVENC]->session_index);
++	srv->session_count++;
+ 	mutex_unlock(&srv->session_lock);
+ 
+ 	filp->private_data = session;
+@@ -1031,43 +1090,83 @@ static int rkvenc_dev_open(struct inode *inode, struct file *filp)
+ 	return nonseekable_open(inode, filp);
+ }
+ 
++/*
++ * How long release() waits for one already-submitted task before giving up and
++ * letting the reference count carry the session. Deliberately generous compared
++ * with the encoder's own watchdog: this is a "something is very wrong" bound,
++ * not a scheduling deadline.
++ */
++#define RKVENC_RELEASE_DRAIN_MS 5000
++
+ static int rkvenc_dev_release(struct inode *inode, struct file *filp)
+ {
+ 	struct rkvenc_session *session = filp->private_data;
++	struct rkvenc_service *srv;
+ 
+ 	if (!session) {
+ 		rkvenc_err("session is null\n");
+ 		return -EINVAL;
+ 	}
++	srv = session->srv;
+ 
+ 	atomic_inc(&session->release_request);
+ 
+ 	/* Remove from service list */
+-	if (session->srv) {
+-		mutex_lock(&session->srv->session_lock);
++	if (srv) {
++		mutex_lock(&srv->session_lock);
+ 		list_del_init(&session->service_link);
+-		mutex_unlock(&session->srv->session_lock);
++		if (srv->session_count)
++			srv->session_count--;
++		mutex_unlock(&srv->session_lock);
+ 	}
+ 
+-	/* Wait for all tasks to complete */
+-	if (atomic_read(&session->task_count) > 0) {
+-		struct rkvenc_mpp_task *task, *n;
++	/*
++	 * Drain this session's tasks. The wait is OUTSIDE pending_lock: the
++	 * completion path takes that same lock, so sleeping under it made the
++	 * 2-second timeout the only way out and turned every slow task into a
++	 * two-second stall. Each task is popped under the lock, then waited on
++	 * with the lock dropped.
++	 */
++	for (;;) {
++		struct rkvenc_mpp_task *task;
+ 
+ 		mutex_lock(&session->pending_lock);
+-		list_for_each_entry_safe(task, n, &session->pending_list, pending_link) {
+-			/* Wait for task completion with timeout */
+-			wait_event_timeout(task->wait,
+-					   test_bit(TASK_STATE_DONE, &task->state),
+-					   msecs_to_jiffies(2000));
++		task = list_first_entry_or_null(&session->pending_list,
++						struct rkvenc_mpp_task,
++						pending_link);
++		if (task)
+ 			list_del_init(&task->pending_link);
+-			kref_put(&task->ref, rkvenc_free_task_callback);
+-		}
+ 		mutex_unlock(&session->pending_lock);
++
++		if (!task)
++			break;
++
++		if (!wait_event_timeout(task->wait,
++					test_bit(TASK_STATE_DONE, &task->state),
++					msecs_to_jiffies(RKVENC_RELEASE_DRAIN_MS)))
++			rkvenc_err("session %d: task %d did not complete in %d ms; the session stays alive on its reference\n",
++				   session->index, task->task_index,
++				   RKVENC_RELEASE_DRAIN_MS);
++
++		kref_put(&task->ref, rkvenc_free_task_callback);
+ 	}
+ 
+-	rkvenc_session_deinit(session);
+ 	filp->private_data = NULL;
+ 
++	/*
++	 * Drop the FILE's reference only. Any task still holding one keeps the
++	 * session alive, so a drain that timed out above is survivable instead
++	 * of being a use-after-free -- which is exactly what it used to be.
++	 */
++	rkvenc_session_put(session);
++
++	if (srv) {
++		mutex_lock(&srv->session_lock);
++		if (!srv->session_count)
++			wake_up_all(&srv->quiesce_wait);
++		mutex_unlock(&srv->session_lock);
++	}
++
+ 	return 0;
+ }
+ 
+@@ -1080,6 +1179,24 @@ const struct file_operations rkvenc_fops = {
+ #endif
+ };
+ 
++/*
++ * Upper bound on how long teardown waits for userspace to close its file
++ * descriptors. Exceeding it is reported and does NOT proceed to release state
++ * those descriptors can still reach.
++ */
++#define RKVENC_QUIESCE_TIMEOUT_MS 10000
++
++static bool rkvenc_service_sessions_gone(struct rkvenc_service *srv)
++{
++	bool gone;
++
++	mutex_lock(&srv->session_lock);
++	gone = (srv->session_count == 0);
++	mutex_unlock(&srv->session_lock);
++
++	return gone;
++}
++
+ /* ---- Service probe/remove ---- */
+ int rkvenc_service_probe(struct platform_device *pdev)
+ {
+@@ -1096,6 +1213,9 @@ int rkvenc_service_probe(struct platform_device *pdev)
+ 	srv->dev = dev;
+ 	mutex_init(&srv->session_lock);
+ 	INIT_LIST_HEAD(&srv->session_list);
++	init_waitqueue_head(&srv->quiesce_wait);
++	srv->state = RKVENC_SRV_LIVE;
++	srv->session_count = 0;
+ 	atomic_set(&srv->shutdown_request, 0);
+ 
+ 	/* Read DTS properties */
+@@ -1197,6 +1317,64 @@ int rkvenc_service_probe(struct platform_device *pdev)
+ 	return ret;
+ }
+ 
++bool rkvenc_service_is_live(struct rkvenc_service *srv)
++{
++	return srv && READ_ONCE(srv->state) == RKVENC_SRV_LIVE;
++}
++
++/*
++ * LIVE -> QUIESCING -> DEAD.
++ *
++ * The ordering here is the whole fix. Refusing new opens first means the set of
++ * sessions to drain stops growing; waking every waiter next means a session
++ * blocked on a task that will never run can actually reach its own release; and
++ * only when session_count has reached zero -- i.e. every open file has passed
++ * through release() -- is it legal to tear down state those files could reach.
++ *
++ * Idempotent: a second call on an already-quiescing or dead service returns
++ * immediately, so remove() and shutdown() may both call it.
++ */
++void rkvenc_service_quiesce(struct rkvenc_service *srv)
++{
++	struct rkvenc_session *session;
++
++	if (!srv)
++		return;
++
++	mutex_lock(&srv->session_lock);
++	if (srv->state != RKVENC_SRV_LIVE) {
++		mutex_unlock(&srv->session_lock);
++		return;
++	}
++	srv->state = RKVENC_SRV_QUIESCING;
++	list_for_each_entry(session, &srv->session_list, service_link)
++		rkvenc_session_abort(session);
++	mutex_unlock(&srv->session_lock);
++
++	/*
++	 * Cancel and drain everything already queued or in flight BEFORE
++	 * waiting on userspace: a waiter cannot reach release() while its task
++	 * is still parked in the worker.
++	 */
++	if (srv->task_queues[MPP_DEVICE_RKVENC]) {
++		struct rkvenc_taskqueue *queue = srv->task_queues[MPP_DEVICE_RKVENC];
++
++		if (queue->kworker_task)
++			kthread_flush_worker(&queue->worker);
++	}
++
++	if (!wait_event_timeout(srv->quiesce_wait,
++				rkvenc_service_sessions_gone(srv),
++				msecs_to_jiffies(RKVENC_QUIESCE_TIMEOUT_MS)))
++		dev_warn(srv->dev,
++			 "quiesce timed out with %u session(s) still open; refusing to release service state\n",
++			 srv->session_count);
++
++	mutex_lock(&srv->session_lock);
++	srv->state = RKVENC_SRV_DEAD;
++	mutex_unlock(&srv->session_lock);
++}
++
+ int rkvenc_service_remove(struct platform_device *pdev)
+ {
+ 	struct rkvenc_service *srv = platform_get_drvdata(pdev);
+@@ -1204,6 +1382,14 @@ int rkvenc_service_remove(struct platform_device *pdev)
+ 	if (!srv)
+ 		return 0;
+ 
++	/*
++	 * Quiesce FIRST. Everything below frees state an open file descriptor
++	 * can reach -- srv itself is devm-allocated and disappears the moment
++	 * this function returns -- so tearing it down before userspace has let
++	 * go is a use-after-free with a race window the size of a close().
++	 */
++	rkvenc_service_quiesce(srv);
++
+ 	/* Stop kthread worker */
+ 	if (srv->task_queues[MPP_DEVICE_RKVENC]) {
+ 		struct rkvenc_taskqueue *queue = srv->task_queues[MPP_DEVICE_RKVENC];
+@@ -1211,6 +1397,7 @@ int rkvenc_service_remove(struct platform_device *pdev)
+ 		if (queue->kworker_task) {
+ 			kthread_flush_worker(&queue->worker);
+ 			kthread_stop(queue->kworker_task);
++			queue->kworker_task = NULL;
+ 		}
+ 	}
+ 
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_task.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_task.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_task.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_task.c
+@@ -67,6 +67,13 @@ void rkvenc_free_task_callback(struct kref *ref)
+ 	atomic_dec(&mpp->task_count);
+ 
+ 	kfree(enc_task);
++
++	/*
++	 * LAST. Everything above still dereferences the session, so the
++	 * reference taken in rkvenc_alloc_task() may only be dropped once
++	 * nothing else in this function can touch it.
++	 */
++	rkvenc_session_put(session);
+ }
+ 
+ int rkvenc_task_finish(struct rkvenc_session *session,

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Sun, 2 Aug 2026 12:00:00 -0500
-Subject: [PATCH 6/13] arm64: dts: rockchip: rk3588: bind the HDMI-RX audio codec to a sound card
+Subject: [PATCH 6/14] arm64: dts: rockchip: rk3588: bind the HDMI-RX audio codec to a sound card
 
 0005 gives snps_hdmirx its driver-side audio half: it registers an ASoC
 hdmi-audio-codec child device under hdmi_receiver@fdee0000 and drives the
