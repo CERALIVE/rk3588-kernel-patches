@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Sun, 10 Aug 2026 09:00:00 -0500
-Subject: [PATCH 13/23] media: rockchip: rkvenc: add gated deterministic fault injection for the negative paths
+Subject: [PATCH 13/24] media: rockchip: rkvenc: add gated deterministic fault injection for the negative paths
 
 MOTIVATION. 0014-0017 fix negative paths a working board never
 executes (supplier bind failure, refused clock enable, a session

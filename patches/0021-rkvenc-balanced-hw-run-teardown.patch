@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Tue, 11 Aug 2026 09:00:00 -0500
-Subject: [PATCH 21/23] media: rockchip: rkvenc: release only what the task actually acquired
+Subject: [PATCH 21/24] media: rockchip: rkvenc: release only what the task actually acquired
 
 MOTIVATION. Arming 0013's fail_clock_enable_once on a real Rock
 5B+ produced 'WARNING: bad unlock balance detected!' from

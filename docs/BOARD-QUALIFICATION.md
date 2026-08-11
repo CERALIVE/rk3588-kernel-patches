@@ -950,6 +950,66 @@ soak, not a register read.
 
 ---
 
+## 11. A kernel-side task failure does NOT reach the application (MPP-layer characteristic)
+
+**This is a userspace characteristic of the shipped MPP stack, not a kernel defect,
+and nothing in this repository can fix it.** It is written down here because the
+fault-injection QA asserts on `gst-launch-1.0`'s exit status, and that assertion is
+measuring `librockchip-mpp`, not the driver.
+
+Measured on a Rock 5B+ (`7.1.7-ceralive-rk3588-test`, KASAN + `PROVE_LOCKING`) with
+`librockchip-mpp1 1.5.0-1`, `gstreamer1.0-rockchip1 1.14-4`
+(`libgstrockchipmpp.so` 1.14.4), arming `fail_clock_enable_once` and running the
+standard 60-frame `videotestsrc ! mpph264enc ! h264parse ! filesink` probe.
+
+**The kernel does its job, exactly once.** With `/sys/module/rkvenc/parameters/debug`
+set to `0x20` (`DEBUG_FUNCTION`), a fault-armed 60-frame encode logs:
+
+| counter | no fault | fault armed |
+|---|---|---|
+| `rkvenc_hw_run` **enter** | 60 | **60** |
+| `rkvenc_hw_run` **leave** (success only) | 60 | **59** |
+| `hw_run failed` | 0 | **1** |
+| `wait result ret -19` (`-ENODEV` to userspace) | 0 | **1** |
+| output bytes | 1854524 | 1697683 |
+
+**Sixty dispatches for sixty frames.** The failed frame is dispatched once, fails
+once, is reported once, and is **never retried** — not by the driver (the only
+insertion into `queue->pending_list` is in `rkvenc_dev_ioctl()`, and the worker
+`list_del_init()`s a task before dispatching it and never re-adds it) and not by
+MPP (a 61st submission would be a 61st `ioctl(2)`, and there isn't one).
+
+**What userspace does with the `-ENODEV` is timing-dependent.** Uninstrumented —
+i.e. the way a real operator runs it — the result was `rc=0` with a **1,697,683-byte**
+stream, 5/5 identical, against a canonical **1,854,524**. The encode "succeeds" and
+is 8.5 % short. Adding kernel logging slows the ioctl path and MPP instead aborts
+(`rc=134`, SIGABRT) with a truncated stream; at `debug=0x30` that was 4/5 aborts.
+So `rc=134` and `rc=0` are two faces of one race inside MPP, and **neither is
+evidence about the driver**.
+
+> **Do not read an older `rc=134` as "the error propagated correctly."** The
+> attempt-7 run that recorded it also carried a live `use-after-free` in
+> `rkvenc_task_worker_default()`; the abort is at least as consistent with that
+> corruption as with clean error reporting.
+
+**Consequence for QA.** `tests/rkvenc-fault-qa.sh`'s `fail-clock-enable` case asserts
+`gst-launch-1.0` exits non-zero (`qa_encode_expect_failure`). On this MPP that
+assertion is **flaky by construction** and currently fails deterministically. The
+honest assertion for a *kernel* patch series is kernel-side and stream-side:
+
+1. `fail_clock_enable_once_consumed` incremented exactly once (already asserted);
+2. the kernel logged `hw_run failed: -5` **and** `wait result ret -19` — the driver
+   detected the fault and reported it to its caller; and
+3. the fault-armed stream is **measurably shorter** than the canonical no-fault
+   stream — the frame really was lost rather than silently substituted.
+
+Point 3 also requires `qa_encode_expect_failure()` to stop `rm`-ing its output
+before measuring it; it currently discards the one number that distinguishes "the
+frame was lost" from "nothing happened". **This change has NOT been made** — it
+alters what a released QA gate asserts and is an orchestrator decision, not a
+side-effect of a driver fix.
+
+
 ## Open risks
 
 These are **not** acceptance criteria. They are the things most likely to make the
