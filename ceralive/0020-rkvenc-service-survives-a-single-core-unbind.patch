@@ -1,0 +1,174 @@
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c
+@@ -383,6 +383,14 @@ static void rkvenc_core_unwind(struct rkvenc_dev *enc)
+ 
+ 	/* 8. Stop advertising this core to userspace before anything else: a
+ 	 * new open must not be able to reach a core that is going away.
++	 *
++	 * Clearing sub_devices[] is what refuses those opens, and it is the
++	 * REVERSIBLE half of the guard -- this core's next successful probe
++	 * republishes itself and opens start working again. The drain that
++	 * follows is the transient flavour for exactly that reason: this core
++	 * is unbinding, the SERVICE is not, so it must not be left DEAD. Only
++	 * rkvenc_service_remove() and rkvenc_shutdown(), which really are
++	 * tearing the service down, call the permanent one.
+ 	 */
+ 	if (test_and_clear_bit(RKVENC_STAGE_SERVICE_PUBLISHED, &enc->probe_stages) && srv) {
+ 		mutex_lock(&srv->session_lock);
+@@ -391,7 +399,7 @@ static void rkvenc_core_unwind(struct rkvenc_dev *enc)
+ 			clear_bit(MPP_DEVICE_RKVENC, &srv->hw_support);
+ 		}
+ 		mutex_unlock(&srv->session_lock);
+-		rkvenc_service_quiesce(srv);
++		rkvenc_service_quiesce_for_core(srv);
+ 	}
+ 
+ 	/* 7. Silence the hardware. disable_irq() waits for a handler already
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h b/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h
+@@ -434,6 +434,13 @@ struct rkvenc_grf_info {
+  * DEAD      every open file has passed through release. Only now may
+  *           supplier-owned state be torn down.
+  *
++ * DEAD is terminal and there is deliberately no path out of it: the only
++ * callers that reach it are tearing the service itself down. A single core
++ * going through its own bind/unbind cycle is NOT that, so it uses the
++ * transient flavour below, which returns a fully drained service to LIVE --
++ * while the core is away it is sub_devices[] that keeps opens out, and that
++ * pointer is repopulated by the core's next successful probe.
++ *
+  * Guarded by the EXISTING session_lock rather than a new lock of its own: that
+  * lock already serialises the session list this state decides the fate of, and
+  * a second lock over the same data is how an ordering cycle gets introduced.
+@@ -473,6 +480,7 @@ struct rkvenc_service {
+ 
+ bool rkvenc_service_is_live(struct rkvenc_service *srv);
+ void rkvenc_service_quiesce(struct rkvenc_service *srv);
++void rkvenc_service_quiesce_for_core(struct rkvenc_service *srv);
+ 
+ /* ---- MPP task ---- */
+ struct rkvenc_mpp_task {
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
+@@ -1502,7 +1502,19 @@ bool rkvenc_service_is_live(struct rkvenc_service *srv)
+ }
+ 
+ /*
+- * LIVE -> QUIESCING -> DEAD.
++ * What the shared drain body below actually managed to do. The terminal state
++ * is the CALLER's decision, and it cannot be made without this: "the service
++ * was already being torn down by somebody else" and "I drained it but a file
++ * descriptor outlived the timeout" have to lead to different places.
++ */
++enum rkvenc_drain_result {
++	RKVENC_DRAIN_NOT_OWNER,		/* another caller owns the transition */
++	RKVENC_DRAIN_TIMED_OUT,		/* sessions outlived the drain */
++	RKVENC_DRAIN_COMPLETE,		/* every open file reached release() */
++};
++
++/*
++ * LIVE -> QUIESCING, then drain. Shared by both quiesce flavours.
+  *
+  * The ordering here is the whole fix. Refusing new opens first means the set of
+  * sessions to drain stops growing; waking every waiter next means a session
+@@ -1511,19 +1523,17 @@ bool rkvenc_service_is_live(struct rkvenc_service *srv)
+  * through release() -- is it legal to tear down state those files could reach.
+  *
+  * Idempotent: a second call on an already-quiescing or dead service returns
+- * immediately, so remove() and shutdown() may both call it.
++ * NOT_OWNER immediately without touching the state, so remove(), shutdown() and
++ * a core unwind may all call it.
+  */
+-void rkvenc_service_quiesce(struct rkvenc_service *srv)
++static enum rkvenc_drain_result rkvenc_service_drain(struct rkvenc_service *srv)
+ {
+ 	struct rkvenc_session *session;
+ 
+-	if (!srv)
+-		return;
+-
+ 	mutex_lock(&srv->session_lock);
+ 	if (srv->state != RKVENC_SRV_LIVE) {
+ 		mutex_unlock(&srv->session_lock);
+-		return;
++		return RKVENC_DRAIN_NOT_OWNER;
+ 	}
+ 	srv->state = RKVENC_SRV_QUIESCING;
+ 	list_for_each_entry(session, &srv->session_list, service_link)
+@@ -1544,16 +1554,72 @@ void rkvenc_service_quiesce(struct rkvenc_service *srv)
+ 
+ 	if (!wait_event_timeout(srv->quiesce_wait,
+ 				rkvenc_service_sessions_gone(srv),
+-				msecs_to_jiffies(RKVENC_QUIESCE_TIMEOUT_MS)))
++				msecs_to_jiffies(RKVENC_QUIESCE_TIMEOUT_MS))) {
+ 		dev_warn(srv->dev,
+ 			 "quiesce timed out with %u session(s) still open; refusing to release service state\n",
+ 			 srv->session_count);
++		return RKVENC_DRAIN_TIMED_OUT;
++	}
++
++	return RKVENC_DRAIN_COMPLETE;
++}
++
++/*
++ * PERMANENT teardown: the service itself is going away. LIVE -> QUIESCING ->
++ * DEAD, and DEAD is where it stays -- srv is devm-allocated and about to be
++ * freed, or the box is powering off, so there is nothing left to come back to.
++ * For service remove() and shutdown() ONLY.
++ */
++void rkvenc_service_quiesce(struct rkvenc_service *srv)
++{
++	if (!srv)
++		return;
++
++	if (rkvenc_service_drain(srv) == RKVENC_DRAIN_NOT_OWNER)
++		return;
+ 
+ 	mutex_lock(&srv->session_lock);
+ 	srv->state = RKVENC_SRV_DEAD;
+ 	mutex_unlock(&srv->session_lock);
+ }
+ 
++/*
++ * TRANSIENT teardown: one core is unbinding, the service is not. Same drain --
++ * in-flight work still has to be aborted and every file descriptor still has to
++ * be waited for before the core frees the IRQ and the mappings those sessions
++ * can reach -- but the service goes back to LIVE once the drain has actually
++ * completed, because it has not gone anywhere.
++ *
++ * PRECONDITION: the caller has already cleared sub_devices[MPP_DEVICE_RKVENC]
++ * under session_lock. That pointer, not `state`, is what keeps new opens out
++ * while the core is absent, and unlike `state` it is REVERSIBLE -- the core's
++ * next successful probe repopulates it. Leaving the service DEAD here instead
++ * is what made a single core's unbind kill /dev/mpp_service for the rest of the
++ * boot: nothing anywhere restores LIVE, so every later open() saw -ENODEV even
++ * after the core had re-probed cleanly and republished itself.
++ *
++ * A drain that TIMED OUT still goes DEAD. Sessions that outlived it are still
++ * pointing at the core that is being torn down, and admitting one more
++ * submission from them is exactly the use-after-free the drain exists to
++ * prevent; refusing to come back is the safe direction.
++ */
++void rkvenc_service_quiesce_for_core(struct rkvenc_service *srv)
++{
++	enum rkvenc_drain_result res;
++
++	if (!srv)
++		return;
++
++	res = rkvenc_service_drain(srv);
++	if (res == RKVENC_DRAIN_NOT_OWNER)
++		return;
++
++	mutex_lock(&srv->session_lock);
++	srv->state = (res == RKVENC_DRAIN_COMPLETE) ? RKVENC_SRV_LIVE
++						    : RKVENC_SRV_DEAD;
++	mutex_unlock(&srv->session_lock);
++}
++
+ int rkvenc_service_remove(struct platform_device *pdev)
+ {
+ 	struct rkvenc_service *srv = platform_get_drvdata(pdev);
