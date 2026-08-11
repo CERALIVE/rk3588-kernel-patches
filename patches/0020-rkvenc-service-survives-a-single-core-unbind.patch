@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Mon, 10 Aug 2026 21:00:00 -0500
-Subject: [PATCH 20/22] media: rockchip: rkvenc: keep the service usable across a single core's unbind
+Subject: [PATCH 20/23] media: rockchip: rkvenc: keep the service usable across a single core's unbind
 
 MOTIVATION. On a real Rock 5B+, unbinding ONE rkvenc core and
 binding it back left /dev/mpp_service returning -ENODEV to every

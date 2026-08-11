@@ -1,0 +1,41 @@
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
+@@ -928,6 +928,18 @@ void rkvenc_task_worker_default(struct kthread_work *work)
+ 		rkvenc_task_finish(session, mpp_task);
+ 
+ 		set_bit(enc->core_id, &queue->core_idle);
++
++		/*
++		 * That call dropped the reference this core held, and the
++		 * waiter it woke on the way out may already have dropped the
++		 * other one -- in which case the task was kfree()d inside it.
++		 * The timeout arm below reads mpp_task->state, so the pointer
++		 * has to die HERE. Nothing reachable is lost: rkvenc_hw_irq()
++		 * and rkvenc_task_timeout_work() both claim the task with
++		 * test_and_set_bit(TASK_STATE_HANDLE), so TASK_STATE_IRQ and
++		 * TASK_STATE_TIMEOUT are never both set on one task.
++		 */
++		mpp_task = NULL;
+ 	}
+ 
+ 	/* Process timed-out tasks */
+@@ -1007,9 +1019,17 @@ void rkvenc_task_worker_default(struct kthread_work *work)
+ 				atomic_inc(&pending_task->abort_request);
+ 				set_bit(TASK_STATE_DONE, &pending_task->state);
+ 				set_bit(target->core_id, &queue->core_idle);
++				/*
++				 * Sets TASK_STATE_DONE, wakes task->wait and
++				 * drops the reference this core held -- all
++				 * three on every path, including the one that
++				 * skips the hardware teardown -- so the task
++				 * may be freed by the time it returns. The
++				 * waiter is already awake and nothing below
++				 * may touch pending_task again.
++				 */
+ 				rkvenc_task_finish(pending_task->session,
+ 						  pending_task);
+-				wake_up(&pending_task->wait);
+ 			}
+ 		}
+ 	}
