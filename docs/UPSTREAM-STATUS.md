@@ -65,7 +65,7 @@ against a source**, not the date the patch was last touched.
 
 ## Current series members
 
-The series has nineteen members. `0004` is a deliberate ordinal gap — upstream never
+The series has twenty-one members. `0004` is a deliberate ordinal gap — upstream never
 published one — and is not a row here for the same reason it is not a patch.
 
 Six of them (`0013`–`0018`) are **Wave-6 first-party quality patches**: one is test
@@ -88,6 +88,19 @@ hardware, this time by fault injection rather than a plain encode. It differs fr
 `0019` in what it fixes: `0019` repairs `0001` as imported, whereas `0020` repairs
 **`0014`'s own** service lifetime model, which drove a permanent `DEAD` state from a
 transient single-core unbind. It therefore retires with `0014`, not with `0001`.
+
+`0021` and `0022` are the third and fourth **Wave-8 first-party fixes**, and they
+exist for a reason worth stating plainly: **`0015` and `0016` were marked done
+before anything had run on a board, and the first real drill against them failed.**
+Both were root-caused from that drill's transcripts. `0021` fixes an
+acquire/release asymmetry between `rkvenc_hw_run()` and `rkvenc_task_finish()` that
+`0015` made *reachable* — by propagating a clock-enable failure that used to be
+discarded — without creating it; the unconditional release is `0001`'s. `0022`
+completes `0016`: four of the eight cases in `tests/expected-errno.tsv` still did
+not hold on hardware, and reading the same paths to find out why turned up two more
+bounds defects of the same shape that no case covers. Neither patch changes a test
+expectation. **One drill case, `valid-after-failures`, still fails after both, for a
+reason that is neither patch's** — see [§ `0022`](#0022--what-it-fixes-what-it-does-not-and-the-one-case-still-red).
 
 Three of them (`0010`–`0012`) are **unmerged lore postings**, a provenance variant
 distinct from `0007`'s merged-commit backport: they have no commit id, none is
@@ -124,6 +137,9 @@ the marker for a given patch is written down, per patch, in
 | `0019` rkvenc worker lock context + dma-buf API — **root-caused on REAL hardware, fix `UNVALIDATED`** | `ceralive/` lane — **first-party CeraLive**. Never submitted. Fixes two defects in the driver `0001` imports, so its upstream position is the `0001` row's. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — same structural reason as `0014`: there is no upstream VEPU580 driver whose locking could be fixed instead | Only if `0001` retires wholesale. If upstream rkvenc ever lands, re-check both defects against it before assuming they are gone — the dma-buf half is an API-era mistake any downstream port of this driver will share | 2026-08-10 | **Found by a REAL Rock 5B+ KASAN+LOCKDEP boot during a plain 1080p encode — no fault injection, no unbind.** Two INDEPENDENT defects, both `0001`'s as imported. (1) `rkvenc_task_worker_default()` holds `queue->running_lock` via `spin_lock_irqsave()` and, still holding it with interrupts off, takes `queue->pending_lock` — which `0001` declares a `struct mutex`. That is `BUG: sleeping function called from invalid context at kernel/locking/mutex.c:623` plus lockdep's `[ BUG: Invalid wait context ]` for `{3:3}` outside `{4:4}`, and untreated it can schedule with interrupts disabled. `pending_lock` becomes a `spinlock_t` at all three of its sites; `running_lock` stays held across the dequeue **on purpose**, because claiming an idle core and taking the task that will occupy it must be one step or two workers can claim the same `core_id`. Neither `pending_lock` section sleeps or is more than an O(1) list operation. (2) `rkvenc_dma_import_fd()` and `rkvenc_dma_release_buffer()` call the LOCKED dma-buf entry points, which since the dynamic-importer split assert the caller holds `dmabuf->resv` — `v7.1.7` `drivers/dma-buf/dma-buf.c:1179` is `dma_resv_assert_held(attach->dmabuf->resv)`. rkvenc attaches with plain `dma_buf_attach()` and registers no `dma_buf_attach_ops`, so it is a static importer and every import WARNed; the calls move to `dma_buf_map_attachment_unlocked()` / `dma_buf_unmap_attachment_unlocked()`. **The two are unrelated** — the dma-buf WARNING fires in ioctl context on a task that never touches either queue lock; the captured log only made them look coupled because console output from the two CPUs interleaved. **No lockdep suppression of any kind.** Runtime re-test on the debug slot is the confirming evidence and is pending |
 
 | `0020` rkvenc service survives a single core's unbind — **root-caused on REAL hardware, fix `UNVALIDATED`** | `ceralive/` lane — **first-party CeraLive**. Never submitted. It fixes `0014`'s own service lifetime model, not imported code, so unlike `0019` its upstream position is `0014`'s row and not `0001`'s. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — the LIVE/QUIESCING/DEAD model this corrects is `0014`'s invention; mainline has no rkvenc service to have gotten it right or wrong | Retire together with `0014`. It is not separable: with `0014` gone there is no service state machine left to keep reversible | 2026-08-10 | **Found by REAL Rock 5B+ fault injection: two bind-fault cases unbound core 0, re-bound it cleanly, watched the kernel print its own `rkvenc core 0 probe success` — and then could not `open("/dev/mpp_service")` at all, for the rest of the boot.** `0014`'s `rkvenc_core_unwind()` ended its first step with `rkvenc_service_quiesce(srv)`, which drives `srv->state` `LIVE -> QUIESCING -> DEAD`; `srv->state` is assigned in exactly three places in the whole driver — `LIVE` once in `rkvenc_service_probe()`, then `QUIESCING` and `DEAD` inside the quiesce — so **nothing restores `LIVE`**, and `rkvenc_dev_open()`'s `state != RKVENC_SRV_LIVE` half kept refusing after the sub-device came back. A single core's bind/unbind is transient; the state it drove is terminal. The drain body is factored out as `rkvenc_service_drain()` and the terminal state becomes the caller's: `rkvenc_service_quiesce()` still ends `DEAD` for `rkvenc_service_remove()` and `rkvenc_shutdown()`, while the unwind calls the new `rkvenc_service_quiesce_for_core()`, which returns a **fully drained** service to `LIVE`. **The quiesce is NOT removed** — a bare removal would drop the abort-and-drain that lets an in-flight waiter reach `release()` before the core frees its IRQ, which is exactly what `0014` added and what `tests/rkvenc-unbind.sh`'s inflight and held-open-FD cases prove. **The refusal is NOT weakened**: while the core is absent `!sub_devices[MPP_DEVICE_RKVENC]` still fails every open with `-ENODEV`, and that guard — unlike `state` — is reversible, because the core's next successful probe repopulates it. A drain that TIMES OUT still ends `DEAD`, since sessions that outlived it still point at the departing core. No test expectation changes: `tests/rkvenc-fault-qa.sh` already asserted the correct behaviour with its post-re-bind `qa_encode`, and `tests/rkvenc-unbind.sh` unbinds the SERVICE node — whose own `remove()` quiesces permanently and correctly — which is why it never caught this |
+
+| `0021` rkvenc balanced hw_run teardown — **root-caused on REAL hardware, fix `UNVALIDATED`** | `ceralive/` lane — **first-party CeraLive**. Never submitted. The unconditional release it fixes is `0001`'s as imported, so like `0019` its upstream position is the `0001` row's; `0015` only made the failing acquire reachable. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — same structural reason as `0014`: there is no upstream VEPU580 driver whose task lifecycle could be fixed instead | Only if `0001` retires wholesale. If upstream rkvenc ever lands, re-check the asymmetry against it rather than assuming it is gone — an acquire in one function released by another is a shape any downstream port of this driver can inherit | 2026-08-11 | **Found by REAL Rock 5B+ fault injection: `tests/rkvenc-fault-qa.sh --case fail-clock-enable` produced `WARNING: bad unlock balance detected!` from `rkvenc_task_finish+0x98`, `DEBUG_RWSEMS_WARN_ON(tmp < 0)` with the reset group's rwsem count at `0xffffffffffffff00`, and `Runtime PM usage count underflow!` — and those counts stay wrong for the rest of the boot, not just for that task.** `rkvenc_hw_run()` acquires two runtime-PM references, a wakeup source, three clocks and the reset group's read lock, and unwinds every one of them itself: five paths reach its error labels and two more return outright. `rkvenc_task_finish()` released the same set **unconditionally**, guarded only by `mpp->reset_group` being non-NULL — a static device-topology fact, true on every board that wires the resets, that says nothing about what *this* task did. A task `hw_run` refused still arrives there through the worker's own `run_ret` failure path, so **every** early exit double-released: an `up_read()` with no matching `down_read()`, `rkvenc_hw_clk_off()` on clocks that were never enabled, and PM references `hw_run` had already put. **This is a production path, not a test-only one** — the injected fault sits exactly where a genuine `clk_prepare_enable()` or PM-resume failure lands, which is why `0013` placed it there. The fix is one task-state bit, `TASK_STATE_HW_HELD`: set immediately after the last acquire and cleared at `err_pm`, the common tail of all three error labels, so it is true exactly when `hw_run` returned holding the set; `rkvenc_task_finish()` takes it with `test_and_clear_bit()`, which also makes the teardown single-shot so an IRQ and a timeout racing to finish one task release once. The bit is set **before** the timeout work is scheduled and before the start register is written, because either can hand the task to `rkvenc_task_finish()` on another CPU immediately. A refused task is additionally marked `abort_request` before it is woken, so a `POLL` waiter takes `rkvenc_wait_result()`'s `-ENODEV` arm instead of being handed zeroed status registers as a clean encode. **`0015`'s error paths are NOT changed** — they are correct in isolation, and the asymmetry was always on the release side. **`0014`'s quiesce/drain and `0020`'s per-core requiesce are untouched.** The IOMMU activate/deactivate pair is deliberately left alone: `hw_run` already owns both sides of it. No test expectation changes — `rkvenc-fault-qa.sh` already asserted the correct behaviour with its post-fault `qa_encode` |
+| `0022` rkvenc ioctl request coverage and element bounds — **root-caused on REAL hardware, fix `UNVALIDATED`** | `ceralive/` lane — **first-party CeraLive**. Never submitted. It completes `0016`, which is itself a fix to the UAPI parser `0001` imports, so its upstream position is the `0001` row's. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — same structural reason as `0014` | Retire together with `0016`, i.e. only if `0001` retires wholesale. Read [§ `0001`](#0001--do-not-retire-on-rkvenc-landing) | 2026-08-11 | **Found by REAL Rock 5B+ `rkvenc-invalid-ioctl --all-malformed`, which failed 4 of 8 against `tests/expected-errno.tsv` — so `0016` did not finish the job, and being marked done proved nothing.** Three of the four were driver defects. (1) `class-overrun` was **accepted with `rc=0`**: a register request is SPLIT across every class it overlaps and each part clamped to that class's range, so bytes no class owns were silently discarded rather than refused — and the register map has real holes (class `BASE` ends at `0x0058`, class `PIC` starts at `0x0280`) and a hard end at `0x5354`. `0016` bounded the *copy* in `rkvenc_result()`, which is the right fix for the heap over-read, but that runs at `POLL` time and nothing rejected the request at submit time. (2) `trans-table-odd-size` was accepted because `0016` bounded `INIT_TRANS_TABLE` by **bytes** but not by **alignment**: `2*N+1` still divides to `N` whole entries, so an odd size well inside `sizeof(trans_table)` passed and left one `u16` half written while `trans_count` claimed it whole. (3) `bad-user-pointer` returned `-EIO` because the register-write `copy_from_user()` still did — an I/O-error claim about the hardware for what is an unreadable *user address*; `0016` fixed the `copy_to_user()` twin and missed this one. Reading the same paths for the cause turned up **two more of the same shape that no drill case covers**: `w_req_cnt`/`r_req_cnt` accumulate across every message in one ioctl and were unbounded, so two write messages each spanning all nine classes wrote 18 parts into a 9-element array inside the `kzalloc`'d task; and `rkvenc_extract_reg_offset_info()` bounded ELEMENTS while copying BYTES — the identical mismatch `0016` fixed in `INIT_TRANS_TABLE` — so `8*128 + 7` bytes passed the count check and overran `elem[]` by seven, partial trailing element included. `req_fully_covered()` compares the summed clamped parts with the request's own size; `reg_msg[]`'s classes are **disjoint**, so equality is an exact containment test that assumes nothing about declaration order. **The per-class split, the clamp, and all of `0016`'s shape and window checks are unchanged** — a request lying wholly inside the classes it names behaves exactly as before, which is what `librockchip-mpp` sends, one request per class. The inclusive/half-open mismatch between `req_over_class()` and `rkvenc_result()`'s class lookup is **pre-existing and deliberately not touched**. **`valid-after-failures` still fails and this patch does not fix it** — read [§ `0022`](#0022--what-it-fixes-what-it-does-not-and-the-one-case-still-red). No test expectation changes: `expected-errno.tsv` already demanded these values |
 
 ### `0001` — do not retire on rkvenc landing
 
@@ -417,6 +433,83 @@ hands MPP cached memory it will not synchronise, and aliasing the CMA heap caps 
 below 1080p (32 MiB pool fragmenting to a ~1.9 MiB largest run against a ~3.1 MiB
 1080p NV12 frame). The pipeline's KNOWN ISSUE names it a corruption trap and used it
 as a diagnostic instrument only.
+
+### `0022` — what it fixes, what it does not, and the one case still red
+
+`tests/rkvenc-invalid-ioctl.c --all-malformed` reported this against
+`tests/expected-errno.tsv` on a real Rock 5B+, on the series through `0020`:
+
+```
+FAIL class-overrun:        expected EINVAL, got OK (0)
+FAIL trans-table-odd-size: expected EINVAL, got OK (0)
+FAIL bad-user-pointer:     expected EFAULT, got EIO (5)
+FAIL valid-after-failures: expected OK,     got EINVAL (22)
+ok   offset-size-wrap / undersized-word / unaligned-offset / invalid-metadata -> EINVAL
+```
+
+`0022` addresses the first three. **It does not address the fourth**, and the
+reason matters more than the symptom, so it is written down here rather than left
+for the next drill to rediscover.
+
+**The four `ok` lines were passing for the wrong reason.** None of
+`offset-size-wrap`, `undersized-word`, `unaligned-offset` or `invalid-metadata`
+was being *rejected* by a bounds check. Each one produces a submission that
+allocates no class-`PIC` register buffer, and `rkvenc_task_get_format()` opens
+with `if (!class_reg || !class_size) return -EINVAL;` — because
+`hw->fmt_reg.class` is `RKVENC_CLASS_PIC` and that is where the format bit lives.
+So the expected `EINVAL` was arriving from a *format lookup*, several steps past
+the check that should have produced it. `0022` makes all four fail at the point
+that names them, which is the difference between a test that passes and a test
+that means something. `invalid-metadata` in particular was reaching
+`rkvenc_extract_reg_offset_info()` and being **accepted** — that function had no
+whole-element check at all, so a 13-byte blob was copied as one whole 8-byte
+element plus five bytes of the next.
+
+**Why `valid-after-failures` is red, and why it is not a driver defect.** The case
+issues one `MPP_CMD_SET_REG_WRITE` at `CLASS_BASE_S` for the whole of class
+`BASE`, and asserts `OK`. That request is well formed, and after `0022` it passes
+every bounds check — and then `rkvenc_task_get_format()` rejects it by exactly the
+mechanism above: a submission that writes only class `BASE` allocates no class
+`PIC` buffer, and the format register is in `PIC`. **The harness's "well-formed
+request" is not a well-formed task.** Real `librockchip-mpp` always programs class
+`PIC`; a task without it has no format, and `rkvenc2_setup_task_id()` immediately
+after would dereference `task->reg[RKVENC_CLASS_PIC].data` unconditionally, so
+`get_format()` returning `-EINVAL` there is load-bearing, not incidental.
+
+Two possible readings, and the honest one is the second:
+
+- *The driver should accept a partial register write.* It should not. The format
+  drives FD translation and the DCHS id write; a task with no `PIC` class is not a
+  task the hardware can be given.
+- *The harness case should submit a complete task.* Yes — the fix is to add a
+  second `MPP_CMD_SET_REG_WRITE` covering class `PIC` (`base_s = 0x0280`,
+  `size = 0x03f4 - 0x0280 + 4`) alongside the existing class-`BASE` one.
+
+That change is **deliberately not made here**, for a reason that is not
+squeamishness: it changes what runs on the board. Today the case is rejected
+before submission, so nothing is queued. A complete task *is* queued, reaches the
+hardware with all-zero registers, and is retired by the watchdog and a hardware
+reset. That is a real behavioural change to a drill, it cannot be verified from
+source, and this repository does not land board-behaviour claims it has not run.
+It is also not a new risk — `class-overrun` submits and runs exactly such a task
+today, which is precisely why it returned `OK` — but the decision belongs to
+whoever runs the next drill, with the board in front of them.
+
+Until then: `valid-after-failures` is expected to stay red, `0022` is not the
+reason, and a green `--all-malformed` is **not** the acceptance criterion for
+either `0021` or `0022`. The criterion is the other seven cases plus the
+`fail-clock-enable` transcript.
+
+**Two bounds defects in this patch are not covered by any drill case**, and will
+not be proven by re-running one: the `w_req_cnt`/`r_req_cnt` overflow needs two
+class-spanning write messages in one ioctl, and the
+`rkvenc_extract_reg_offset_info()` byte/element overrun needs `8*128 + 7` bytes of
+offset metadata. Neither is in `expected-errno.tsv`. They were found by reading
+the paths the failing cases run through, they are fixed on the strength of that
+reading, and they stay `UNVALIDATED` in the strict sense — a KASAN board running
+the existing drill will not exercise them. Adding two cases for them is the
+obvious follow-up and is not done here, for the same reason as above: a new drill
+case is a claim about a board.
 
 ### I2S MCLK gate clocks — skipped, known regression on Rock 5B+
 

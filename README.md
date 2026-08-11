@@ -32,6 +32,16 @@ backported patches continue the same counter from `0006`:
 | `0010` | naneng-combphy RTERM erratum | `backports/` | **Unmerged lore posting** (`PATCHv1`, Shawn Lin). Forces RX-termination detect ready in `PHYREG26` so a PCIe peer's termination is seen at critical temperatures. No commit id exists and none is claimed. |
 | `0011` | dw-hdmi-qp N/CTS helper | `backports/` | **Unmerged lore posting** (standalone `PATCHv3`, Simon Wright, `Reviewed-by`+`Tested-by`). Drops dw-hdmi-qp's private audio N/CTS table, which disagrees with the shared helper at several TMDS rates, for `drm_hdmi_acr_get_n_cts()`. |
 | `0012` | dw-hdmi-qp audio `-EOPNOTSUPP` | `backports/` | **Unmerged lore posting** (`PATCHv1`, Detlev Casanova, two independent `Tested-by`). Stops the audio hooks returning `-ENODEV` with no mode set, which ASoC logs as a fault — hundreds of lines on an idle board, in the same dmesg buffer `0005`/`0006` are diagnosed from. |
+| `0013` | rkvenc gated fault injection | `ceralive/` | **Test instrumentation, absent from production.** Three Kconfig symbols and six one-shot debugfs controls under `/sys/kernel/debug/rkvenc-test/`, each with a read-only `*_consumed` counter so a harness can tell a fault that fired from a knob the driver ignored. |
+| `0014` | rkvenc teardown and unwind | `ceralive/` | Six defects in `0001`'s teardown: a session freed on the release drain's timeout path while the worker still uses it, that drain sleeping under the lock its own completion needs, a dangling CCU list entry into freed memory, `remove()` clearing almost nothing it published, a devm service torn down under open FDs, and a devm IRQ live across `remove()`. |
+| `0015` | rkvenc resource errors | `ceralive/` | Six discarded return values in `0001`: clock, IOMMU and reset acquisition failures were logged and swallowed — turning a `-EPROBE_DEFER` into a permanently bound device with no clock — and `clk_prepare_enable()`, `pm_runtime_get_sync()`, `rkvenc_hw_finish()` and `rkvenc_hw_reset()` returns were thrown away. |
+| `0016` | rkvenc ioctl bounds | `ceralive/` | Six UAPI bounds defects, the worst an **information disclosure**: `rkvenc_result()` located a read request's class by its start offset only, then copied the caller's own claimed size, reading past a `kmalloc`'d buffer into the kernel heap and handing it to userspace. Also wrap/underflow/alignment, a byte/element mismatch, and every failure collapsed to `-ENOMEM`. |
+| `0017` | HDMI-RX audio lifecycle | `ceralive/` | Four defects in `0005`'s audio path: an ineffective `cancel_delayed_work()` against a self-rescheduling worker, an ASoC-card/`work_lock`/DAPM lock cycle, discarded `clk_set_rate()` returns, and a 768 kHz rate CEA-861 cannot produce. |
+| `0018` | truthful dma-heap partial registration | `ceralive/` | Not a defect fix. `dma_heap_add()` has no removal counterpart at this base, so a failed second registration leaves the first heap live for the boot. This says so instead of hiding it, and adds an injection seam so the failure is reachable from KUnit. **No atomicity is claimed.** |
+| `0019` | rkvenc worker lock context + dma-buf API | `ceralive/` | **Root-caused on a REAL Rock 5B+**, from a plain unfaulted encode under KASAN+LOCKDEP. A `struct mutex` taken inside `spin_lock_irqsave()`, and the *locked* dma-buf entry points called by a static importer that holds no `resv`. |
+| `0020` | rkvenc service survives a single core's unbind | `ceralive/` | **Root-caused on a REAL Rock 5B+**, by fault injection. `0014`'s own service state machine had no path back to `LIVE`, so one core's transient unbind left `/dev/mpp_service` returning `-ENODEV` for the rest of the boot — after the core had re-probed successfully. |
+| `0021` | rkvenc balanced `hw_run` teardown | `ceralive/` | **Root-caused on a REAL Rock 5B+**, by fault injection. `rkvenc_hw_run()` unwinds everything it acquired on failure, but `rkvenc_task_finish()` released the same set unconditionally — so a refused task gave back an rwsem it never took (`bad unlock balance`), disabled clocks that were never on, and underflowed the runtime-PM count for the boot. |
+| `0022` | rkvenc ioctl request coverage and element bounds | `ceralive/` | **Root-caused on a REAL Rock 5B+**, from an ioctl drill that `0016` should have made green and did not. A register request naming bytes no class owns was clamped and accepted instead of refused; `INIT_TRANS_TABLE` bounded bytes but not alignment; an unreadable user buffer reported `-EIO`. Reading the same paths found two unbounded counts and a byte/element overrun no drill case covers. |
 
 Plus [`overlays/rockchip-rk3588-rkvenc-mpp.dts`](overlays/rockchip-rk3588-rkvenc-mpp.dts),
 the device-tree overlay the encoder needs, carried verbatim.
@@ -52,11 +62,17 @@ written down, the verdict gets its own document. So far:
   teardown, and because its device-tree half enables the sound card on Orange Pi 5
   Plus only, which would silently leave Rock 5B+ with no capture card.
 
-Two members carry an **`UNVALIDATED`** marker (`0008` and `0009`). What a real
-board has to demonstrate before that marker can come off — every leg, every
-command, on both boards — is
-[`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md). Every item there is
-deliberately unchecked: the checklist has been written, and it has not been run.
+Several members carry an **`UNVALIDATED`** marker — `0008` and `0009` on Orange Pi
+5+, and the whole `0013`–`0022` block to varying degrees. What a real board has to
+demonstrate before a marker comes off — every leg, every command, on both boards —
+is [`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md), and what is
+already proven, per patch, is the **Last checked** column in
+[`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md).
+
+**A patch being landed is not a patch being verified.** `0015` and `0016` were both
+ticked before anything ran on hardware, and the first real drill against them
+failed — `0021` and `0022` are what came out of that. Read the marker, not the
+merge.
 
 ## Layout
 

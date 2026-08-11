@@ -1,0 +1,179 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: CeraLive <dev@ceralive.tv>
+Date: Tue, 11 Aug 2026 09:00:00 -0500
+Subject: [PATCH 21/22] media: rockchip: rkvenc: release only what the task actually acquired
+
+MOTIVATION. Arming 0013's fail_clock_enable_once on a real Rock
+5B+ produced 'WARNING: bad unlock balance detected!' from
+rkvenc_task_finish(), DEBUG_RWSEMS_WARN_ON with the reset group's
+rwsem count at 0xffffffffffffff00, and 'Runtime PM usage count
+underflow!' -- for the rest of the boot, not just for that task.
+rkvenc_hw_run() acquires two runtime-PM references, a wakeup
+source, three clocks and the reset group's read lock, and unwinds
+every one of them itself on failure; rkvenc_task_finish() released
+the same set UNCONDITIONALLY, guarded only by mpp->reset_group
+being non-NULL -- a static device-topology fact that says nothing
+about what this task did. A refused task still reaches
+rkvenc_task_finish() through the worker's own failure path, so
+every early exit double-released. The injected fault only makes it
+reachable on demand: a genuine clk_prepare_enable() or PM-resume
+failure takes exactly the same path.
+
+BEHAVIOUR. One task-state bit, TASK_STATE_HW_HELD, records the
+acquisition. rkvenc_hw_run() sets it immediately after the last
+acquire and clears it at err_pm, the common tail of all three of
+its error labels, so the bit is true exactly when the function
+returned holding the set. rkvenc_task_finish() takes it with
+test_and_clear_bit() and skips the whole hardware teardown when it
+was not set -- which also makes the teardown single-shot, so an IRQ
+and a timeout racing to finish one task release once. The bit is
+set BEFORE the timeout work is scheduled and before the start
+register is written, because either can hand the task to
+rkvenc_task_finish() on another CPU immediately. A task hw_run
+refused is now also marked abort_request before it is woken, so a
+POLL waiter takes rkvenc_wait_result()'s -ENODEV arm instead of
+being handed zeroed status registers as a clean encode.
+
+NON-GOALS. Does not change what rkvenc_hw_run() acquires, the order
+it acquires in, or what its own unwinds release -- 0015's error
+paths are correct in isolation and are untouched. Does not weaken
+0014's quiesce/drain or 0020's per-core requiesce. Does not touch
+the IOMMU activate/deactivate pair, which hw_run already owns on
+both sides. No new lock, no new wait, and no fault-injection knob.
+
+PROVENANCE. First-party CeraLive fix. The release half is 0001's as
+imported; 0015 made the failing acquire reachable by propagating
+returns that were previously discarded, and did not create the
+asymmetry. No upstream counterpart exists.
+
+EVIDENCE POINTER. Root-caused from a REAL Rock 5B+
+tests/rkvenc-fault-qa.sh --case fail-clock-enable transcript. That
+harness already asserts the correct behaviour with its post-fault
+qa_encode, so no test expectation changes: the driver was wrong,
+not the test. Build-clean; hardware re-verification is pending.
+See docs/BOARD-QUALIFICATION.md.
+
+First-party: authored by CeraLive against v7.1.7, with no upstream
+counterpart in rockchip-rk3588-mainline-patches. The source of record is
+ceralive/0021-rkvenc-balanced-hw-run-teardown.patch; patches/ is generated from it by
+scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the
+same added/removed-line parity the upstream lane gets.
+
+NOT upstream-bound: this targets the CeraLive device tree only and is not a
+submission to linux-media, linux-rockchip or the fork parent. No Signed-off-by
+is added, because a DCO assertion belongs to whoever actually submits it.
+
+---
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.c
+@@ -546,6 +546,16 @@ int rkvenc_hw_run(struct rkvenc_dev *enc, struct rkvenc_mpp_task *mpp_task)
+ 	if (enc->reset_group)
+ 		down_read(&enc->reset_group->rw_sem);
+ 
++	/*
++	 * Everything rkvenc_task_finish() releases is now held: both runtime-PM
++	 * references, the wakeup source, the three clocks, and -- on a board
++	 * that has one -- the reset group's read lock. Recorded HERE, before
++	 * the timeout work is scheduled and before the start register is
++	 * written, because either of those can hand this task to
++	 * rkvenc_task_finish() on another CPU the instant it happens.
++	 */
++	set_bit(TASK_STATE_HW_HELD, &mpp_task->state);
++
+ 	/* Match BSP: ensure IOMMU is attached and fault handler is active */
+ 	ret = rkvenc_iommu_attach(enc->iommu_info);
+ 	if (ret) {
+@@ -626,6 +636,14 @@ err_unlock:
+ 		up_read(&enc->reset_group->rw_sem);
+ 	rkvenc_hw_clk_off(enc);
+ err_pm:
++	/*
++	 * The common tail of all three unwinds, so one clear covers every one
++	 * of them -- including the two that jump straight here and never took
++	 * the reset-group lock at all. Past this point this function has given
++	 * back everything it acquired, and rkvenc_task_finish() must not give
++	 * any of it back a second time.
++	 */
++	clear_bit(TASK_STATE_HW_HELD, &mpp_task->state);
+ 	pm_relax(enc->dev);
+ 	pm_runtime_mark_last_busy(enc->dev);
+ 	pm_runtime_put_autosuspend(enc->dev);
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h b/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h
+@@ -228,6 +228,15 @@ enum {
+ 	TASK_STATE_FINISH	= 6,
+ 	TASK_STATE_DONE		= 7,
+ 	TASK_STATE_ABORT	= 8,
++	/*
++	 * Set by rkvenc_hw_run() only once every resource rkvenc_task_finish()
++	 * releases is actually held, and cleared again on each of its error
++	 * unwinds. It is the ONLY thing that authorises the teardown half of
++	 * that pair: a task hw_run REFUSED still reaches rkvenc_task_finish()
++	 * through the worker, and the release side has no other way to tell a
++	 * task that ran from one that never started.
++	 */
++	TASK_STATE_HW_HELD	= 9,
+ };
+ 
+ /* ---- Clock info ---- */
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
+@@ -861,6 +861,16 @@ void rkvenc_task_worker_default(struct kthread_work *work)
+ 				dev_err(target->dev,
+ 					"hw_run failed: %d, failing task %d\n",
+ 					run_ret, pending_task->task_index);
++				/*
++				 * The task never reached the hardware, so its
++				 * class registers still hold what userspace
++				 * wrote and its status words are zeros. Marked
++				 * aborted BEFORE it is woken, so a POLL waiter
++				 * takes rkvenc_wait_result()'s -ENODEV arm
++				 * instead of being handed those zeros as a
++				 * clean encode.
++				 */
++				atomic_inc(&pending_task->abort_request);
+ 				set_bit(TASK_STATE_DONE, &pending_task->state);
+ 				set_bit(target->core_id, &queue->core_idle);
+ 				rkvenc_task_finish(pending_task->session,
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_task.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_task.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_task.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_task.c
+@@ -83,6 +83,27 @@ int rkvenc_task_finish(struct rkvenc_session *session,
+ 	struct rkvenc_taskqueue *queue = mpp->queue;
+ 	int ret;
+ 
++	/*
++	 * EVERY release below is conditional on this task having ACQUIRED, and
++	 * that is the whole point. Five unwind paths reach rkvenc_hw_run()'s
++	 * error labels and two more return outright, and a task it refused
++	 * still arrives here through the worker's own failure path -- so an
++	 * unconditional teardown gave back a reset-group read
++	 * lock that was never taken (`bad unlock balance`, rwsem count
++	 * underflowing to 0xffffffff_ffffff00 for the rest of the boot),
++	 * disabled clocks that were never enabled, and dropped runtime-PM
++	 * references hw_run had already dropped itself ("Runtime PM usage count
++	 * underflow!"). `mpp->reset_group` cannot decide it: that is a static
++	 * device-topology fact, true on every board that wires the resets, and
++	 * says nothing about what THIS task did.
++	 *
++	 * test_and_clear makes it single-shot as well, so a second call on the
++	 * same task -- an IRQ and a timeout racing to finish it -- releases
++	 * once.
++	 */
++	if (!test_and_clear_bit(TASK_STATE_HW_HELD, &task->state))
++		goto done;
++
+ 	/*
+ 	 * A failed readback means the status registers userspace is about to be
+ 	 * handed are STALE, not merely unread -- so the error is recorded on the
+@@ -118,6 +139,7 @@ int rkvenc_task_finish(struct rkvenc_session *session,
+ 	if (mpp->iommu_info && mpp->iommu_info->pdev)
+ 		pm_runtime_put_sync(&mpp->iommu_info->pdev->dev);
+ 
++done:
+ 	set_bit(TASK_STATE_FINISH, &task->state);
+ 	set_bit(TASK_STATE_DONE, &task->state);
+ 
