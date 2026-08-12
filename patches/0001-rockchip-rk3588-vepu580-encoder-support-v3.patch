@@ -1,7 +1,7 @@
 From 09595583f3ffadd3d790a20ead392434e0e46728 Mon Sep 17 00:00:00 2001
 From: Ross Cawston <rcawston@users.noreply.github.com>
 Date: Mon, 9 Feb 2026 20:42:16 -0800
-Subject: [PATCH 1/24] rockchip: rk3588: add VEPU580 (RKVENC v2) H.265/H.264/JPEG encoder support
+Subject: [PATCH 1/25] rockchip: rk3588: add VEPU580 (RKVENC v2) H.265/H.264/JPEG encoder support
 
 Imported from https://github.com/rcawston/rockchip-rk3588-mainline-patches
 at e13a311d8ee5e8ed92ec3d4a57c21f766c61d660, file 0001-rockchip-rk3588-vepu580-encoder-support-v3.patch.
