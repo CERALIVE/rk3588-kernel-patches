@@ -1,5 +1,5 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: CeraLive <dev@ceralive.tv>
+From: Andres Cera <andres.cera@hotmail.com>
 Date: Sun, 10 Aug 2026 14:00:00 -0500
 Subject: [PATCH 18/26] dma-buf: heaps: report partial system-heap registration truthfully
 

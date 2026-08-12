@@ -213,7 +213,7 @@ SERIES: tuple[Patch, ...] = (
         ordinal=6,
         subject="arm64: dts: rockchip: rk3588: bind the HDMI-RX audio codec to a sound card",
         provenance=NULL_OID,
-        author="CeraLive <dev@ceralive.tv>",
+        author="Andres Cera <andres.cera@hotmail.com>",
         date="Sun, 2 Aug 2026 12:00:00 -0500",
         origin=CERALIVE,
         rationale=(
@@ -295,7 +295,7 @@ SERIES: tuple[Patch, ...] = (
             "in the hardware probe"
         ),
         provenance=NULL_OID,
-        author="CeraLive <dev@ceralive.tv>",
+        author="Andres Cera <andres.cera@hotmail.com>",
         date="Sat, 8 Aug 2026 12:00:00 -0500",
         origin=CERALIVE,
         rationale=(
@@ -364,7 +364,7 @@ SERIES: tuple[Patch, ...] = (
         ordinal=9,
         subject="dma-buf: heaps: add a system-uncached heap",
         provenance=NULL_OID,
-        author="CeraLive <dev@ceralive.tv>",
+        author="Andres Cera <andres.cera@hotmail.com>",
         date="Sun, 9 Aug 2026 12:00:00 -0500",
         origin=CERALIVE,
         rationale=(
@@ -640,7 +640,7 @@ SERIES: tuple[Patch, ...] = (
             "for the negative paths"
         ),
         provenance=NULL_OID,
-        author="CeraLive <dev@ceralive.tv>",
+        author="Andres Cera <andres.cera@hotmail.com>",
         date="Sun, 10 Aug 2026 09:00:00 -0500",
         origin=CERALIVE,
         rationale=(
@@ -686,7 +686,7 @@ SERIES: tuple[Patch, ...] = (
             "stages in reverse"
         ),
         provenance=NULL_OID,
-        author="CeraLive <dev@ceralive.tv>",
+        author="Andres Cera <andres.cera@hotmail.com>",
         date="Sun, 10 Aug 2026 10:00:00 -0500",
         origin=CERALIVE,
         rationale=(
@@ -733,7 +733,7 @@ SERIES: tuple[Patch, ...] = (
             "stop swallowing runtime errors"
         ),
         provenance=NULL_OID,
-        author="CeraLive <dev@ceralive.tv>",
+        author="Andres Cera <andres.cera@hotmail.com>",
         date="Sun, 10 Aug 2026 11:00:00 -0500",
         origin=CERALIVE,
         rationale=(
@@ -777,7 +777,7 @@ SERIES: tuple[Patch, ...] = (
             "request"
         ),
         provenance=NULL_OID,
-        author="CeraLive <dev@ceralive.tv>",
+        author="Andres Cera <andres.cera@hotmail.com>",
         date="Sun, 10 Aug 2026 12:00:00 -0500",
         origin=CERALIVE,
         rationale=(
@@ -824,7 +824,7 @@ SERIES: tuple[Patch, ...] = (
             "under lockdep"
         ),
         provenance=NULL_OID,
-        author="CeraLive <dev@ceralive.tv>",
+        author="Andres Cera <andres.cera@hotmail.com>",
         date="Sun, 10 Aug 2026 13:00:00 -0500",
         origin=CERALIVE,
         rationale=(
@@ -876,7 +876,7 @@ SERIES: tuple[Patch, ...] = (
             "dma-buf: heaps: report partial system-heap registration truthfully"
         ),
         provenance=NULL_OID,
-        author="CeraLive <dev@ceralive.tv>",
+        author="Andres Cera <andres.cera@hotmail.com>",
         date="Sun, 10 Aug 2026 14:00:00 -0500",
         origin=CERALIVE,
         rationale=(
@@ -921,7 +921,7 @@ SERIES: tuple[Patch, ...] = (
             "dma-buf import API"
         ),
         provenance=NULL_OID,
-        author="CeraLive <dev@ceralive.tv>",
+        author="Andres Cera <andres.cera@hotmail.com>",
         date="Mon, 10 Aug 2026 18:00:00 -0500",
         origin=CERALIVE,
         rationale=(
@@ -1000,7 +1000,7 @@ SERIES: tuple[Patch, ...] = (
             "core's unbind"
         ),
         provenance=NULL_OID,
-        author="CeraLive <dev@ceralive.tv>",
+        author="Andres Cera <andres.cera@hotmail.com>",
         date="Mon, 10 Aug 2026 21:00:00 -0500",
         origin=CERALIVE,
         rationale=(
@@ -1078,7 +1078,7 @@ SERIES: tuple[Patch, ...] = (
             "only what is still there"
         ),
         provenance=NULL_OID,
-        author="CeraLive <dev@ceralive.tv>",
+        author="Andres Cera <andres.cera@hotmail.com>",
         date="Tue, 11 Aug 2026 09:00:00 -0500",
         origin=CERALIVE,
         rationale=(
@@ -1348,7 +1348,7 @@ SERIES: tuple[Patch, ...] = (
             "map holes"
         ),
         provenance=NULL_OID,
-        author="CeraLive <dev@ceralive.tv>",
+        author="Andres Cera <andres.cera@hotmail.com>",
         date="Tue, 11 Aug 2026 09:30:00 -0500",
         origin=CERALIVE,
         rationale=(
@@ -1455,7 +1455,7 @@ SERIES: tuple[Patch, ...] = (
             "its hardirq callers"
         ),
         provenance=NULL_OID,
-        author="CeraLive <dev@ceralive.tv>",
+        author="Andres Cera <andres.cera@hotmail.com>",
         date="Wed, 12 Aug 2026 01:10:00 -0500",
         origin=CERALIVE,
         rationale=(

@@ -1,5 +1,5 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: CeraLive <dev@ceralive.tv>
+From: Andres Cera <andres.cera@hotmail.com>
 Date: Sun, 10 Aug 2026 10:00:00 -0500
 Subject: [PATCH 14/26] media: rockchip: rkvenc: fix session teardown and unwind probe stages in reverse
 

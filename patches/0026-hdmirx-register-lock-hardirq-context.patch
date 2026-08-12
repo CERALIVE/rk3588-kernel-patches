@@ -1,5 +1,5 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: CeraLive <dev@ceralive.tv>
+From: Andres Cera <andres.cera@hotmail.com>
 Date: Wed, 12 Aug 2026 01:10:00 -0500
 Subject: [PATCH 26/26] media: synopsys: hdmirx: make the register lock safe for its hardirq callers
 
