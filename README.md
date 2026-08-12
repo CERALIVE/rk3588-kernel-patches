@@ -29,6 +29,21 @@ backported patches continue the same counter from `0006`:
 | `0007` | iommu dte-limit fix | `backports/` | Backport of mainline `8d4346ecd495`. Sets `BIT(31)` of the IOMMU's `MMU_AUTO_GATING`, without which a DTE fetch racing a page-table update blocks the IOMMU — a black screen on the VOP, and sporadic RGA3 hangs. Merged for 7.2-rc1, absent from `v7.1.7`. |
 | `0008` | rkvenc DMA max segment size | `ceralive/` | **`UNVALIDATED` on hardware.** Sets the encoder's DMA max segment size in `rkvenc_hw_probe()`, so an imported dma-buf's recorded length stops being truncated to the `SZ_64K` default. Fixes a bookkeeping defect in `0001`; the IOVA guardrail that catches the symptom is deliberately left alone. |
 | `0009` | `system-uncached` dma-heap | `ceralive/` | **`UNVALIDATED` on hardware.** Registers a second dma-heap named exactly `system-uncached` — the name Rockchip's MPP userspace hard-codes and mainline does not provide — with non-cacheable mappings, a one-time cache clean at allocation, and the CPU-sync steps skipped only for that heap. Without it `mpph264enc` does not register at all, and cached memory under an uncached name encodes non-deterministically. |
+| `0010` | naneng-combphy RTERM erratum | `backports/` | **Unmerged lore posting** (`PATCHv1`, Shawn Lin). Forces RX-termination detect ready in `PHYREG26` so a PCIe peer's termination is seen at critical temperatures. No commit id exists and none is claimed. |
+| `0011` | dw-hdmi-qp N/CTS helper | `backports/` | **Unmerged lore posting** (standalone `PATCHv3`, Simon Wright, `Reviewed-by`+`Tested-by`). Drops dw-hdmi-qp's private audio N/CTS table, which disagrees with the shared helper at several TMDS rates, for `drm_hdmi_acr_get_n_cts()`. |
+| `0012` | dw-hdmi-qp audio `-EOPNOTSUPP` | `backports/` | **Unmerged lore posting** (`PATCHv1`, Detlev Casanova, two independent `Tested-by`). Stops the audio hooks returning `-ENODEV` with no mode set, which ASoC logs as a fault — hundreds of lines on an idle board, in the same dmesg buffer `0005`/`0006` are diagnosed from. |
+| `0013` | rkvenc gated fault injection | `ceralive/` | **Test instrumentation, absent from production.** Three Kconfig symbols and six one-shot debugfs controls under `/sys/kernel/debug/rkvenc-test/`, each with a read-only `*_consumed` counter so a harness can tell a fault that fired from a knob the driver ignored. |
+| `0014` | rkvenc teardown and unwind | `ceralive/` | Six defects in `0001`'s teardown: a session freed on the release drain's timeout path while the worker still uses it, that drain sleeping under the lock its own completion needs, a dangling CCU list entry into freed memory, `remove()` clearing almost nothing it published, a devm service torn down under open FDs, and a devm IRQ live across `remove()`. |
+| `0015` | rkvenc resource errors | `ceralive/` | Six discarded return values in `0001`: clock, IOMMU and reset acquisition failures were logged and swallowed — turning a `-EPROBE_DEFER` into a permanently bound device with no clock — and `clk_prepare_enable()`, `pm_runtime_get_sync()`, `rkvenc_hw_finish()` and `rkvenc_hw_reset()` returns were thrown away. |
+| `0016` | rkvenc ioctl bounds | `ceralive/` | Six UAPI bounds defects, the worst an **information disclosure**: `rkvenc_result()` located a read request's class by its start offset only, then copied the caller's own claimed size, reading past a `kmalloc`'d buffer into the kernel heap and handing it to userspace. Also wrap/underflow/alignment, a byte/element mismatch, and every failure collapsed to `-ENOMEM`. |
+| `0017` | HDMI-RX audio lifecycle | `ceralive/` | Four defects in `0005`'s audio path: an ineffective `cancel_delayed_work()` against a self-rescheduling worker, an ASoC-card/`work_lock`/DAPM lock cycle, discarded `clk_set_rate()` returns, and a 768 kHz rate CEA-861 cannot produce. |
+| `0018` | truthful dma-heap partial registration | `ceralive/` | Not a defect fix. `dma_heap_add()` has no removal counterpart at this base, so a failed second registration leaves the first heap live for the boot. This says so instead of hiding it, and adds an injection seam so the failure is reachable from KUnit. **No atomicity is claimed.** |
+| `0019` | rkvenc worker lock context + dma-buf API | `ceralive/` | **Root-caused on a REAL Rock 5B+**, from a plain unfaulted encode under KASAN+LOCKDEP. A `struct mutex` taken inside `spin_lock_irqsave()`, and the *locked* dma-buf entry points called by a static importer that holds no `resv`. |
+| `0020` | rkvenc service survives a single core's unbind | `ceralive/` | **Root-caused on a REAL Rock 5B+**, by fault injection. `0014`'s own service state machine had no path back to `LIVE`, so one core's transient unbind left `/dev/mpp_service` returning `-ENODEV` for the rest of the boot — after the core had re-probed successfully. |
+| `0021` | rkvenc task, core and service lifecycle | `ceralive/` | **Root-caused on a REAL Rock 5B+**, over one continuous fault-injection and unbind session. Four defects in one lifecycle, in the order the board gave them up because each fix made the next reachable: `rkvenc_task_finish()` released unconditionally what `rkvenc_hw_run()` had already unwound (`bad unlock balance`, runtime-PM underflow); the worker then kept reading a task it had just freed (KASAN use-after-free); a secondary core stayed a dispatch target after a main-core rebind left its IOMMU domain NULL (Oops in `__iommu_attach_group()`); and a service-node unbind freed `srv` under an open descriptor, because its wait was skipped whenever a core had already claimed the quiesce. Carried as `0021`+`0023`+`0024`+`0025` while it was being discovered, folded into one patch afterwards — **byte-neutral**, proven by an identical `git am` tree object. |
+| `0022` | rkvenc ioctl request coverage and element bounds | `ceralive/` | **Root-caused on a REAL Rock 5B+**, from an ioctl drill that `0016` should have made green and did not. A register request naming bytes no class owns was clamped and accepted instead of refused; `INIT_TRANS_TABLE` bounded bytes but not alignment; an unreadable user buffer reported `-EIO`. Reading the same paths found two unbounded counts and a byte/element overrun no drill case covers. |
+| *0023*–*0025* | — | — | **Retired ordinals.** Carried while the `0021` lifecycle defects were being discovered one at a time, then folded into `0021`. The slots are burned like `0004`'s, not renumbered. What each one individually documented: [`docs/UPSTREAM-STATUS.md` § retired ordinals](docs/UPSTREAM-STATUS.md#retired-ordinals-0023-0024-0025); the archived files: [`retired/REGISTRY.md`](retired/REGISTRY.md). |
+| `0026` | hdmirx register lock hardirq context | `ceralive/` | **Root-caused AND re-verified on a REAL Rock 5B+**, the first time a physical HDMI source was attached to a lockdep boot. `rst_lock` is a `spinlock_t` taken from the CEC and HDMI hardirqs, which `CONFIG_PROVE_RAW_LOCK_NESTING` reports as an invalid wait context — and that report calls `debug_locks_off()`, silencing lockdep for the rest of the boot in *every* subsystem. Promoted to `raw_spinlock_t`; same scope, same leaf position, identical code on a non-RT build. |
 
 Plus [`overlays/rockchip-rk3588-rkvenc-mpp.dts`](overlays/rockchip-rk3588-rkvenc-mpp.dts),
 the device-tree overlay the encoder needs, carried verbatim.
@@ -49,11 +64,18 @@ written down, the verdict gets its own document. So far:
   teardown, and because its device-tree half enables the sound card on Orange Pi 5
   Plus only, which would silently leave Rock 5B+ with no capture card.
 
-Two members carry an **`UNVALIDATED`** marker (`0008` and `0009`). What a real
-board has to demonstrate before that marker can come off — every leg, every
-command, on both boards — is
-[`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md). Every item there is
-deliberately unchecked: the checklist has been written, and it has not been run.
+Several members carry an **`UNVALIDATED`** marker — `0008` and `0009` on Orange Pi
+5+, and the whole `0013`–`0022` + `0026` block to varying degrees. What a real board has to
+demonstrate before a marker comes off — every leg, every command, on both boards —
+is [`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md), and what is
+already proven, per patch, is the **Last checked** column in
+[`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md).
+
+**A patch being landed is not a patch being verified.** `0015` and `0016` were both
+ticked before anything ran on hardware, and the first real drill against them
+failed — `0021` and `0022` are what came out of that, and `0021` alone is four
+defects deep, because fixing the bug that aborts an error path is how you find the
+bugs further down it. Read the marker, not the merge.
 
 ## Layout
 
@@ -61,6 +83,8 @@ deliberately unchecked: the checklist has been written, and it has not been run.
 upstream/          Ross Cawston's original diff -ruN files, byte-for-byte
 ceralive/          first-party patches with no upstream counterpart
 backports/         patches taken from mainline / a stable tree / lore
+backports/lore/    canonical mail of each unmerged posting, one directory per candidate
+tests/             stdlib unittest fixtures for the Python tooling
 retired/           patches moved out of the series, byte-unchanged, + REGISTRY.md
 patches/           the git-am series — GENERATED from the lanes, never hand-edit
 overlays/          the rkvenc/MPP device-tree overlay
@@ -224,44 +248,33 @@ check fails.
 
 **There are three first-party patches upstream does not have.** `0006` adds the
 device-tree sound card that turns upstream's `0005` HDMI-RX audio codec into a
-capturable ALSA card. Upstream `0005` is driver-only; on a Rock 5B+ running the
-full series the codec device is bound with no cable attached
-(`/sys/devices/platform/fdee0000.hdmi_receiver/hdmi-audio-codec.7.auto`) while
-`/proc/asound/cards` shows no HDMI-RX capture card, because nothing in the device
-tree binds that codec to a DAI. `0006` adds `#sound-dai-cells` to
-`hdmi_receiver`, adds an `hdmirx-sound` `simple-audio-card`, and enables it plus
-`i2s7_8ch` on the two CeraLive boards. It lives in `ceralive/`, is clearly marked
-first-party in its own mail header, and carries no upstream attribution.
+capturable ALSA card — without it the codec binds but `/proc/asound/cards` shows
+no HDMI-RX capture card, because nothing in the tree binds the codec to a DAI.
+`0006` adds `#sound-dai-cells` to `hdmi_receiver`, an `hdmirx-sound`
+`simple-audio-card`, and enables it plus `i2s7_8ch` on both boards.
 
-`0008` is the second, and it repairs `0001` rather than extending it.
-`rkvenc_dma_import_fd()` records an imported dma-buf's length as
-`sg_dma_len(sgt->sgl)` — the first mapped segment only — and `0001` never told the
-DMA layer how long a segment may be, so `dma_get_max_seg_size()` answered the
-`SZ_64K` default, iommu-dma stopped coalescing there, and every import over 64 KiB
-was recorded as exactly `0x10000` bytes. `0008` sets the cap in `rkvenc_hw_probe()`
-and reads it back, failing the probe if it did not take. It leaves the driver's
-IOVA guardrail alone on purpose: the guardrail was correctly rejecting a register
-that pointed outside the (truncated) window, so silencing it would hide the bug
-rather than fix it. It is marked **`UNVALIDATED`** in its own mail header and in
-[`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) — it compiles into a real
-kernel package, and its runtime effect has never been observed on a board.
+`0008` repairs `0001` rather than extending it: `rkvenc_dma_import_fd()` recorded
+an imported dma-buf's length from the first mapped segment only, and `0001` never
+set a DMA max segment size, so every import over 64 KiB was truncated to exactly
+`0x10000` bytes. `0008` sets and reads back the cap in `rkvenc_hw_probe()`,
+failing the probe if it did not take, and deliberately leaves the IOVA guardrail
+that caught the symptom alone. Marked **`UNVALIDATED`** in
+[`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) — compiles into a real
+kernel package; its runtime effect had never been observed on a board when it
+was written.
 
-`0009` is the third, and it is the other two thirds of the same problem. Rockchip's
-MPP userspace picks a dma-heap by hard-coded name and asks for `system-uncached`,
-which mainline does not register at all — so the H.264 encoder's init-time buffer
-allocation fails and `mpph264enc` never even registers as a GStreamer element. And
-because MPP does no CPU cache maintenance on a heap it believes is uncached, simply
-pointing it at cached memory produces different output for identical input plus
-intermittent CABAC decode failures. `0009` registers a second heap under exactly
-that name, reusing the extension point `system_heap.c` already has for
-`system_cc_shared`: non-cacheable mappings, a one-time cache clean at allocation,
-and the CPU-sync steps skipped **only** for that heap. It is likewise marked
-**`UNVALIDATED`**, and the marker carries more weight here than anywhere else in
-the series: the kernel's cacheable linear-map alias of those pages is left in
-place, so getting the cache handling subtly wrong yields silent intermittent
-corruption rather than an error, and no compile can rule that out. What a real
-board has to demonstrate before anyone calls this working is enumerated in
-[`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md).
+`0009` is the other two-thirds of the same problem: Rockchip's MPP userspace
+hard-codes a `system-uncached` dma-heap name mainline does not provide, so
+`mpph264enc` failed to register at all, and MPP performs no CPU cache
+maintenance on a heap it believes is uncached, so cached memory under that name
+encoded non-deterministically. `0009` registers a second heap under exactly
+that name — non-cacheable mappings, a one-time cache clean at allocation, and
+skipped CPU-sync only for that heap — reusing the `system_heap.c` extension
+point `system_cc_shared` already has. Also **`UNVALIDATED`**: the kernel's
+cacheable linear-map alias of those pages is left in place, so getting the
+cache handling subtly wrong yields silent intermittent corruption rather than
+an error, and no compile can rule that out. What a real board must demonstrate
+first: [`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md).
 
 ### Why not the `sfqr0414` fork
 
@@ -328,3 +341,12 @@ above stays true.
 
 `0007` is neither ours nor Ross Cawston's: it is a straight backport of a mainline
 commit by Simon Xue, carried in `backports/` with its own provenance header.
+
+`0010`, `0011` and `0012` are likewise other people's work — Shawn Lin
+(Rockchip), Simon Wright, and Detlev Casanova (Collabora) — but taken from
+postings that have **not** been merged. They carry a different provenance variant
+for that reason: their headers say *"Backport of unmerged vN posting"* and claim
+no commit id, because none exists. Each one's canonical mail is archived beside it
+in `backports/lore/`, so the digest in its header can be recomputed offline. They
+were imported by `scripts/import-lore-series.py` from the canonical lore thread
+archive; none was transcribed by hand.

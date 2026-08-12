@@ -597,3 +597,62 @@ all. Six further hardware-only checks (B1–B4, B6, B7) sit alongside it.
 All seven now live in
 [`docs/BOARD-QUALIFICATION.md`](BOARD-QUALIFICATION.md) § 9, which is where they
 get ticked; the table above is their origin record, not the live checklist.
+
+---
+
+## Policy — writing an EDID while a stream is active
+
+Added 2026-08-10 (Wave 6). This is a POLICY statement, not a finding: it records
+what the series guarantees about `VIDIOC_S_EDID` during capture, and — more
+usefully — what it does not.
+
+**The rule: do not write an EDID while a capture stream is running. Stop the
+stream, write the EDID, let the source renegotiate, then start the stream.**
+
+This is not a limitation `0002` introduced; it is what `0002` makes *visible*.
+Writing an EDID is not a metadata update — the driver's own sequence deliberately
+tears the link down so the source is forced to re-read it:
+
+- `hdmirx_write_edid()` drops HPD, masks the receiver's interrupts, writes the
+  new block and re-asserts HPD. The source treats that as an unplug/replug and
+  restarts capability negotiation from scratch.
+- A renegotiation legitimately changes the resolution, the pixel format and the
+  audio sample rate. Buffers already queued to the vb2 queue were sized for the
+  PREVIOUS format.
+- Patch `0003` exists precisely because that replug path used to overflow a
+  buffer, and patch `0005`'s audio worker re-derives its sample rate from the
+  ACR packets of whatever the source now sends.
+
+So an EDID write during an active stream is a deliberate mid-stream format
+change with no format-change handshake. The honest outcomes are a `vb2` queue
+error, a stalled `DQBUF`, or a stream that continues at a resolution the source
+is no longer sending — none of which the driver can prevent, because the source,
+not the driver, decides what to send after a replug.
+
+**What the series DOES guarantee**, and these are the three patches that make
+the stop/write/start sequence safe rather than merely conventional:
+
+1. `0002` — a written EDID is actually visible to the source. Without it the
+   source re-reads the block it already had, so the write appears to succeed and
+   changes nothing.
+2. `0003` — the replug the write triggers does not overflow the capture buffer,
+   and a stream that was running when the link dropped gets a `vb2` queue error
+   rather than a `DQBUF` that hangs until userspace times out.
+3. `0017` — the audio worker is disarmed and drained across that transition
+   rather than left polling a receiver whose HPD is down, and a sample-rate
+   change the audio clock refuses is reported instead of being recorded as
+   though it had taken.
+
+**What is deliberately NOT done.** The driver does not reject `VIDIOC_S_EDID`
+while streaming. Two reasons: the V4L2 API does not define that refusal for this
+ioctl, so returning `-EBUSY` would be a driver-specific behaviour userspace
+cannot portably expect; and a userspace that genuinely wants to renegotiate
+mid-session has no other mechanism. The constraint is therefore documented and
+owned by the caller — CeraUI stops the capture pipeline before an EDID change —
+rather than enforced with an invented error.
+
+**Board validation status: NOT RUN.** No board check in
+[`BOARD-QUALIFICATION.md`](BOARD-QUALIFICATION.md) § 9 currently writes an EDID
+while streaming, and none should be added that expects it to work. The check
+worth adding is the opposite one: prove that stop → write → renegotiate → start
+produces a stream at the new format, and that the audio card follows it.

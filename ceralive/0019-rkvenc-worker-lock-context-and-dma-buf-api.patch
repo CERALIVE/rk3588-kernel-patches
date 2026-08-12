@@ -1,0 +1,106 @@
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h b/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h
+@@ -371,7 +371,15 @@ struct rkvenc_iommu_info {
+ /* ---- Task queue ---- */
+ struct rkvenc_taskqueue {
+ 	struct mutex session_lock;
+-	struct mutex pending_lock;
++	/*
++	 * pending_lock nests INSIDE running_lock: the worker claims an idle
++	 * core and dequeues the task it will run as one atomic step, so the
++	 * dequeue happens with running_lock held and interrupts off. A
++	 * sleeping lock cannot be acquired there. Both of pending_lock's
++	 * critical sections are O(1) list operations that never sleep, so a
++	 * spinlock costs nothing and is the type the nesting requires.
++	 */
++	spinlock_t pending_lock;
+ 	spinlock_t running_lock;
+ 	struct mutex dev_lock;
+ 
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_iommu.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_iommu.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_iommu.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_iommu.c
+@@ -63,7 +63,16 @@ static void rkvenc_dma_release_buffer(struct kref *ref)
+ 	buffer->dma->buffer_count--;
+ 	list_move_tail(&buffer->link, &buffer->dma->unused_list);
+ 
+-	dma_buf_unmap_attachment(buffer->attach, buffer->sgt, buffer->dir);
++	/*
++	 * The _unlocked variant is the one for importers that do NOT hold the
++	 * exporter's reservation lock, which is this driver: it attaches with
++	 * plain dma_buf_attach() and registers no dma_buf_attach_ops, so it is
++	 * a static importer and never takes dmabuf->resv itself. The locked
++	 * entry point asserts that lock is held and trips
++	 * dma_resv_assert_held() when it is not.
++	 */
++	dma_buf_unmap_attachment_unlocked(buffer->attach, buffer->sgt,
++					  buffer->dir);
+ 	dma_buf_detach(buffer->dmabuf, buffer->attach);
+ 	dma_buf_put(buffer->dmabuf);
+ 	buffer->dma = NULL;
+@@ -177,10 +186,11 @@ rkvenc_dma_import_fd(struct rkvenc_iommu_info *iommu_info,
+ 		goto fail_attach;
+ 	}
+ 
+-	sgt = dma_buf_map_attachment(attach, buffer->dir);
++	sgt = dma_buf_map_attachment_unlocked(attach, buffer->dir);
+ 	if (IS_ERR(sgt)) {
+ 		ret = PTR_ERR(sgt);
+-		rkvenc_err("dma_buf_map_attachment fd %d failed(%d)\n", fd, ret);
++		rkvenc_err("dma_buf_map_attachment_unlocked fd %d failed(%d)\n",
++			   fd, ret);
+ 		goto fail_map;
+ 	}
+ 	buffer->iova = sg_dma_address(sgt->sgl);
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
+@@ -821,7 +821,16 @@ void rkvenc_task_worker_default(struct kthread_work *work)
+ 		core_id = find_first_bit(&core_idle, queue->core_id_max + 1);
+ 
+ 		if (core_id <= queue->core_id_max && queue->cores[core_id]) {
+-			mutex_lock(&queue->pending_lock);
++			/*
++			 * running_lock stays held across the dequeue on
++			 * purpose: finding an idle core and taking the task
++			 * that will occupy it must be one step, or two
++			 * workers racing on different cores can both claim
++			 * the same core_id. That is why pending_lock is a
++			 * spinlock -- this acquisition happens with
++			 * interrupts already disabled.
++			 */
++			spin_lock(&queue->pending_lock);
+ 			pending_task = list_first_entry_or_null(&queue->pending_list,
+ 								struct rkvenc_mpp_task,
+ 								queue_link);
+@@ -831,7 +840,7 @@ void rkvenc_task_worker_default(struct kthread_work *work)
+ 				pending_task->mpp = queue->cores[core_id];
+ 				pending_task->core_id = core_id;
+ 			}
+-			mutex_unlock(&queue->pending_lock);
++			spin_unlock(&queue->pending_lock);
+ 		}
+ 		spin_unlock_irqrestore(&queue->running_lock, flags);
+ 
+@@ -1207,9 +1216,9 @@ static long rkvenc_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long
+ 
+ 		/* Add to task queue and trigger worker */
+ 		set_bit(TASK_STATE_PENDING, &task->mpp_task.state);
+-		mutex_lock(&queue->pending_lock);
++		spin_lock(&queue->pending_lock);
+ 		list_add_tail(&task->mpp_task.queue_link, &queue->pending_list);
+-		mutex_unlock(&queue->pending_lock);
++		spin_unlock(&queue->pending_lock);
+ 
+ 		/* Trigger the worker to run the task */
+ 		kthread_queue_work(&queue->worker, &session->mpp->work);
+@@ -1403,7 +1412,7 @@ int rkvenc_service_probe(struct platform_device *pdev)
+ 			return -ENOMEM;
+ 
+ 		mutex_init(&queue->session_lock);
+-		mutex_init(&queue->pending_lock);
++		spin_lock_init(&queue->pending_lock);
+ 		spin_lock_init(&queue->running_lock);
+ 		mutex_init(&queue->dev_lock);
+ 		INIT_LIST_HEAD(&queue->session_attach);

@@ -156,24 +156,19 @@ following reasons:
 
 The `MIT` half of the disjunction is a **real, unresolved ambiguity**:
 
-- **The upstream patch repository has no `LICENSE` file at all** (§2). So there is
-  no collection-level grant that says "this repository is MIT" or anything else.
-  Anyone who wants to rely on the MIT branch is relying purely on per-file SPDX
-  headers in a repository whose owner made no repository-level licence statement.
-- **The SPDX tag is inherited, which is evidence but not proof.** Rockchip's own
-  BSP files were verified to carry `(GPL-2.0+ OR MIT)` (§4). That is strong
-  evidence the dual grant is genuine and originates with the copyright holder. It
-  is *not* proof that every line in the ported files came from those specific
-  dual-licensed BSP files — a port is a rewrite, and no line-by-line derivation
-  audit of ~4,200 lines of driver code against the BSP originals was performed.
+- **The upstream patch repository has no `LICENSE` file at all** (§2), so there
+  is no collection-level grant. Relying on the MIT branch means relying purely on
+  per-file SPDX headers with no repository-level licence statement.
+- **The SPDX tag is inherited, which is evidence but not proof.** Rockchip's BSP
+  files carry `(GPL-2.0+ OR MIT)` (§4) — strong evidence the dual grant is
+  genuine, but not proof every line in the ported files came from those specific
+  files: a port is a rewrite, and no line-by-line derivation audit of ~4,200
+  lines was performed.
 - **A GPL-2.0-only line anywhere in the port would silently collapse the
-  disjunction.** If any portion were in fact taken from GPL-2.0-only kernel code
-  (for example, boilerplate borrowed from another in-tree driver), the MIT branch
-  could not be validly asserted for the file containing it, regardless of the
-  header. This has not been ruled out.
-- **`MODULE_LICENSE("Dual MIT/GPL")` proves nothing about MIT.** It is a
-  kernel-internal taint/symbol-visibility marker. It tells the kernel the module is
-  GPL-compatible. It is not a licence grant and carries no legal weight of its own.
+  disjunction** (e.g. boilerplate borrowed from another in-tree driver). Not
+  ruled out.
+- **`MODULE_LICENSE("Dual MIT/GPL")` proves nothing about MIT** — a
+  kernel-internal taint/symbol-visibility marker, not a licence grant.
 
 **Practical consequence for CeraLive: none, today.** CeraLive uses the GPL-2.0
 branch, ships the series as kernel patches, and makes **no MIT claim** and takes
@@ -308,15 +303,12 @@ a backport and what will be true of the first retirement.
 
 ### 9.1 Why `backports/` is a third lane
 
-§1 and §8 rest on being able to say exactly who wrote what. `upstream/` supports one
-blanket credit line — *"Imported from `rcawston/rockchip-rk3588-mainline-patches` at
-`e13a311…`, authored by Ross Cawston"* — because that is true of every file in it.
-A patch lifted from mainline or from a lore posting has a different author, a
-different tree and a different licence trail, so putting it in `upstream/` would
-make that credit line false and the byte-identity claim in §6 unverifiable.
-
-Every `backports/` member therefore carries its own provenance, and
-`scripts/build-series.py` refuses the lane without it:
+§1 and §8 rest on being able to say exactly who wrote what. `upstream/` supports
+one blanket credit line, true of every file in it. A patch lifted from mainline
+or a lore posting has a different author, tree and licence trail, so putting it
+in `upstream/` would make that credit line false and the byte-identity claim in
+§6 unverifiable. Every `backports/` member therefore carries its own
+provenance, and `scripts/build-series.py` refuses the lane without it:
 
 | Field | Recorded as |
 |-------|-------------|

@@ -1,0 +1,219 @@
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c
+@@ -60,6 +60,115 @@ static int rkvenc_ccu_probe(struct platform_device *pdev)
+ 	return 0;
+ }
+ 
++/* ---- Task-queue publication ---- */
++/*
++ * Publication is what makes a core DISPATCHABLE: rkvenc_task_worker_default()
++ * will hand a task to any core that has both a queue slot and an idle bit. The
++ * two halves are a pair, and 0024 adds two more call sites for them (the CCU
++ * re-share and the main-core unbind), so they live in one place rather than
++ * being open-coded four times and drifting.
++ *
++ * Both are idempotent through RKVENC_STAGE_QUEUE_PUBLISHED, so a re-publish of
++ * an already-published core cannot double-count core_count.
++ */
++static void rkvenc_queue_publish_core(struct rkvenc_taskqueue *queue,
++				      struct rkvenc_dev *enc)
++{
++	if (!queue || enc->core_id < 0 || enc->core_id >= MPP_MAX_CORE_NUM)
++		return;
++	if (test_and_set_bit(RKVENC_STAGE_QUEUE_PUBLISHED, &enc->probe_stages))
++		return;
++
++	mutex_lock(&queue->dev_lock);
++	queue->cores[enc->core_id] = enc;
++	queue->core_count++;
++	if (enc->core_id > queue->core_id_max)
++		queue->core_id_max = enc->core_id;
++	set_bit(enc->core_id, &queue->core_idle);
++	mutex_unlock(&queue->dev_lock);
++}
++
++static void rkvenc_queue_unpublish_core(struct rkvenc_taskqueue *queue,
++					struct rkvenc_dev *enc)
++{
++	u32 i;
++
++	if (!queue)
++		return;
++	if (!test_and_clear_bit(RKVENC_STAGE_QUEUE_PUBLISHED, &enc->probe_stages))
++		return;
++
++	mutex_lock(&queue->dev_lock);
++	if (enc->core_id >= 0 && enc->core_id < MPP_MAX_CORE_NUM &&
++	    queue->cores[enc->core_id] == enc) {
++		queue->cores[enc->core_id] = NULL;
++		clear_bit(enc->core_id, &queue->core_idle);
++		if (queue->core_count)
++			queue->core_count--;
++	}
++	/* core_id_max is a HIGH-WATER MARK, so it has to be recomputed
++	 * rather than decremented: removing core 0 must not lower it
++	 * while core 1 is still present.
++	 */
++	queue->core_id_max = 0;
++	for (i = 0; i < MPP_MAX_CORE_NUM; i++)
++		if (queue->cores[i])
++			queue->core_id_max = i;
++	mutex_unlock(&queue->dev_lock);
++}
++
++/*
++ * Re-share the main core's IOMMU domain with every secondary that has lost it.
++ *
++ * Only reachable when a core becomes main while OTHER cores are already on
++ * ccu->core_list -- i.e. after a main-core unbind/rebind. On a cold boot the
++ * first core to probe finds an empty list and this is a no-op, so the initial
++ * bring-up path is unchanged.
++ *
++ * Takes ccu->lock and then queue->dev_lock (through the publish helper). That
++ * nesting order is the same one rkvenc_core_unwind() uses and the reverse never
++ * occurs: dev_lock is only ever taken by these two helpers.
++ */
++static void rkvenc_ccu_reshare_domain(struct device *dev,
++				      struct rkvenc_ccu *ccu,
++				      struct rkvenc_dev *main_core)
++{
++	struct rkvenc_iommu_info *main_iommu = main_core->iommu_info;
++	struct iommu_domain *shared = main_iommu ? main_iommu->domain : NULL;
++	struct rkvenc_dev *sec;
++
++	if (!shared)
++		return;
++
++	mutex_lock(&ccu->lock);
++	list_for_each_entry(sec, &ccu->core_list, core_link) {
++		struct rkvenc_iommu_info *sec_iommu = sec->iommu_info;
++		int ret;
++
++		if (sec == main_core || !sec_iommu || !sec_iommu->group)
++			continue;
++		if (test_bit(RKVENC_STAGE_IOMMU_SHARED, &sec->probe_stages))
++			continue;
++
++		sec_iommu->domain = shared;
++		sec_iommu->rw_sem = main_iommu->rw_sem;
++		ret = iommu_attach_group(shared, sec_iommu->group);
++		if (ret) {
++			dev_err(dev, "core %d: re-attach to the shared IOMMU domain failed: %d\n",
++				sec->core_id, ret);
++			sec_iommu->domain = NULL;
++			sec_iommu->rw_sem = &sec_iommu->rw_sem_self;
++			continue;
++		}
++
++		set_bit(RKVENC_STAGE_IOMMU_SHARED, &sec->probe_stages);
++		rkvenc_queue_publish_core(sec->queue, sec);
++		dev_info(dev, "core %d: re-shared the main core's IOMMU domain\n",
++			 sec->core_id);
++	}
++	mutex_unlock(&ccu->lock);
++}
++
+ /* ---- Attach core to CCU ---- */
+ static int rkvenc_attach_ccu(struct device *dev, struct rkvenc_dev *enc)
+ {
+@@ -122,6 +231,14 @@ static int rkvenc_attach_ccu(struct device *dev, struct rkvenc_dev *enc)
+ 	/* First core becomes the main core */
+ 	if (!ccu->main_core) {
+ 		ccu->main_core = enc;
++		/*
++		 * A REBINDING main core lands here too, and the secondaries it
++		 * detached on the way out are still on ccu->core_list with a
++		 * NULL domain -- nothing else ever puts one back, because only
++		 * the else-arm below shares a domain and only a probing
++		 * SECONDARY reaches it.
++		 */
++		rkvenc_ccu_reshare_domain(dev, ccu, enc);
+ 	} else {
+ 		struct rkvenc_iommu_info *main_iommu =
+ 			ccu->main_core ? ccu->main_core->iommu_info : NULL;
+@@ -237,16 +354,7 @@ static int rkvenc_attach_service(struct rkvenc_dev *enc)
+ 	enc->queue = queue;
+ 
+ 	/* Register core in the task queue */
+-	if (enc->core_id >= 0 && enc->core_id < MPP_MAX_CORE_NUM) {
+-		mutex_lock(&queue->dev_lock);
+-		queue->cores[enc->core_id] = enc;
+-		queue->core_count++;
+-		if (enc->core_id > queue->core_id_max)
+-			queue->core_id_max = enc->core_id;
+-		set_bit(enc->core_id, &queue->core_idle);
+-		mutex_unlock(&queue->dev_lock);
+-		set_bit(RKVENC_STAGE_QUEUE_PUBLISHED, &enc->probe_stages);
+-	}
++	rkvenc_queue_publish_core(queue, enc);
+ 
+ 	/* Attach to reset group */
+ 	if (resetgroup_node < srv->reset_group_cnt)
+@@ -455,6 +563,14 @@ static void rkvenc_core_unwind(struct rkvenc_dev *enc)
+ 						   sec->iommu_info->group);
+ 				sec->iommu_info->domain = NULL;
+ 				sec->iommu_info->rw_sem = &sec->iommu_info->rw_sem_self;
++				/*
++				 * It has no page tables now, so it must stop
++				 * being a dispatch target. Unpublishing is the
++				 * only thing that stops the worker choosing it:
++				 * step 3 below clears the slot of the core that
++				 * is UNBINDING, and that is not this one.
++				 */
++				rkvenc_queue_unpublish_core(sec->queue, sec);
+ 			}
+ 		}
+ 		mutex_unlock(&ccu->lock);
+@@ -479,27 +595,7 @@ static void rkvenc_core_unwind(struct rkvenc_dev *enc)
+ 	enc->ccu = NULL;
+ 
+ 	/* 3. Remove the queue publication: slot, count, id_max and idle bit. */
+-	if (test_and_clear_bit(RKVENC_STAGE_QUEUE_PUBLISHED, &enc->probe_stages) && queue) {
+-		u32 i;
+-
+-		mutex_lock(&queue->dev_lock);
+-		if (enc->core_id >= 0 && enc->core_id < MPP_MAX_CORE_NUM &&
+-		    queue->cores[enc->core_id] == enc) {
+-			queue->cores[enc->core_id] = NULL;
+-			clear_bit(enc->core_id, &queue->core_idle);
+-			if (queue->core_count)
+-				queue->core_count--;
+-		}
+-		/* core_id_max is a HIGH-WATER MARK, so it has to be recomputed
+-		 * rather than decremented: removing core 0 must not lower it
+-		 * while core 1 is still present.
+-		 */
+-		queue->core_id_max = 0;
+-		for (i = 0; i < MPP_MAX_CORE_NUM; i++)
+-			if (queue->cores[i])
+-				queue->core_id_max = i;
+-		mutex_unlock(&queue->dev_lock);
+-	}
++	rkvenc_queue_unpublish_core(queue, enc);
+ 
+ 	/* 2. Forget the suppliers. The device links themselves are
+ 	 * AUTOREMOVE_CONSUMER, so the driver core drops them (and the supplier
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_iommu.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_iommu.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_iommu.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_iommu.c
+@@ -332,6 +332,19 @@ int rkvenc_iommu_attach(struct rkvenc_iommu_info *info)
+ 	if (!info)
+ 		return 0;
+ 
++	/*
++	 * A NULL domain is not "nothing to attach", it is "this core has no
++	 * page tables". iommu_attach_group() dereferences the domain -- the
++	 * compatibility check reads domain->owner -- so passing NULL here is a
++	 * guaranteed Oops, not a no-op, and the comparison below cannot catch
++	 * it: iommu_get_domain_for_dev() returns the core's DEFAULT domain,
++	 * which is never NULL, so NULL != default and the call goes ahead.
++	 * rkvenc_iommu_flush_tlb() below has always guarded info->domain; this
++	 * function was the outlier.
++	 */
++	if (!info->domain || !info->group)
++		return -ENODEV;
++
+ 	if (info->domain == iommu_get_domain_for_dev(info->dev))
+ 		return 0;
+ 

@@ -1,0 +1,165 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Andres Cera <andres.cera@hotmail.com>
+Date: Wed, 12 Aug 2026 01:10:00 -0500
+Subject: [PATCH 26/26] media: synopsys: hdmirx: make the register lock safe for its hardirq callers
+
+MOTIVATION. A Rock 5B+ with a real HDMI source attached prints
+'BUG: Invalid wait context' out of the CEC hardirq before a
+shell exists: swapper/0/0 takes &hdmirx_dev->rst_lock
+{-.-.}-{3:3} at hdmirx_readl+0x2c in context-{2:2}, via
+hdmirx_cec_hardirq+0x8c and __handle_irq_event_percpu.
+spinlock_t is registered LD_WAIT_CONFIG, which is a sleeping
+rt_mutex under PREEMPT_RT; hardirq context is LD_WAIT_SPIN and
+may not wait on one. That is precisely the nesting
+CONFIG_PROVE_RAW_LOCK_NESTING exists to report.
+
+The report is worth more than the lock it names.
+print_lock_invalid_wait_context() calls debug_locks_off(), and
+lockdep never re-arms for the rest of that boot -- so every
+later 'possible recursive locking', 'bad unlock balance' and
+lock-order inversion in ANY subsystem goes unreported. It
+fires during probe, so on a board with a source attached there
+was no way to get a boot that had both live HDMI and live
+lockdep.
+
+CEC is not the only offender, merely the first to fire. The
+'hdmi' interrupt is requested with devm_request_irq() and NO
+threaded half, and hdmirx_hdmi_irq_handler() opens with twelve
+hdmirx_readl() calls before dispatching to sub-handlers that
+add more reads and writes. The DT declares that line
+IRQ_TYPE_LEVEL_HIGH, so its status registers must be read and
+acked in the primary handler or the line re-asserts forever.
+Deferring only the CEC read to a thread would therefore have
+moved the report to hdmirx_hdmi_irq_handler(), not removed it.
+
+BEHAVIOUR. rst_lock becomes a raw_spinlock_t and its four
+acquire sites become guard(raw_spinlock_irqsave). ONE lock
+still covers all of it: splitting a raw MMIO lock away from
+the reset would destroy the register-access-versus-DMA-reset
+exclusion the lock exists for, which is the whole reason it is
+called rst_lock. Nothing else changes -- same scope, same
+IRQ-save discipline, same leaf position, and on a non-RT build
+the emitted code is identical. What changes is that lockdep is
+now told the truth about a lock the driver has always taken
+from hardirq.
+
+That is only legal because nothing under it can sleep, which
+was checked at every site rather than assumed. Three of the
+four wrap readl()/writel() alone. The fourth,
+hdmirx_reset_dma(), calls reset_control_reset(), which
+drivers/reset/core.c does not annotate might_sleep() anywhere;
+its body is an SRCU read section -- legal in hardirq -- around
+rcdev->ops->reset. And on this SoC that op does not exist:
+rk3588-extra.dtsi points the hdmirx resets at &cru, whose
+rockchip_softrst_ops publishes only .assert and .deassert, so
+the call returns -ENOTSUPP before reaching a provider at all.
+
+NON-GOALS. Does not add a threaded half to the 'hdmi' or 'cec'
+interrupt, and does not move any register access out of
+hardirq -- both handlers need theirs where it is. Does not
+touch audio_lock or work_lock, which 0017 owns and which are
+taken only from process and workqueue context. Does not fix
+hdmirx_reset_dma() being a no-op on RK3588; that is a real
+upstream gap, it is unrelated to lock context, and it cannot
+be closed without a reset provider this SoC does not have.
+
+PROVENANCE. First-party CeraLive fix to imported code:
+rst_lock, its four accessors and both hardirq handlers are all
+v7.1.7's own, untouched by 0002/0003/0005/0006/0011/0012/0017.
+No upstream counterpart exists.
+
+EVIDENCE POINTER. Before/after on ONE Rock 5B+ with a physical
+HDMI source connected and locked, on the same lockdep kernel.
+Before: the trace above during probe, and /proc/lockdep_stats
+reading debug_locks: 0 by the time a shell exists. After: no
+Invalid wait context report, debug_locks: 1 after boot
+completes with the CEC interrupt confirmed to have fired, and
+HDMI-RX audio plus rkvenc encode unchanged. See
+docs/UPSTREAM-STATUS.md and docs/BOARD-QUALIFICATION.md.
+
+First-party: authored by CeraLive against v7.1.7, with no upstream
+counterpart in rockchip-rk3588-mainline-patches. The source of record is
+ceralive/0026-hdmirx-register-lock-hardirq-context.patch; patches/ is generated from it by
+scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the
+same added/removed-line parity the upstream lane gets.
+
+NOT upstream-bound: this targets the CeraLive device tree only and is not a
+submission to linux-media, linux-rockchip or the fork parent. No Signed-off-by
+is added, because a DCO assertion belongs to whoever actually submits it.
+
+---
+diff --git a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
+--- a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
++++ b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
+@@ -163,6 +163,7 @@ struct snps_hdmirx_dev {
+ 	 *
+ 	 *   work_lock  -> audio_lock          (hotplug disarms the audio work)
+ 	 *   audio_lock -> nothing             (leaf; never sleeps, never calls out)
++	 *   rst_lock   -> nothing             (leaf; raw, entered from hardirq)
+ 	 *
+ 	 * The ASoC codec locks are deliberately OUTSIDE both. hdmi-codec invokes
+ 	 * ->hook_plugged_cb() from its component probe/remove, i.e. under the
+@@ -205,7 +206,19 @@ struct snps_hdmirx_dev {
+ 	u32 edid_blocks_written;
+ 	u32 cur_fmt_fourcc;
+ 	u32 color_depth;
+-	spinlock_t rst_lock; /* to lock register access */
++	/*
++	 * RAW, and it has to be. Every MMIO access in this driver funnels
++	 * through the four accessors below, and TWO of this device's three
++	 * interrupts reach them from hardirq: "hdmi" is requested with no
++	 * threaded half at all, and "cec" reads and acks its own status in
++	 * the primary handler. A spinlock_t is LD_WAIT_CONFIG -- a sleeping
++	 * rt_mutex under PREEMPT_RT -- and hardirq context (LD_WAIT_SPIN)
++	 * may not wait on one, which is what CONFIG_PROVE_RAW_LOCK_NESTING
++	 * reports. Raw is honest here rather than merely convenient: this
++	 * is a leaf that wraps readl()/writel() and one
++	 * reset_control_reset(), and none of those sleep.
++	 */
++	raw_spinlock_t rst_lock; /* to lock register access */
+ 	u8 edid[EDID_NUM_BLOCKS_MAX * EDID_BLOCK_SIZE];
+ };
+ 
+@@ -226,21 +239,21 @@ static const struct v4l2_dv_timings_cap hdmirx_timings_cap = {
+ 
+ static void hdmirx_writel(struct snps_hdmirx_dev *hdmirx_dev, int reg, u32 val)
+ {
+-	guard(spinlock_irqsave)(&hdmirx_dev->rst_lock);
++	guard(raw_spinlock_irqsave)(&hdmirx_dev->rst_lock);
+ 
+ 	writel(val, hdmirx_dev->regs + reg);
+ }
+ 
+ static u32 hdmirx_readl(struct snps_hdmirx_dev *hdmirx_dev, int reg)
+ {
+-	guard(spinlock_irqsave)(&hdmirx_dev->rst_lock);
++	guard(raw_spinlock_irqsave)(&hdmirx_dev->rst_lock);
+ 
+ 	return readl(hdmirx_dev->regs + reg);
+ }
+ 
+ static void hdmirx_reset_dma(struct snps_hdmirx_dev *hdmirx_dev)
+ {
+-	guard(spinlock_irqsave)(&hdmirx_dev->rst_lock);
++	guard(raw_spinlock_irqsave)(&hdmirx_dev->rst_lock);
+ 
+ 	reset_control_reset(hdmirx_dev->resets[0].rstc);
+ }
+@@ -250,7 +263,7 @@ static void hdmirx_update_bits(struct snps_hdmirx_dev *hdmirx_dev, int reg,
+ {
+ 	u32 val;
+ 
+-	guard(spinlock_irqsave)(&hdmirx_dev->rst_lock);
++	guard(raw_spinlock_irqsave)(&hdmirx_dev->rst_lock);
+ 
+ 	val = readl(hdmirx_dev->regs + reg) & ~mask;
+ 	val |= (data & mask);
+@@ -3333,7 +3346,7 @@ static int hdmirx_probe(struct platform_device *pdev)
+ 	mutex_init(&hdmirx_dev->work_lock);
+ 	spin_lock_init(&hdmirx_dev->audio_lock);
+ 	hdmirx_dev->audio_work_armed = false;
+-	spin_lock_init(&hdmirx_dev->rst_lock);
++	raw_spin_lock_init(&hdmirx_dev->rst_lock);
+ 
+ 	init_completion(&hdmirx_dev->cr_read_done);
+ 	init_completion(&hdmirx_dev->cr_write_done);

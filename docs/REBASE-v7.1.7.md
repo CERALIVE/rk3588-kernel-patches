@@ -34,23 +34,28 @@ That rule is enforced by three mechanisms, not by good intentions:
 
 ---
 
-## Series membership — all FIVE members, and the `0004` gap
+## Series membership — all SEVENTEEN members, and the `0004` gap
 
-The series has **five** members. `0004` is a **deliberate ordinal gap, not a
+> **REFRESHED 2026-08-10 (Wave 6).** This section previously described a
+> five-member series and was left behind by two later waves. It now covers the
+> whole series, and it is the ledger's membership record of record.
+>
+> The per-hunk disposition further down is deliberately NOT rewritten: it is the
+> record of the `v6.19-rc8 → v7.1.7` REBASE, i.e. of re-anchoring the four
+> `upstream/` patches, and members 0006-0018 were authored or imported directly
+> against `v7.1.7` and never needed re-anchoring. A member with no rebase
+> disposition is a member that applied as written.
+
+The series has **seventeen** members. `0004` is a **deliberate ordinal gap, not a
 member**: upstream never published a `0004`, and this fork preserves upstream's
 numbering verbatim rather than renumbering to close it. The gap is asserted in
-code, not just in prose — `scripts/build-series.py` sets `SERIES_TOTAL = 6` with
+code, not just in prose — `scripts/build-series.py` sets `SERIES_TOTAL = 17` with
 the comment "Slot count, not member count. 0004 was never published upstream and
-we keep the gap so our files line up 1:1 with theirs, hence ordinals 1/6, 2/6,
-3/6, 5/6, 6/6", and its module docstring repeats it: "Upstream numbering
-(0001/0002/0003/0005, gap at 0004) is never renumbered". `patches/series` carries
-the same note as a generated comment.
-
-> **Why this section is spelled out.** The previous ledger,
-> [`REBASE-v7.1.5.md`](REBASE-v7.1.5.md), enumerated only four patches — it
-> omitted `0006`, the first-party `ceralive/` member, and its summary line reads
-> "`git am` applies all four patches". That was an under-count of the series, not
-> a statement about the gap. This ledger covers **5/5**.
+we keep the gap so our files line up 1:1 with theirs", and its module docstring
+repeats it: "Upstream numbering (0001/0002/0003/0005, gap at 0004) is never
+renumbered". `patches/series` carries the same note as a generated comment, and
+its first-party and backports ordinal lists are DERIVED from the series table
+rather than hand-written, so they cannot go stale the way this section did.
 
 | Ordinal | Patch | Lane | Member? |
 |---|---|---|---|
@@ -60,6 +65,39 @@ the same note as a generated comment.
 | *0004* | — | — | **no — deliberate gap, never published upstream** |
 | `0005` | `0005-rockchip-rk3588-hdmirx-audio.patch` | `upstream/` | yes |
 | `0006` | `0006-rk3588-hdmirx-audio-sound-card.patch` | `ceralive/` | yes (first-party) |
+| `0007` | `0007-iommu-rockchip-disable-fetch-dte-time-limit.patch` | `backports/` | yes (merged commit) |
+| `0008` | `0008-rkvenc-set-dma-max-segment-size.patch` | `ceralive/` | yes (first-party) |
+| `0009` | `0009-dma-buf-heaps-add-system-uncached-dma-heap.patch` | `ceralive/` | yes (first-party) |
+| `0010` | `0010-phy-rockchip-naneng-combphy-force-rterm-det-rdy.patch` | `backports/` | yes (lore posting) |
+| `0011` | `0011-dw-hdmi-qp-acr-n-cts-helper.patch` | `backports/` | yes (lore posting) |
+| `0012` | `0012-dw-hdmi-qp-audio-eopnotsupp.patch` | `backports/` | yes (lore posting) |
+| `0013` | `0013-rkvenc-ceralive-test-instrumentation.patch` | `ceralive/` | yes (first-party) |
+| `0014` | `0014-rkvenc-teardown-and-service-ccu-unwind.patch` | `ceralive/` | yes (first-party) |
+| `0015` | `0015-rkvenc-resource-error-observability.patch` | `ceralive/` | yes (first-party) |
+| `0016` | `0016-rkvenc-ioctl-bounds.patch` | `ceralive/` | yes (first-party) |
+| `0017` | `0017-hdmirx-audio-lifecycle-and-clock-errors.patch` | `ceralive/` | yes (first-party) |
+| `0018` | `0018-dma-buf-heaps-truthful-partial-registration.patch` | `ceralive/` | yes (first-party) |
+
+### Wave-6 members (0013-0018) — what each one is, and what it is not
+
+These six were authored against `v7.1.7` with the first twelve already applied,
+so each was written against the tree state the one before it produces. They fall
+into two groups, and the distinction matters when reading them:
+
+| Ordinal | Fixes a defect? | Summary |
+|---|---|---|
+| `0013` | no — instrumentation | Three Kconfig symbols and six one-shot debugfs fault controls. **Compiles to nothing when off**, and that is checked: a production-config build produces no `rkvenc_test.o` and no `rkvenc-test` string in `rkvenc.ko`. |
+| `0014` | yes — six | Session use-after-free on the release timeout path; a drain sleeping under the lock its own completion path needs; a dangling `ccu->core_list` entry on a failed attach; `remove()` leaving `queue->cores[]` and `srv->sub_devices[]` published; a devm service torn down under open FDs; a devm IRQ live across the whole of remove. |
+| `0015` | yes — six | Required clocks, IOMMU and reset errors discarded (including `-EPROBE_DEFER`); `clk_prepare_enable()` and `pm_runtime_get_sync()` returns discarded; `hw_finish()`/`hw_reset()` errors discarded. |
+| `0016` | yes — six | Unbounded `copy_to_user()` in the result path (kernel-heap over-read); wrap/underflow/alignment in the request parser; an element-vs-byte bound mismatch in `INIT_TRANS_TABLE`; three discarded error returns; every failure collapsed to `-ENOMEM`. |
+| `0017` | yes — four | An ineffective async work cancel the worker re-armed past; a lock order that would deadlock a naive synchronous cancel; discarded `clk_set_rate()` returns; an unreachable 768 kHz rate accepted as valid. |
+| `0018` | no — truthfulness | Extracts the heap registration sequence behind an injected add function and states the partial-registration outcome honestly. **Claims no atomicity**, because `dma_heap_add()` has no inverse at this base. |
+
+**None of 0014-0018 is board-validated.** Every one is source-verified and builds
+clean at `W=1` in both a test-enabled and a production configuration, and `0018`'s
+KUnit suite passes under `qemu-system-aarch64`, but the hardware drills that
+exercise the negative paths are Wave 8's and have not run. The patch headers say
+so individually; do not read a green gate here as a board result.
 
 ---
 

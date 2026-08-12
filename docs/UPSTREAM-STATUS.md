@@ -65,8 +65,101 @@ against a source**, not the date the patch was last touched.
 
 ## Current series members
 
-The series has eight members. `0004` is a deliberate ordinal gap — upstream never
-published one — and is not a row here for the same reason it is not a patch.
+The series has twenty-two members. `0004` is a deliberate ordinal gap — upstream never
+published one — and is not a row here for the same reason it is not a patch. `0023`,
+`0024` and `0025` are three more gaps, of a different kind: they were carried, then
+folded into `0021`, and their ordinals are burned. What each of them used to document
+is recorded in [§ retired ordinals](#retired-ordinals-0023-0024-0025) below, so an
+old evidence log or a `git blame` that names one still leads somewhere.
+
+Six of them (`0013`–`0018`) are **Wave-6 first-party quality patches**: one is test
+instrumentation that is absent from every production build, one states an existing
+API's failure semantics truthfully rather than fixing a defect, and the other four
+repair concrete defects in the code that runs when something goes wrong. All six
+have `first-party-no-upstream` status for the same structural reason `0008` does —
+they fix the imported `0001`/`0005` drivers, and there is no upstream counterpart of
+those drivers to backport a fix from.
+
+`0019` is a **Wave-8 first-party fix** and carries the same `first-party-no-upstream`
+status for the same reason, but it is separated from that group by how it was found:
+`0013`–`0018` were root-caused by reading the imported drivers, whereas `0019` was
+root-caused from a **real Rock 5B+ KASAN+LOCKDEP boot log** captured during a plain,
+unfaulted encode. Both of its defects are `0001`'s as imported — neither the `0013`
+test hook nor the `0014` teardown work touches the code either one lives in.
+
+`0020` is the second **Wave-8 first-party fix** and was found the same way — on real
+hardware, this time by fault injection rather than a plain encode. It differs from
+`0019` in what it fixes: `0019` repairs `0001` as imported, whereas `0020` repairs
+**`0014`'s own** service lifetime model, which drove a permanent `DEAD` state from a
+transient single-core unbind. It therefore retires with `0014`, not with `0001`.
+
+`0021` and `0022` are the third and fourth **Wave-8 first-party fixes**, and they
+exist for a reason worth stating plainly: **`0015` and `0016` were marked done
+before anything had run on a board, and the first real drill against them failed.**
+Both were root-caused from that drill's transcripts. `0021` repairs the rkvenc
+task, core and service lifecycle — four defects, described below. `0022`
+completes `0016`: four of the eight cases in `tests/expected-errno.tsv` still did
+not hold on hardware, and reading the same paths to find out why turned up two more
+bounds defects of the same shape that no case covers. Neither patch changes a test
+expectation. **One drill case, `valid-after-failures`, still fails after both, for a
+reason that is neither patch's** — see [§ `0022`](#0022--what-it-fixes-what-it-does-not-and-the-one-case-still-red).
+
+**`0022` was then found broken by hardware and amended in place.** Its first version
+fixed the three drill cases it targeted — confirmed on a board — and simultaneously
+refused **every** production encode, because the containment test it introduced was
+exact and `librockchip-mpp`'s real register write is not exactly contained. A
+cold-boot control encode with nothing armed caught it; an A/B one RAUC slot apart
+confirmed it. The patch was corrected rather than reverted, since the three fixes it
+proved are worth keeping, and the amendment is **host-verified only**. The lesson
+generalises beyond this patch and is written down in [§ `0022`](#0022--what-it-fixes-what-it-does-not-and-the-one-case-still-red):
+a **cold-boot, no-fault control encode** belongs in every rkvenc UAPI change's
+acceptance, not just the fault cases the change was written for.
+
+**`0021` is four defects in one lifecycle, and it is one patch because of how it was
+found.** A single continuous fault-injection and unbind session on one Rock 5B+
+produced them in order, and the order is causal rather than editorial — each fix is
+what made the next one reachable:
+
+1. **Balance.** `rkvenc_hw_run()` acquires PM references, clocks and the reset
+   group's read lock and unwinds them itself on failure, while
+   `rkvenc_task_finish()` released the same set unconditionally. A refused task
+   reaches the finish through the worker, so every early exit double-released:
+   `bad unlock balance`, an rwsem count wrong for the rest of the boot, and
+   `Runtime PM usage count underflow!`. `0015` made this *reachable*, by
+   propagating a clock-enable failure that used to be discarded, without creating
+   it — the unconditional release is `0001`'s.
+2. **Worker lifetime.** With the release balanced the encode stopped wedging, the
+   worker ran on, and KASAN caught it reading a task it had already handed to
+   `rkvenc_task_finish()` — which `kfree()`s it. Both reads are `0001`'s as
+   imported, and no patch between them moved either.
+3. **Core lifetime.** With an encode that survives a refused task, the
+   unbind/rebind drills became runnable, and three cycles Oopsed on a secondary
+   core whose IOMMU domain had been NULLed by the main core's unwind and never
+   re-shared — while it was still a dispatch target. The NULL-domain window is
+   `0020`'s as written; the unguarded attach is `0001`'s.
+4. **Service lifetime.** With both cores surviving an unbind, the drill could
+   finally hold a descriptor open *across* one — and that freed `srv` underneath
+   it, because `remove()`'s wait was skipped whenever a core had already claimed
+   the quiesce, which on a service-node unbind is always. That claim is `0014`'s,
+   the `NOT_OWNER` early return that broke it is `0020`'s, and a third defect in
+   the same drain (a mutex inside a `wait_event*()` condition) is `0014`'s.
+
+They were carried as four patches — `0021`, `0023`, `0024`, `0025` — while they
+were being discovered, then folded into `0021` once the picture was whole, because
+the fixes interlock and three of them are unreachable in isolation. The fold was
+proven **byte-neutral** before it landed: the merged series produces the identical
+git tree object the four-patch sequence produced, so nothing already validated on
+hardware was revalidated by opinion. See [§ retired ordinals](#retired-ordinals-0023-0024-0025).
+
+The generalisable lesson is that **fixing the bug that aborts a path is how you find
+the bugs further down it** — expect the next fault-injection run after any fix on an
+error path to surface something new, and budget for it rather than reading it as
+regression. It held four times here, in a row.
+
+Three of them (`0010`–`0012`) are **unmerged lore postings**, a provenance variant
+distinct from `0007`'s merged-commit backport: they have no commit id, none is
+claimed, and their retire trigger needs the posting to merge *and* the base to
+absorb it. See [`backports/README.md`](../backports/README.md).
 
 A row may carry an **`UNVALIDATED`** marker. That is a statement about *our* patch,
 not about an upstream counterpart: it means the patch is source-correct and compiles
@@ -86,6 +179,59 @@ the marker for a given patch is written down, per patch, in
 | `0007` iommu dte-limit fix | `backports/` lane — **backported from mainline** `8d4346ecd4950ae08cc76a6de327c264e846758c` "iommu/rockchip: disable fetch dte time limit", Simon Xue via Sven Püschel (Pengutronix), PATCHv2, <https://lore.kernel.org/r/20260428-spu-iommudtefix-v2-1-f592f579e508@pengutronix.de> | `merged@7.2-rc1` — `Acked-by` Heiko Stuebner, applied by Joerg Roedel 2026-06-02. **Absent from the base**: it carries no `Fixes:` tag and no `Cc: stable`, so `7.1.y` never picked it up | **Drop when base ≥ `v7.2`.** The base absorbing it is the whole retire condition — there is no merit question left, it is already mainline | 2026-08-08 | Sets `BIT(31)` of `MMU_AUTO_GATING` in `rk_iommu_enable()`, the vendor workaround for the RK356x/RK3588 blocked-VOP-and-black-screen and RK3588 RGA3 hang. Base check at `v7.1.7`: `DISABLE_FETCH_DTE_TIME_LIMIT` absent, `RK_MMU_AUTO_GATING` present. Applies forward with **no fuzz and no context adaptation**; **zero prerequisite commits**. Fixes:-tag sweep over mainline found **no follow-up** |
 | `0008` rkvenc DMA max segment size — **`VALIDATED` on Rock 5B+ (2026-08-09), `UNVALIDATED` on Orange Pi 5+** | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Fixes a bookkeeping defect in `0001`, so its upstream position is the `0001` row's. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — upstream rkvenc is `WIP` (Collabora's Mesa/Vulkan work, the same tracker as `0001`), and there is no upstream VEPU580 H.264 driver to backport a fix from | Only if `0001` itself retires, i.e. if an upstream VEPU580 driver ever replaces it wholesale. **Do not retire it on the strength of "upstream rkvenc landed"** — see [§ `0001`](#0001--do-not-retire-on-rkvenc-landing), which applies verbatim | 2026-08-09 | Adds `dma_set_max_seg_size(dev, DMA_BIT_MASK(32))` to `rkvenc_hw_probe()`, then **reads it back** with `dma_get_max_seg_size()` and fails the probe with `-EINVAL` if it did not take. Defect 2 of the 3 stacked in the pipeline's "MPP hardware video encode" KNOWN ISSUE. The IOVA guardrail in `rkvenc_service.c` is **deliberately untouched** — it correctly catches the symptom, and on a real board it never fired across 1080p, 4K, dual-core or a 10-minute soak. Read [§ `0008`](#0008--validated-on-rock-5b-and-what-that-does-and-does-not-mean). Hardware legs: [`BOARD-QUALIFICATION.md` §4](BOARD-QUALIFICATION.md) |
 | `0009` `system-uncached` dma-heap — **`VALIDATED` on Rock 5B+ (2026-08-09), `UNVALIDATED` on Orange Pi 5+** | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Ported in shape from the ACK/Rockchip uncached heap; no upstream Linux counterpart exists — mainline `drivers/dma-buf/heaps/` carries `system`, `system_cc_shared` and CMA only. Its reason to exist is the same `0001`/MPP stack, so its upstream position is the `0001` row's | `first-party-no-upstream` — upstream rkvenc is `WIP` (Collabora's Mesa/Vulkan work, the same tracker as `0001`), and no mainline series proposes an uncached system heap | Retire when **either** mainline registers an uncached system heap under exactly the name `system-uncached`, **or** `0001` retires wholesale, **or** the userspace stops hard-coding the name (a `librockchip-mpp` with a heap-name override or a working cached-heap fallback). Not before: the shipped `librockchip-mpp1 1.5.0-1` has neither | 2026-08-09 | Registers a second dma-heap from `system_heap.c` using the file's existing per-heap drvdata mechanism: `pgprot_writecombine()` mappings, a one-time `arch_dma_prep_coherent()` clean at allocation, and `DMA_ATTR_SKIP_CPU_SYNC` + skipped `dma_sync_sgtable_*` **only** for that heap. Defects **1 and 3** of the 3 stacked in the pipeline's "MPP hardware video encode" KNOWN ISSUE (`0008` is defect 2). Gated by its own `CONFIG_DMABUF_HEAPS_SYSTEM_UNCACHED`, which `depends on ARCH_HAS_DMA_PREP_COHERENT` so it cannot build where it would silently hand back cached memory. Confirmed a genuine second heap (minor `250,1`, not an alias of `system`'s `250,0`) that does not draw from CMA. Read [§ `0009`](#0009--validated-on-rock-5b-and-why-orange-pi-5-and-a-real-hdmi-source-stay-open) |
+| `0010` naneng-combphy RTERM erratum | `backports/` lane — **unmerged lore posting**, `PATCHv1` by Shawn Lin (Rockchip), <https://lore.kernel.org/r/1774423383-36599-1-git-send-email-shawn.lin@rock-chips.com>. Imported by `scripts/import-lore-series.py` from the canonical thread archive; canonical mail kept at `backports/lore/U3/01.mbox`. **No commit id exists and none is claimed** | `sent-v1` — `Signed-off-by` author only. Vinod Koul asked for a `Fixes:` tag and an erratum reference on 2026-05-10; unanswered, no reroll. The question is about the commit message, not the register write | Posting merges **and** the pinned base absorbs it. Both — a merge alone leaves `v7.1.7` still missing it | 2026-08-10 | Matrix alias **U3**. Sets `FORCE_RTERM_DET_RDY` in `PHYREG26` for the SoCs whose cfg opts in, RK3588 included, so a PCIe peer's RX termination is detected at critical temperatures. Zero prerequisites; applies with no fuzz base-only and stacked; no other member touches `drivers/phy/`. Read [§ matrix U3](#u3) |
+| `0011` dw-hdmi-qp N/CTS helper | `backports/` lane — **unmerged lore posting**, standalone `PATCHv3` by Simon Wright with **no cover letter and zero siblings**, <https://lore.kernel.org/r/86fcf349-0a7a-4618-9001-612371b0f71b@symple.nz>. Canonical mail at `backports/lore/U5/01.mbox`. **No commit id exists and none is claimed** | `sent-v3` — `Reviewed-by` **and** `Tested-by` Cristian Ciocaltea (Collabora), 2026-06-03, with no change requested | Posting merges **and** the pinned base absorbs it | 2026-08-10 | Matrix alias **U5**. Deletes dw-hdmi-qp's private N/CTS table, which disagrees with the shared helper at several TMDS rates, and calls `drm_hdmi_acr_get_n_cts()` — already exported by the base. Shares `dw-hdmi-qp.c` with `0012` without colliding. Read [§ matrix U5](#u5) |
+| `0012` dw-hdmi-qp audio `-EOPNOTSUPP` | `backports/` lane — **unmerged lore posting**, `PATCHv1` by Detlev Casanova (Collabora), <https://lore.kernel.org/r/20260519-fix-hdmi-audio-warnings-v1-1-9608966c993f@collabora.com>. Canonical mail at `backports/lore/U6/01.mbox`. **No commit id exists and none is claimed** | `sent-v1` — two independent `Tested-by` (Maud Spierings 2026-07-06 on Orange Pi 5+, Diederik de Haas 2026-08-08). Sebastian Reichel asked only for a `Fixes:` tag; the payload was not contested | Posting merges **and** the pinned base absorbs it | 2026-08-10 | Matrix alias **U6**. With no mode set the audio hooks returned `-ENODEV`, which ASoC logs as a fault — reporters counted hundreds of `ASoC error (-19) … on i2s-hifi` lines on an idle board. Beyond log hygiene this protects the dmesg buffer that `0005`/`0006` are diagnosed from. Read [§ matrix U6](#u6) |
+| `0013` rkvenc gated fault injection — **TEST INSTRUMENTATION, absent from production** | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). It instruments the imported `0001` driver, so its upstream position is the `0001` row's. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — this is QA scaffolding for a downstream driver; there is nothing upstream to be superseded by | Retire when `0001` retires wholesale, **or** when the negative paths `0014`–`0017` fix are covered by upstream tests that reach the same code. **Do not retire it merely because the drills passed once** — it is what makes a regression detectable | 2026-08-10 | Three Kconfig symbols (`VIDEO_ROCKCHIP_RKVENC_CERALIVE_TEST`, `VIDEO_ROCKCHIP_HDMIRX_CERALIVE_TEST`, `DMABUF_HEAPS_CERALIVE_TEST`) and six one-shot debugfs controls under `/sys/kernel/debug/rkvenc-test/`, each with a read-only `*_consumed` counter so a harness can tell a fault that fired from a knob the driver ignored. **Production absence is checked, not asserted**: a production-config build produces no `rkvenc_test.o` and no `rkvenc-test` string in `rkvenc.ko`, and all three symbols are on the image pipeline's `forbidden-symbols.list`, which the shipped `edge` config is gated against |
+| `0014` rkvenc teardown and unwind — **`UNVALIDATED` on both boards** | `ceralive/` lane — **first-party CeraLive**. Never submitted. Fixes lifetime defects in `0001`, so its upstream position is the `0001` row's. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — upstream rkvenc is `WIP` (the same Collabora tracker as `0001`); there is no upstream VEPU580 driver whose teardown could be backported | Only if `0001` retires wholesale. Read [§ `0001`](#0001--do-not-retire-on-rkvenc-landing), which applies verbatim | 2026-08-10 | Six defects, all in the code that runs when something goes away: a session freed on the release drain's **timeout** path while the worker still dereferences `task->session`; that drain sleeping under `pending_lock`, which the completion path needs; a failed shared-IOMMU attach returning with the core already on `ccu->core_list` that devm then frees; `remove()` never clearing `queue->cores[]` or `srv->sub_devices[]`; a devm-allocated service torn down under open file descriptors; and a devm IRQ live across the whole of `remove()`. **The service-under-open-descriptors claim was OVERSTATED and is corrected by `0021`'s service-lifetime half (carried as `0025` before the fold)**: the drain it added is honoured only when it COMPLETES. On the timeout path its result was discarded, and on a service-node unbind it never ran at all, because the cores unbind first and `rkvenc_service_quiesce()` returned on `RKVENC_DRAIN_NOT_OWNER`. `srv` stayed `devm`-allocated either way, which a real Rock 5B+ KASAN `slab-use-after-free` in `rkvenc_dev_release()` proved. `0021` reference counts it. Fixed with `device_link_add()` to the service and CCU suppliers, a `LIVE → QUIESCING → DEAD` service state guarded by the **existing** session lock, a kref'd session, and one probe-stage ledger walked in exact reverse by both the probe error path and `remove()`. Harness: `tests/rkvenc-unbind.sh`, including a deliberate no-close fixture that must FAIL |
+| `0015` rkvenc resource errors — **`UNVALIDATED` on both boards** | `ceralive/` lane — **first-party CeraLive**. Never submitted. Fixes error handling in `0001`, so its upstream position is the `0001` row's. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — same reason as `0014` | Only if `0001` retires wholesale | 2026-08-10 | Required-vs-optional classified from the binding `0001` itself ships: every `rkvenc-core` node declares three clocks, three resets and `iommus`, and neither declares `rockchip,sram`. `devm_clk_get()` failures were logged and returned 0 — turning a `-EPROBE_DEFER` from a not-yet-probed CRU into a permanently bound device with no clock; a failed `rkvenc_iommu_probe()` left `iommu_info` NULL and probe continued; reset acquisition turned every error into "no reset", removing the only recovery from a hung core. `clk_prepare_enable()`, `pm_runtime_get_sync()`, `rkvenc_hw_finish()` and `rkvenc_hw_reset()` returns were all discarded. Optional SRAM behaviour is preserved with one explicit log line. Harness: `tests/rkvenc-fault-qa.sh --case fail-clock-enable` |
+| `0016` rkvenc ioctl bounds — **`UNVALIDATED` on both boards** | `ceralive/` lane — **first-party CeraLive**. Never submitted. Fixes the UAPI parser `0001` ships, so its upstream position is the `0001` row's. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — same reason as `0014` | Only if `0001` retires wholesale | 2026-08-10 | **The most serious defect in this wave.** `rkvenc_result()` located a read request's register class by its START offset only and then `copy_to_user()`'d the caller's own claimed size, so a request beginning one dword inside a class and claiming a large size read past the end of a kmalloc'd buffer into whatever followed it on the kernel heap and handed it to userspace — an information disclosure reachable by anything that can open `/dev/mpp_service`. Also: `offset + size` wrap, `size < 4` underflow and unaligned offsets in the parser; an element-vs-byte bound mismatch in `INIT_TRANS_TABLE` (one-byte overrun); three discarded error returns; and every allocation failure collapsed to `-ENOMEM`, which is now an `ERR_PTR` carrying the real errno. **Userspace-visible change**: a caller matching on `ENOMEM` will now see `EINVAL` or `EFAULT`. Harness: `tests/rkvenc-invalid-ioctl.c` with `tests/expected-errno.tsv` owning the expectations as reviewed data |
+| `0017` HDMI-RX audio lifecycle — **`UNVALIDATED` on both boards** | `ceralive/` lane — **first-party CeraLive**. Never submitted. Fixes the audio path `0005` adds, so its upstream position is the `0005` row's — including that row's competing-upstream-series caveat | `first-party-no-upstream` — the upstream `PATCHv4` counterpart to `0005` does not carry this audio worker at all, so there is nothing upstream for this to be a version of | Retire together with `0005` if that row's four-part condition is ever met, since this patch fixes code `0005` introduces and would go with it | 2026-08-10 | The lock order is now written down on `struct snps_hdmirx_dev`, enumerated from `v7.1.7`'s own `sound/soc/codecs/hdmi-codec.c`: hdmi-codec invokes `->hook_plugged_cb()` under the ASoC card mutex and the installed callback reports a jack, so any path holding `work_lock` that calls into the codec closes a cycle against a path waiting for the audio worker under that lock — the same shape that already deadlocked the CeraLive **vendor** series, and one that fires only when audio is present. The old `cancel_delayed_work()` in `hdmirx_plugout()` was not merely weak but **ineffective**: it does not wait for a running worker, and the worker unconditionally rescheduled itself, so the work came back after every plugout. `clk_set_rate()` returns were discarded. 768000 is removed from `supported_fs` — CEA-861 tops out at 192 kHz and its only reachable effect was letting a garbage ACR-derived frequency pass `is_validfs()`. Harness: `tests/hdmirx-audio-fault-qa.sh` |
+| `0018` truthful dma-heap partial registration — **KUnit VALIDATED, boot path `UNVALIDATED`** | `ceralive/` lane — **first-party CeraLive**. Never submitted. It restructures the registration `0009` extends, so its upstream position is the `0009` row's | `first-party-no-upstream` — mainline has no removal API to align with and no counterpart restructuring | Retire when the pinned base gains a real dma-heap removal API: at that point the sequence should UNWIND on failure and the KUnit case should assert the unwind rather than the retention. Also retires with `0009` | 2026-08-10 | `dma_heap_add()` has **no counterpart at this base** — no removal, no unregister, no atomic multi-add — so a failing second registration leaves the first heap live for the boot. This patch states that instead of hiding it: the error message names the partial state, and the retire condition is written beside the function. **No atomicity is claimed anywhere.** The sequence moves behind an injected `add_fn` so the failure is reachable from a test at all; the built-in `ceralive_system_heap_test` drives a fake failing add and asserts first-add retained / error returned unchanged / nothing further attempted, plus a non-vacuity case proving the injection is actually used. **All four cases PASS under `qemu-system-aarch64`** on the applied series. Nothing real is registered by the suite; `tests/check-kunit-heap.sh` re-asserts the boot's actual heaps from userspace, with an ANCHORED TAP match because `not ok 1 - <suite>` contains `ok 1 - <suite>` |
+| `0019` rkvenc worker lock context + dma-buf API — **root-caused on REAL hardware, fix `UNVALIDATED`** | `ceralive/` lane — **first-party CeraLive**. Never submitted. Fixes two defects in the driver `0001` imports, so its upstream position is the `0001` row's. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — same structural reason as `0014`: there is no upstream VEPU580 driver whose locking could be fixed instead | Only if `0001` retires wholesale. If upstream rkvenc ever lands, re-check both defects against it before assuming they are gone — the dma-buf half is an API-era mistake any downstream port of this driver will share | 2026-08-10 | **Found by a REAL Rock 5B+ KASAN+LOCKDEP boot during a plain 1080p encode — no fault injection, no unbind.** Two INDEPENDENT defects, both `0001`'s as imported. (1) `rkvenc_task_worker_default()` holds `queue->running_lock` via `spin_lock_irqsave()` and, still holding it with interrupts off, takes `queue->pending_lock` — which `0001` declares a `struct mutex`. That is `BUG: sleeping function called from invalid context at kernel/locking/mutex.c:623` plus lockdep's `[ BUG: Invalid wait context ]` for `{3:3}` outside `{4:4}`, and untreated it can schedule with interrupts disabled. `pending_lock` becomes a `spinlock_t` at all three of its sites; `running_lock` stays held across the dequeue **on purpose**, because claiming an idle core and taking the task that will occupy it must be one step or two workers can claim the same `core_id`. Neither `pending_lock` section sleeps or is more than an O(1) list operation. (2) `rkvenc_dma_import_fd()` and `rkvenc_dma_release_buffer()` call the LOCKED dma-buf entry points, which since the dynamic-importer split assert the caller holds `dmabuf->resv` — `v7.1.7` `drivers/dma-buf/dma-buf.c:1179` is `dma_resv_assert_held(attach->dmabuf->resv)`. rkvenc attaches with plain `dma_buf_attach()` and registers no `dma_buf_attach_ops`, so it is a static importer and every import WARNed; the calls move to `dma_buf_map_attachment_unlocked()` / `dma_buf_unmap_attachment_unlocked()`. **The two are unrelated** — the dma-buf WARNING fires in ioctl context on a task that never touches either queue lock; the captured log only made them look coupled because console output from the two CPUs interleaved. **No lockdep suppression of any kind.** Runtime re-test on the debug slot is the confirming evidence and is pending |
+
+| `0020` rkvenc service survives a single core's unbind — **root-caused on REAL hardware, fix `UNVALIDATED`** | `ceralive/` lane — **first-party CeraLive**. Never submitted. It fixes `0014`'s own service lifetime model, not imported code, so unlike `0019` its upstream position is `0014`'s row and not `0001`'s. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — the LIVE/QUIESCING/DEAD model this corrects is `0014`'s invention; mainline has no rkvenc service to have gotten it right or wrong | Retire together with `0014`. It is not separable: with `0014` gone there is no service state machine left to keep reversible | 2026-08-10 | **Found by REAL Rock 5B+ fault injection: two bind-fault cases unbound core 0, re-bound it cleanly, watched the kernel print its own `rkvenc core 0 probe success` — and then could not `open("/dev/mpp_service")` at all, for the rest of the boot.** `0014`'s `rkvenc_core_unwind()` ended its first step with `rkvenc_service_quiesce(srv)`, which drives `srv->state` `LIVE -> QUIESCING -> DEAD`; `srv->state` is assigned in exactly three places in the whole driver — `LIVE` once in `rkvenc_service_probe()`, then `QUIESCING` and `DEAD` inside the quiesce — so **nothing restores `LIVE`**, and `rkvenc_dev_open()`'s `state != RKVENC_SRV_LIVE` half kept refusing after the sub-device came back. A single core's bind/unbind is transient; the state it drove is terminal. The drain body is factored out as `rkvenc_service_drain()` and the terminal state becomes the caller's: `rkvenc_service_quiesce()` still ends `DEAD` for `rkvenc_service_remove()` and `rkvenc_shutdown()`, while the unwind calls the new `rkvenc_service_quiesce_for_core()`, which returns a **fully drained** service to `LIVE`. **The quiesce is NOT removed** — a bare removal would drop the abort-and-drain that lets an in-flight waiter reach `release()` before the core frees its IRQ, which is exactly what `0014` added and what `tests/rkvenc-unbind.sh`'s inflight and held-open-FD cases prove. **The refusal is NOT weakened**: while the core is absent `!sub_devices[MPP_DEVICE_RKVENC]` still fails every open with `-ENODEV`, and that guard — unlike `state` — is reversible, because the core's next successful probe repopulates it. A drain that TIMES OUT still ends `DEAD`, since sessions that outlived it still point at the departing core. No test expectation changes: `tests/rkvenc-fault-qa.sh` already asserted the correct behaviour with its post-re-bind `qa_encode`, and `tests/rkvenc-unbind.sh` unbinds the SERVICE node, which is why it never caught this. **The parenthetical this row originally carried — that the service node's own `remove()` "quiesces permanently and correctly" — was WRONG and is corrected by `0021`'s service-lifetime half (carried as `0025` before the fold)**: the `NOT_OWNER` early return introduced here is precisely what made a service-node `remove()` skip its wait entirely, since the cores unbind first and take the `LIVE -> QUIESCING` transition before the service ever reaches it |
+
+| `0021` rkvenc task, core and service lifecycle — **root-caused AND re-verified on REAL hardware; consolidates the retired ordinals `0023`, `0024` and `0025`** | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). **Mixed upstream position**, because the four defects did not all come from the same place: the unconditional release, both worker dereferences and the unguarded IOMMU attach are `0001`'s as imported, so for those three this row sits where `0019`'s does; the NULL-domain window is `0020`'s as written; and the devm-allocated service, its drain and the mutex inside the wait condition are `0014`'s. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — same structural reason as `0014`: there is no upstream VEPU580 driver whose task, core or service lifecycle could be fixed instead, and the service object this reference counts is `0014`'s invention rather than mainline's | **Not governed by one earlier row, and not separable.** It retires only once `0001`, `0014` and `0020` have all retired. If upstream rkvenc ever lands, re-check all four defects against it rather than assuming they are gone — "acquire in one function, release in another", "finish the task, then read it again", "a secondary borrows the main core's page tables" and "a devm service torn down under open descriptors" are shapes any downstream port of this driver can inherit | 2026-08-12 | **Four defects in one rkvenc lifecycle, found in this order on ONE Rock 5B+ because each fix made the next reachable.** Carried as `0021`+`0023`+`0024`+`0025` while they were being discovered, folded into one patch afterwards; the fold is **byte-neutral**, proven by applying `0001`–`0020` + this patch + `0022` + `0026` and getting git tree `e8133646d100f528c17f1834a82f20becfc48b6a`, the same tree object the four-patch sequence produced. **(1) BALANCE.** `tests/rkvenc-fault-qa.sh --case fail-clock-enable` produced `WARNING: bad unlock balance detected!` from `rkvenc_task_finish+0x98`, `DEBUG_RWSEMS_WARN_ON(tmp < 0)` with the reset group's rwsem count at `0xffffffffffffff00`, and `Runtime PM usage count underflow!` — and those counts stay wrong for the rest of the boot, not just for that task. `rkvenc_hw_run()` acquires two runtime-PM references, a wakeup source, three clocks and the reset group's read lock and unwinds every one itself: five paths reach its error labels and two more return outright. `rkvenc_task_finish()` released the same set **unconditionally**, guarded only by `mpp->reset_group` being non-NULL — a static device-topology fact, true on every board that wires the resets, that says nothing about what *this* task did. A task `hw_run` refused still arrives there through the worker's own `run_ret` failure path, so **every** early exit double-released. **This is a production path**: the injected fault sits exactly where a genuine `clk_prepare_enable()` or PM-resume failure lands. Fixed with one task-state bit, `TASK_STATE_HW_HELD`, set immediately after the last acquire and cleared at `err_pm`, the common tail of all three error labels, so it is true exactly when `hw_run` returned holding the set; `rkvenc_task_finish()` takes it with `test_and_clear_bit()`, which also makes the teardown single-shot so an IRQ and a timeout racing to finish one task release once. The bit is set **before** the timeout work is scheduled and before the start register is written, because either can hand the task to `rkvenc_task_finish()` on another CPU immediately. A refused task is additionally marked `abort_request` before it is woken, so a `POLL` waiter takes `rkvenc_wait_result()`'s `-ENODEV` arm instead of being handed zeroed status registers as a clean encode. `0015`'s error paths are **not** changed — they are correct in isolation, and the asymmetry was always on the release side. **(2) WORKER LIFETIME.** With the release balanced the encode stopped wedging and the same fault case, on a KASAN+`PROVE_LOCKING` kernel, produced `BUG: KASAN: use-after-free in rkvenc_task_worker_default+0xcfc/0x10dc`, `Read of size 8 at addr ffff00010da88030`, shadow `ff` across the line and page `refcount:0` — long freed, not freshly poisoned. `rkvenc_task_finish()` ends in `kref_put(&task->ref, rkvenc_free_task_callback)`, which `kfree()`s the whole `struct rkvenc_task`. A task carries exactly **two** references — the allocator's and the one `rkvenc_dev_ioctl()` takes for the waiter — and **three** places drop one, so whichever puts last frees; the worker's put is last whenever the waiter got there first, which the release drain does with nothing between its `wait_event_timeout()` on `TASK_STATE_DONE` and its `kref_put()`. The worker then kept using the pointer in **two** places, both `0001`'s as imported: its IRQ arm calls `rkvenc_task_finish()` and the timeout arm immediately below re-reads `mpp_task->state`; its `hw_run`-failure arm calls `rkvenc_task_finish()` and then `wake_up(&pending_task->wait)`. **The report names the first, to the byte**: `pahole` on a KASAN+`PROVE_LOCKING` `arm64` build of this exact applied series puts `rkvenc_mpp_task.state` at offset 48 (`0x30`), size 8 — behind three `list_head`s — and `sizeof(struct rkvenc_task)` at 11408 bytes, over `KMALLOC_MAX_CACHE_SIZE`, so `kzalloc()` serves it page-aligned from the page allocator, which is why KASAN named a *page* with `refcount:0` instead of a slab object; `0xffff00010da88030` is `0x30` into a 16 KiB-aligned allocation, and `test_bit()` is an 8-byte instrumented read. `wait` is at offset 112, so the failure arm's `wake_up()` is a different address and was not the one reported; it is fixed all the same. Fixed by the worker no longer touching a task it has handed over: the IRQ arm nulls its local, and the failure arm loses its redundant trailing `wake_up()` — `rkvenc_task_finish()` sets `TASK_STATE_DONE` and wakes `task->wait` on every path, including (1)'s teardown-skipping one. Nothing reachable is lost: `rkvenc_hw_irq()` and `rkvenc_task_timeout_work()` both claim a task with `test_and_set_bit(TASK_STATE_HANDLE, ...)`, and the timeout side does it with the encoder's IRQ disabled, so `TASK_STATE_IRQ` and `TASK_STATE_TIMEOUT` are **never both set** on one task. The reference-counting model is unchanged: two references, two owners, three drop sites, exactly as `0001` and `0014` left them, and no `kref_get()` is added to hold the window open instead of closing it. **(3) CORE LIFETIME.** With an encode that survives a refused task, the unbind/rebind drills became runnable — and three cycles followed by any encode reaching the second core Oopsed: `KASAN: null-ptr-deref in range [0x0000000000000020-0x0000000000000027]`, `pc : __iommu_attach_group+0x15c/0x278`, `x20 = x22 = 0`, `x0 = 0x20`, from `rkvenc_iommu_attach+0x98` ← `rkvenc_hw_run+0x22c` ← `rkvenc_task_worker_default+0x828`. The faulting load is pinned to a member, not guessed: at `v7.1.7` `struct iommu_domain` lays out `type` at `0x00`, `cookie_type` at `0x04`, `is_iommupt` at `0x08`, `ops` at `0x10`, `dirty_ops` at `0x18` — so **`owner` is at `0x20`**, and `__iommu_attach_group()` reads exactly that through `domain_iommu_ops_compatible()` before doing anything else. RK3588 wires two encoder cores behind one CCU and the secondary borrows the main core's domain at probe (`rkvenc_attach_ccu()`'s `else` arm). A **main**-core unbind detaches every secondary and NULLs its domain — correctly, the page tables are going away — but a **rebinding** main core lands in the `!ccu->main_core` arm, which only claims the main slot, and only a probing *secondary* reaches the sharing `else`. The secondary never re-probes, so its domain stays NULL for the rest of the boot while it is **still in `queue->cores[]` with its idle bit set**, because the unwind's queue step clears the slot of the core that is *unbinding* and that is not this one. The board log shows exactly that: three `attach ccu as core 0 [main]` lines after the unbind cycles and **not one** `attach ccu as core 1`; the driver wedged and the following reboot took 745 s against ~130–150 s healthy. Fixed by making dispatchability and domain-validity the same fact — the unwind unpublishes a secondary at the moment it takes its domain away, a core that becomes main re-shares its domain with the secondaries already on `ccu->core_list` and republishes each one that takes it, and `rkvenc_iommu_attach()` refuses a NULL domain or group outright. That last guard matters on its own: the pre-existing `info->domain == iommu_get_domain_for_dev(info->dev)` comparison **cannot** catch the case, because `iommu_get_domain_for_dev()` returns the core's DEFAULT domain, which is never NULL, so `NULL != default` and the call went ahead. With it, `rkvenc_hw_run()` unwinds through (1)'s balanced `err_unlock` and the task fails as `-ENODEV` instead of taking the machine down. Publication and unpublication become one idempotent pair of helpers keyed on the stage bit they already owned, so the four call sites cannot drift. **Cold boot is unchanged**: the first core to probe finds an empty `ccu->core_list`, so the re-share is a no-op. **(4) SERVICE LIFETIME.** With both cores surviving an unbind, the harness's deliberate no-close fixture — `tests/rkvenc-unbind.sh --states timeout-negative` — could finally hold a descriptor open *across* one: `FAIL unbind COMPLETED with a file descriptor still open`, followed at close time by `BUG: KASAN: slab-use-after-free in __mutex_lock+0x1128/0x1158` from `rkvenc_dev_release+0x100/0x740`. The freed object is `srv`: `devm_kzalloc()`'d on the service platform device, so `devres_release_all()` frees it the instant `rkvenc_service_remove()` returns, and `rkvenc_dev_release()` then takes `mutex_lock(&srv->session_lock)` on it. `RKVENC_QUIESCE_TIMEOUT_MS`'s own comment states teardown "does NOT proceed to release state those descriptors can still reach", and two gaps broke it. On a **SERVICE-node** unbind the CORES unbind first — `__device_release_driver()` runs `device_links_unbind_consumers()` before `device_remove()` — so the first core's `rkvenc_service_quiesce_for_core()` owns the `LIVE -> QUIESCING` transition and the service's own `rkvenc_service_quiesce()` receives `RKVENC_DRAIN_NOT_OWNER` and **returns without waiting even once**. That is the NORMAL path for this node, not an edge case. And when it did own the transition, `RKVENC_DRAIN_TIMED_OUT` was discarded — the board printed `quiesce timed out with 1 session(s) still open; refusing to release service state` and released it anyway, so the message was untrue. A **third defect in the same drain**, predicted from source and then observed: `rkvenc_service_sessions_gone()` took `session_lock`, and every caller is a `wait_event*()` condition, which `___wait_event()` evaluates AFTER `prepare_to_wait_event()` has set the task state — `WARNING: kernel/sched/core.c:9091 at __might_sleep+0x108/0x154` from `rkvenc_service_drain+0x260/0x3f0`; it had never fired before because no run had reached the wait loop with a session still open, and it is now a lockless `READ_ONCE()`. The fix is a **lifetime** change, because neither naive wait works: an UNINTERRUPTIBLE wait parks the sysfs `unbind` writer in `D` state where no signal reaches it while the process tree that would close the descriptor is typically the one blocked on that writer (a genuine deadlock — a wedged rkvenc task turns `systemctl reboot` into an ~8-minute affair), and an INTERRUPTIBLE wait alone still returns into a `remove()` that frees `srv` with the descriptor open. So `srv` stops being `devm`-allocated and becomes **reference counted**, anchored on a `struct device` it now EMBEDS and publishes with `cdev_device_add()`, whose `->release()` frees it: the driver binding holds one reference and every open file holds another. The kobject parenting `cdev_device_add()` establishes is what covers `__fput()`'s `cdev_put()` — which runs AFTER `->release()` returns and which no explicit put of the driver's could reach. `remove()` then quiesces and waits **unbounded and interruptible**; the 10 s bound stays where it belongs, on the TRANSIENT per-core drain, which has somewhere to recover to. **Reference counting `srv` alone would only move the use-after-free to the core**: `struct rkvenc_dev` is `devm`-allocated on the CORE's device and a surviving session reaches it through `session->mpp`/`task->mpp` — `rkvenc_free_task_callback()` decrements `mpp->task_count`, `rkvenc_task_finalize()` takes `mpp->iommu_info`'s rwsem, and `rkvenc_task_timeout_work()` calls `disable_irq(mpp->irq)` up to two seconds after a task that was running when the core went away. A core's unwind therefore **severs** those pointers at the one point where its IRQ is already silent and the worker already drained, and every consumer treats the NULL as nothing left to release — the same explicit, checkable fact `0020` made of `sub_devices[]` and (3) makes of `iommu_info->domain`. The DMA session additionally takes a reference on the device it attached to, because its dma-buf detach outlives that core. **Known and deliberately NOT fixed here**: a task abandoned on `queue->pending_list` by an abort keeps its allocator reference and is never freed — a leak on a teardown path, not a use-after-free, and closing it means changing the reference model (2) just stabilised. Also **not** fixed: the `possible recursive locking` warning on `&rg->rw_sem` — `rkvenc_hw_run()` returns holding `down_read()` and the single `rkvenc-worker` kthread necessarily nests it when it dispatches to the second core, because `find_first_bit()` only picks core 1 while core 0 is busy. It is reported once per boot because lockdep disables itself afterwards, cannot deadlock today (nothing takes that rwsem for write), and is tracked separately. `0014`'s quiesce/drain, `0020`'s per-core requiesce bound and LIVE/DEAD outcome, the IOMMU activate/deactivate pair and `0022`'s ioctl parser are all untouched. **EVIDENCE.** (1) and (2) were host-verified when written — `W=1` build-clean under gcc 16.1 and every repo gate green — and are covered on hardware transitively, because they are underneath every later run. (3) was **re-verified on hardware on its own**: the unbind/rebind-then-encode sequence that produced the Oops re-run repeatedly on a KASAN+lockdep boot with zero KASAN, zero Oops and zero recursive-locking reports, both cores confirmed dispatchable afterwards. (4) is the widest evidence for the whole stack, **before/after on one board with only the module swapped**: the `timeout-negative` fixture goes FAIL → PASS, the log shows `teardown waiting for 1 open file descriptor(s)` then `teardown wait interrupted with 1 descriptor(s) still open; the service outlives this unbind on its reference count`, and KASAN, `__might_sleep`, `Oops`, `bad unlock balance` and recursive-locking counts are all **0**. All four states — `unbind-idle`, `unbind-held-fd`, `unbind-inflight`, `unbind-timeout-negative` — pass, 20 unbind/rebind cycles complete, and every encode returns the canonical **1,854,524 bytes**. The sever in (4) is exercised by a separate stress, because the harness cannot reach it: `qa_hold_fd()` only `open(2)`s the node, so its session never attaches to a core and never owns a task. No test expectation changes anywhere — the harnesses already asserted the correct behaviour, so the driver was wrong, not the tests |
+| `0022` rkvenc ioctl request coverage and element bounds — **root-caused on REAL hardware; its first version BROKE production encode on REAL hardware and was amended in place; amendment `UNVALIDATED`** | `ceralive/` lane — **first-party CeraLive**. Never submitted. It completes `0016`, which is itself a fix to the UAPI parser `0001` imports, so its upstream position is the `0001` row's. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — same structural reason as `0014` | Retire together with `0016`, i.e. only if `0001` retires wholesale. Read [§ `0001`](#0001--do-not-retire-on-rkvenc-landing) | 2026-08-11 | **Found by REAL Rock 5B+ `rkvenc-invalid-ioctl --all-malformed`, which failed 4 of 8 against `tests/expected-errno.tsv` — so `0016` did not finish the job, and being marked done proved nothing.** Three of the four were driver defects. (1) `class-overrun` was **accepted with `rc=0`**: a register request is SPLIT across every class it overlaps and each part clamped to that class's range, so bytes no class owns were silently discarded rather than refused — and the register map has real holes (class `BASE` ends at `0x0058`, class `PIC` starts at `0x0280`) and a hard end at `0x5354`. `0016` bounded the *copy* in `rkvenc_result()`, which is the right fix for the heap over-read, but that runs at `POLL` time and nothing rejected the request at submit time. (2) `trans-table-odd-size` was accepted because `0016` bounded `INIT_TRANS_TABLE` by **bytes** but not by **alignment**: `2*N+1` still divides to `N` whole entries, so an odd size well inside `sizeof(trans_table)` passed and left one `u16` half written while `trans_count` claimed it whole. (3) `bad-user-pointer` returned `-EIO` because the register-write `copy_from_user()` still did — an I/O-error claim about the hardware for what is an unreadable *user address*; `0016` fixed the `copy_to_user()` twin and missed this one. Reading the same paths for the cause turned up **two more of the same shape that no drill case covers**: `w_req_cnt`/`r_req_cnt` accumulate across every message in one ioctl and were unbounded, so two write messages each spanning all nine classes wrote 18 parts into a 9-element array inside the `kzalloc`'d task; and `rkvenc_extract_reg_offset_info()` bounded ELEMENTS while copying BYTES — the identical mismatch `0016` fixed in `INIT_TRANS_TABLE` — so `8*128 + 7` bytes passed the count check and overran `elem[]` by seven, partial trailing element included. **The first version of this patch then broke every hardware encode, and the shipped one is the amendment.** It required the summed clamped parts to EQUAL the request's size, on the stated premise that a request lying wholly inside the classes it names is what `librockchip-mpp` sends. A cold-boot control encode on a real Rock 5B+ — nothing armed, no fault injected — proved that premise **false**: MPP's class-`BASE` write is `offset 0 size 96`, `reg_msg[]` owns `[0x0000,0x005c)` = 92 bytes, so the request's last dword lands in the 137-dword hole between `BASE` and `PIC`, and every production task was refused (`write request 00000000+96 names 4 bytes no register class owns`, `alloc task failed: -22`) for **0 bytes out**, against **1,854,524 bytes** from the same board one RAUC slot earlier on the 19-patch kernel. `reg_msg[]` is a **sparse** map — no two of its nine classes abut, the holes run from six dwords (`SQI`→`SCL`) to 770 (`PIC`→`RC`) — so the clamp has dropped edge dwords silently since `0001` imported it, and an equality test cannot tell that harmless pre-existing drop apart from a real malformation. `req_coverage_check()` therefore asks **where** the dropped bytes went, not how many: the clamped parts are disjoint subranges, so they sum to the span they cover only when that span has no hole inside it, and requiring `sum == span` is exactly "the split consumed ONE contiguous run". A request spilling off a class's edge into the neighbouring hole (MPP's 96-byte write) is one run and is accepted and clamped as before `0022`; a request stitched from several runs with the map's holes *between* them (`class-overrun`) is still `-EINVAL`. Contiguity alone cannot catch a request running past the LAST class, since no following class is there to notice, so the request is additionally bounded by the map's own extent — computed from `reg_msg[]`, not hardcoded. **The per-class split, the clamp, and all of `0016`'s shape and window checks are unchanged**, and the amendment does **not** tighten what the clamp always tolerated: a request may still spill into an adjacent hole by as much as that hole holds, and those bytes are still dropped silently. Memory safety on this path is `0016`'s window check; this check refuses a misleading *shape*. The inclusive/half-open mismatch between `req_over_class()` and `rkvenc_result()`'s class lookup, and `reg_msg[]`'s `BASE` end being one dword short of what MPP writes, are **pre-existing and deliberately not touched** — neither is changeable without a board. **`valid-after-failures` still fails and this patch does not fix it** — read [§ `0022`](#0022--what-it-fixes-what-it-does-not-and-the-one-case-still-red). No test expectation changes: `expected-errno.tsv` already demanded these values |
+| `0026` hdmirx register lock hardirq context — **root-caused AND re-verified on REAL hardware** | `ceralive/` lane — **first-party CeraLive**. Never submitted. `rst_lock`, its four accessors and both hardirq handlers are all v7.1.7's own as imported, untouched by `0002`/`0003`/`0005`/`0006`/`0011`/`0012`/`0017`, so its upstream position is the `0002` row's — the first row that carries this driver. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — mainline carries the defect; no counterpart fix has been posted for `snps_hdmirx`'s register lock | Retire when mainline `snps_hdmirx` classifies `rst_lock` as raw itself, or when it stops entering the register accessors from hardirq. Do **not** retire with `0017`: that patch owns `audio_lock`/`work_lock` and never touches this one | 2026-08-12 | **Found on a REAL Rock 5B+ the first time a physical HDMI source was attached to a lockdep boot — which is why nine prior hardware attempts never saw it.** During probe, before a shell exists: `BUG: Invalid wait context`, `swapper/0/0 is trying to lock ffff0001011bd590 (&hdmirx_dev->rst_lock){-.-.}-{3:3} at hdmirx_readl+0x2c/0xa0`, `context-{2:2}`, from `hdmirx_cec_hardirq+0x8c/0x564` ← `__handle_irq_event_percpu`. `spinlock_t` is registered `LD_WAIT_CONFIG` — a sleeping `rt_mutex` under `PREEMPT_RT` — and hardirq context is `LD_WAIT_SPIN`, which may not wait on one. That is exactly the nesting `CONFIG_PROVE_RAW_LOCK_NESTING` exists to report, and it is a true report, not a false positive. **The report costs far more than the lock it names**: `print_lock_invalid_wait_context()` calls `debug_locks_off()`, which never re-arms for the rest of the boot, so every later `possible recursive locking`, `bad unlock balance` and lock-order inversion in **any** subsystem — including every rkvenc assertion `0021` is validated against — goes silently unreported. Firing during probe meant no boot could have both live HDMI and live lockdep. **CEC is the first offender, not the only one.** The `hdmi` interrupt is requested with `devm_request_irq()` and **no threaded half at all**, and `hdmirx_hdmi_irq_handler()` opens with twelve `hdmirx_readl()` calls before dispatching to sub-handlers that add more reads and writes; `rk3588-extra.dtsi` declares that line `IRQ_TYPE_LEVEL_HIGH`, so its status **must** be read and acked in the primary handler or the line re-asserts forever. **Deferring only the CEC read to a thread would therefore have moved the report to `hdmirx_hdmi_irq_handler()`, not removed it** — which is why the fix is the lock's classification and not the handler's shape. **The fix is one lock, promoted**: `rst_lock` becomes `raw_spinlock_t` and its four acquire sites become `guard(raw_spinlock_irqsave)`. It is deliberately **not** split into a raw MMIO lock plus a sleeping reset lock — that would destroy the register-access-versus-DMA-reset exclusion the lock exists for, which is the whole reason it is called `rst_lock`. Scope, IRQ-save discipline and leaf position are unchanged, and on a non-`PREEMPT_RT` build the emitted code is identical; what changes is that lockdep is now told the truth about a lock the driver has always taken from hardirq. **Legal only because nothing under it sleeps, checked at every site rather than assumed**: three of the four accessors wrap `readl()`/`writel()` alone, and the fourth, `hdmirx_reset_dma()`, calls `reset_control_reset()` — which `drivers/reset/core.c` does not annotate `might_sleep()` anywhere, whose body is an SRCU read section (legal in hardirq) around `rcdev->ops->reset`, and which on this SoC returns `-ENOTSUPP` before reaching a provider at all, because `rk3588-extra.dtsi` points the hdmirx resets at `&cru` and `rockchip_softrst_ops` publishes only `.assert` and `.deassert`. **Known and deliberately NOT fixed here**: that same fact makes `hdmirx_reset_dma()` a no-op on RK3588 — a real upstream gap, unrelated to lock context, and not closeable without a reset provider this SoC does not have. `audio_lock` and `work_lock` are untouched and are not the next report: both are taken only from process and workqueue context. **RE-VERIFIED ON HARDWARE, on the boot the defect requires**: a `rock-edge-test` candidate carrying this patch, installed to the Rock 5B+'s A slot with the same physical 4K30 HDMI source still attached and locked (`v4l2-ctl --query-dv-timings` 3840x2160, 296712000 Hz). `/proc/interrupts` proves both hardirqs genuinely ran — `rk_hdmirx_cec` **1** and `rk_hdmirx-hdmi` **37**, the identical counts the failing boot produced — and `/proc/lockdep_stats` reads `debug_locks: 1` after boot completes AND again after the full QA workload, against `debug_locks: 0` before a shell even existed on the previous boot. Across the whole boot: `Invalid wait context` **0**, `possible recursive locking` **0**, `bad unlock balance` **0**, circular-locking **0**, `BUG:` **0**, `WARNING:` **0**, `KASAN` **0**, `Oops` **0**, `Call trace:` **0**, and zero mentions of `rst_lock` anywhere in the log. No regression in the paths this could plausibly have touched: the `hdmirx` ALSA card still registers with a live capture PCM (`03-00: fddf8000.i2s-i2s-hifi … capture 1`, listed by `arecord -l`), `/dev/cec0` still enumerates as the `snps_hdmirx` adapter with its full capability set, and rkvenc hardware encode returns the canonical **1,854,524** bytes on two consecutive runs. No test expectation changes |
+
+### Retired ordinals `0023`, `0024`, `0025`
+
+These three were carried as series members and are not any more. They are **not**
+dropped work: every line of them is in `0021`, which is why they have no row in the
+member table above and no `Retire trigger` of their own — `0021`'s row governs all
+four defects now. They are archived byte-unchanged in
+[`retired/`](../retired/REGISTRY.md) with a registry row each, and their ordinals
+are burned exactly as `0004`'s is.
+
+| Retired ordinal | What it individually documented | Where it lives now |
+|---|---|---|
+| Retired slot `0023` — rkvenc worker task lifetime | The `KASAN: use-after-free in rkvenc_task_worker_default+0xcfc/0x10dc` at `ffff00010da88030`, the `pahole` offsets that pin it to the timeout arm's `test_bit(&mpp_task->state)`, and the two-reference/three-drop-site argument for nulling the worker's local | `0021` §(2) WORKER LIFETIME; archived at `retired/0023-rkvenc-worker-task-lifetime.patch` |
+| Retired slot `0024` — rkvenc secondary-core IOMMU domain lifetime | The `null-ptr-deref in range [0x20-0x27]` Oops, the `struct iommu_domain` layout that identifies the load as `domain->owner`, the rebinding-main-core analysis, and the publish/unpublish helper pair | `0021` §(3) CORE LIFETIME; archived at `retired/0024-rkvenc-secondary-core-iommu-domain-lifetime.patch` |
+| Retired slot `0025` — rkvenc service-node teardown lifetime | The `slab-use-after-free in __mutex_lock` from `rkvenc_dev_release()`, the `RKVENC_DRAIN_NOT_OWNER` skip, the discarded `RKVENC_DRAIN_TIMED_OUT`, the mutex-inside-a-`wait_event*()`-condition `__might_sleep` WARNING, and the reference-counted `srv` plus session severing | `0021` §(4) SERVICE LIFETIME; archived at `retired/0025-rkvenc-service-node-teardown-lifetime.patch` |
+
+**Why fold at all.** A reader who hits any one of these four symptoms needs all
+four: the fixes interlock, and three of them are unreachable in isolation — the
+worker use-after-free only becomes observable once the release is balanced, the
+unbind drills only become runnable once the encode survives a refused task, and the
+held-descriptor-across-unbind case only becomes runnable once both cores survive an
+unbind. Four patches spread the one lifecycle across four commit messages, each
+correct and none complete.
+
+**Why it changed nothing.** The fold was proven byte-neutral before it landed:
+`0001`–`0020` + the merged `0021` + `0022` + `0026` applied with `git am` produces
+git tree `e8133646d100f528c17f1834a82f20becfc48b6a`, which is the same tree object
+the four-patch sequence produces from the same base. Every hardware result recorded
+against `0023`, `0024` and `0025` therefore still stands for `0021` unchanged.
+
+**One artefact worth knowing about.** One comment in the driver source still names
+`0024` by ordinal — the header on `rkvenc_queue_publish_core()` /
+`rkvenc_queue_unpublish_core()` in `rkvenc_drv.c`, which says "`0024` adds two more
+call sites for them". Rewording it would have changed kernel bytes and broken the
+byte-neutrality proof above, so it stays. It is correct history rather than a stale
+reference: `0024` is where those helpers came from. This section is the map from
+that ordinal back to `0021`.
 
 ### `0001` — do not retire on rkvenc landing
 
@@ -379,6 +525,160 @@ hands MPP cached memory it will not synchronise, and aliasing the CMA heap caps 
 below 1080p (32 MiB pool fragmenting to a ~1.9 MiB largest run against a ~3.1 MiB
 1080p NV12 frame). The pipeline's KNOWN ISSUE names it a corruption trap and used it
 as a diagnostic instrument only.
+
+### `0022` — what it fixes, what it does not, and the one case still red
+
+**Read this part first: `0022` v1 fixed its three cases and broke every encode.**
+
+The drill below is what `0022` was written for, and on a board it worked: after
+`0022`, `class-overrun` → `EINVAL`, `trans-table-odd-size` → `EINVAL` and
+`bad-user-pointer` → `EFAULT` all hold, 7 of 8, exactly as predicted. On the *same*
+kernel, a **cold-boot control encode — first encode of a fresh boot, nothing armed,
+no fault, no unbind** — produced 0 bytes and `SIGABRT`:
+
+```
+rkvenc_extract_task_msg:416: write request 00000000+96 names 4 bytes no register class owns
+rkvenc_dev_ioctl:1302: alloc task failed: -22
+```
+
+An A/B on the same board one RAUC slot apart settled that it was the kernel and not
+the rig: 21-patch slot 0 bytes, 19-patch slot **1,854,524 bytes**, byte-identical to
+the known-good figure.
+
+The arithmetic, recomputed against `reg_msg[]` itself. `base_e` is the **inclusive**
+address of a class's last dword, so `RKVENC_CLASS_BASE = { 0x0000, 0x0058 }` owns
+bytes `[0x0000, 0x005c)` — 92 of them. `librockchip-mpp` writes `offset 0, size 96`,
+whose last dword sits at `0x005c`; `RKVENC_CLASS_PIC` does not start until `0x0280`.
+That one dword belongs to **no class**, and `rkvenc_update_req()`'s clamp has dropped
+it silently ever since `0001` imported the driver. It is not a defect — it is the
+behaviour every working encode this project has ever recorded ran on. `0022` v1's
+`req_fully_covered()` was an exact byte-count equality, so it read that pre-existing
+harmless drop as a hard failure and refused the request.
+
+This is **not** a `BASE`/`PIC` quirk. `reg_msg[]` is a sparse map and **no two of its
+nine classes abut** — every neighbouring pair is separated by a hole, the narrowest
+being six dwords (`SQI` → `SCL`) and the widest 770 (`PIC` → `RC`) — and the map
+stops dead after `DBG`. Any request that runs off any class's edge lands in a hole.
+An equality test was therefore always going to refuse real traffic; MPP's `BASE`
+write is simply the shape that reaches it first.
+
+**The amendment.** `req_coverage_check()` replaces "how many bytes were dropped"
+with "**where** they went", which is the distinction that actually separates the two
+populations:
+
+- the split covered **one unbroken run** and the request merely spilled off its edge
+  into the neighbouring hole — MPP's 96-byte write. Accepted and clamped, exactly as
+  before `0022`.
+- the split covered **several disjoint runs with the map's holes between them**, so
+  the driver stitched pieces of the register file together and reported the whole
+  span as programmed, or read back. That is `class-overrun`, and it is still
+  `-EINVAL`.
+
+The clamped parts are disjoint subranges of the request, so they sum to the span they
+cover **only** when that span has no hole inside it; requiring `sum == span` *is*
+"one contiguous run", and it needs no constant. Contiguity alone cannot catch a
+request running past the last class — there is no following class to notice — so the
+request is additionally required to lie inside the map's own extent, computed by
+walking `reg_msg[]` rather than hardcoded, so a map with different holes or none
+needs no change here.
+
+What the amendment deliberately does **not** do: it does not tighten what the clamp
+has always tolerated. A request may still spill into an adjacent hole by as much as
+that hole holds, and those bytes are still dropped silently. That is the pre-`0022`
+contract, memory safety on this path is `0016`'s window check, and this check's job
+is to refuse a misleading *shape*. Widening `reg_msg[]`'s `BASE` end to the 24 dwords
+MPP actually writes would be the other half of the story, and it is **not** done here:
+it changes an allocation size and a register layout, and this repository does not land
+hardware claims it has not run.
+
+**Status: the amendment is HOST-VERIFIED ONLY.** It is build-clean at `W=1` and every
+case in `expected-errno.tsv` plus MPP's own request shape was replayed against the
+real class table on the workstation. It has not been on a board. The required next
+step is a rebuild and a **cold-boot, no-fault control encode**.
+
+**The generalisable lesson.** `0022` v1 passed every test written for it and broke
+production anyway, because the tests were all *fault* cases and the thing it broke
+was the happy path. A cold-boot control encode with nothing armed is what caught it,
+and it should be a mandatory leg of **every** rkvenc UAPI change in this series, not
+an occasional one — a green fault drill says nothing about whether the driver still
+encodes.
+
+---
+
+`tests/rkvenc-invalid-ioctl.c --all-malformed` reported this against
+`tests/expected-errno.tsv` on a real Rock 5B+, on the series through `0020`:
+
+```
+FAIL class-overrun:        expected EINVAL, got OK (0)
+FAIL trans-table-odd-size: expected EINVAL, got OK (0)
+FAIL bad-user-pointer:     expected EFAULT, got EIO (5)
+FAIL valid-after-failures: expected OK,     got EINVAL (22)
+ok   offset-size-wrap / undersized-word / unaligned-offset / invalid-metadata -> EINVAL
+```
+
+`0022` addresses the first three. **It does not address the fourth**, and the
+reason matters more than the symptom, so it is written down here rather than left
+for the next drill to rediscover.
+
+**The four `ok` lines were passing for the wrong reason.** None of
+`offset-size-wrap`, `undersized-word`, `unaligned-offset` or `invalid-metadata`
+was being *rejected* by a bounds check. Each one produces a submission that
+allocates no class-`PIC` register buffer, and `rkvenc_task_get_format()` opens
+with `if (!class_reg || !class_size) return -EINVAL;` — because
+`hw->fmt_reg.class` is `RKVENC_CLASS_PIC` and that is where the format bit lives.
+So the expected `EINVAL` was arriving from a *format lookup*, several steps past
+the check that should have produced it. `0022` makes all four fail at the point
+that names them, which is the difference between a test that passes and a test
+that means something. `invalid-metadata` in particular was reaching
+`rkvenc_extract_reg_offset_info()` and being **accepted** — that function had no
+whole-element check at all, so a 13-byte blob was copied as one whole 8-byte
+element plus five bytes of the next.
+
+**Why `valid-after-failures` is red, and why it is not a driver defect.** The case
+issues one `MPP_CMD_SET_REG_WRITE` at `CLASS_BASE_S` for the whole of class
+`BASE`, and asserts `OK`. That request is well formed, and after `0022` it passes
+every bounds check — and then `rkvenc_task_get_format()` rejects it by exactly the
+mechanism above: a submission that writes only class `BASE` allocates no class
+`PIC` buffer, and the format register is in `PIC`. **The harness's "well-formed
+request" is not a well-formed task.** Real `librockchip-mpp` always programs class
+`PIC`; a task without it has no format, and `rkvenc2_setup_task_id()` immediately
+after would dereference `task->reg[RKVENC_CLASS_PIC].data` unconditionally, so
+`get_format()` returning `-EINVAL` there is load-bearing, not incidental.
+
+Two possible readings, and the honest one is the second:
+
+- *The driver should accept a partial register write.* It should not. The format
+  drives FD translation and the DCHS id write; a task with no `PIC` class is not a
+  task the hardware can be given.
+- *The harness case should submit a complete task.* Yes — the fix is to add a
+  second `MPP_CMD_SET_REG_WRITE` covering class `PIC` (`base_s = 0x0280`,
+  `size = 0x03f4 - 0x0280 + 4`) alongside the existing class-`BASE` one.
+
+That change is **deliberately not made here**, for a reason that is not
+squeamishness: it changes what runs on the board. Today the case is rejected
+before submission, so nothing is queued. A complete task *is* queued, reaches the
+hardware with all-zero registers, and is retired by the watchdog and a hardware
+reset. That is a real behavioural change to a drill, it cannot be verified from
+source, and this repository does not land board-behaviour claims it has not run.
+It is also not a new risk — `class-overrun` submits and runs exactly such a task
+today, which is precisely why it returned `OK` — but the decision belongs to
+whoever runs the next drill, with the board in front of them.
+
+Until then: `valid-after-failures` is expected to stay red, `0022` is not the
+reason, and a green `--all-malformed` is **not** the acceptance criterion for
+either `0021` or `0022`. The criterion is the other seven cases plus the
+`fail-clock-enable` transcript.
+
+**Two bounds defects in this patch are not covered by any drill case**, and will
+not be proven by re-running one: the `w_req_cnt`/`r_req_cnt` overflow needs two
+class-spanning write messages in one ioctl, and the
+`rkvenc_extract_reg_offset_info()` byte/element overrun needs `8*128 + 7` bytes of
+offset metadata. Neither is in `expected-errno.tsv`. They were found by reading
+the paths the failing cases run through, they are fixed on the strength of that
+reading, and they stay `UNVALIDATED` in the strict sense — a KASAN board running
+the existing drill will not exercise them. Adding two cases for them is the
+obvious follow-up and is not done here, for the same reason as above: a new drill
+case is a claim about a board.
 
 ### I2S MCLK gate clocks — skipped, known regression on Rock 5B+
 
@@ -710,6 +1010,333 @@ it instruments HDMI-TX on a device whose HDMI question is RX, at a depth of thre
 including a refactor of two unrelated drivers, with an unanswered `[High]` on the
 FRL patch. Re-open only if an equivalent lands for `snps_hdmirx`, or if the DRM
 HDMI-TX link ever becomes something this product diagnoses.
+
+---
+
+## 2026-08 candidate reconciliation matrix (M1–M8 / U1–U7)
+
+One screening round, fifteen candidates, one row each — **including the ones that
+were excluded before a single command was run**. A candidate that leaves no row
+reads later as a candidate nobody thought of, which is exactly the confusion this
+ledger exists to prevent, so "not screened, and here is why" is recorded as a
+result rather than omitted.
+
+Discovery artifact: the Collabora `mainline-status.md` snapshot, fetched
+`2026-08-09T20:27:03Z`, 27,159 bytes. The live `ref=main` bytes still matched that
+digest when this round re-fetched them on 2026-08-10, and the same bytes are
+reproducible from the immutable commit-pinned URL
+`…/repository/files/mainline-status.md/raw?ref=8bcf0c0493a1bf90e4e7216e25a6b2a00a5688f8`,
+which is recorded as the source of record so a later edit to the page cannot move
+this round's ground truth.
+
+**Screening base:** `v7.1.7` (`c7ba9d6de43e9d9bd755b1f3c19501a38898c6b6`), a real
+checkout — `Apply base-only` and `Apply stacked` below are `git apply` results
+against that tree, not judgements. **Build result** is a symbol-resolution and
+`git am` result: this repository compiles nothing by design (see `AGENTS.md`
+"Scope is patch application only"), so a row claiming a compile would be a claim
+this repo cannot make. **Last checked: 2026-08-10** for every row.
+
+**Machine-checked.** `scripts/validate-candidate-matrix.py` refuses this block if
+an alias, a field or the snapshot digest is missing, empty, duplicated, or carries
+a disposition outside `IN` / `OUT` / `ALREADY-IN-BASE / NO IMPORT` /
+`ALREADY CARRIED`:
+
+```bash
+python3 scripts/validate-candidate-matrix.py docs/UPSTREAM-STATUS.md \
+  --aliases M1,M2,M3,M4,M5,M6,M7,M8,U1,U2,U3,U4,U5,U6,U7 \
+  --source-sha256 729b87afb5a4fb097713b79e264a3688e25f3f971a8b9fcbc6c73d49340dccb9
+```
+
+<!-- candidate-matrix: begin -->
+
+Discovery snapshot sha256: 729b87afb5a4fb097713b79e264a3688e25f3f971a8b9fcbc6c73d49340dccb9
+
+#### M1
+
+- Capture revision: merged mainline commit, captured 2026-08-10
+- Subject: mmc: sdhci-of-dwcmshc: check bus clock enable result in the probe() method
+- Identity: commit `521f39ca93cc43ce1b3eae8d44201f8f55dd9151`
+- Thread review: merged with `Acked-by: Adrian Hunter`, `Cc: stable@vger.kernel.org`, applied by Ulf Hansson; two `Fixes:` tags (`e438cf49b305`, `bccce2ec7790`)
+- Prerequisite graph: none — the change is local to `dwcmshc_probe()` error unwinding
+- Follow-up sweep: not needed; the commit is already present in the screening base, so any follow-up would arrive through 7.1.y like the commit itself did
+- Apply base-only: forward `git apply --check` FAILS, reverse `git apply -R --check` SUCCEEDS on every hunk — the post-image is already the base
+- Apply stacked: not attempted; a patch already present in the base cannot be stacked onto it
+- Overlap: none with any series member; no member touches `drivers/mmc/`
+- Build result: not applicable — nothing is imported, and the base already carries `err_bus_clk` at `sdhci-of-dwcmshc.c:2513` plus the checked `clk_prepare_enable(priv->bus_clk)` at 2443
+- Regression state: none known; the fix is in the shipped base and has been through 7.1.y
+- Retire trigger: not applicable — there is nothing carried to retire
+- Disposition: ALREADY-IN-BASE / NO IMPORT
+
+#### M2
+
+- Capture revision: merged mainline commit (7.3-rc1 per the Collabora table), captured 2026-08-10
+- Subject: phy: rockchip: naneng-combphy: Always configure SSC spread direction
+- Identity: commit `be2b5b17b7053fee142939076746d26b2d6c9702`
+- Thread review: merged with `Tested-by: Liu Changjie`, `Cc: stable`, `Fixes: 0b31f297557f`, applied by Vinod Koul
+- Prerequisite graph: exactly one, and it is decisive — the commit only makes sense on top of `0b31f297557f` ("Consolidate SSC configuration"), which introduced the regression it repairs
+- Follow-up sweep: `torvalds/linux` commits on `phy-rockchip-naneng-combphy.c` since 2026-03-25 are `0b31f297557f` (2026-05-19) and this commit (2026-07-20); neither is in `v7.1.7`
+- Apply base-only: forward FAILS — the base has no `rk_combphy_common_cfg_ssc()` for the hunks to land in
+- Apply stacked: not attempted; the base-only result already settles it
+- Overlap: would overlap `0010` (both edit `phy-rockchip-naneng-combphy.c`), which is moot given the disposition
+- Build result: not applicable — nothing imported
+- Regression state: the regression this fixes does not exist in the base. `v7.1.7` still performs the `RK3568_PHYREG32` direction writes unconditionally inside each per-type `switch` (lines 604, 614, 759, 771, 885) and gates only the "Enable SSC" block on `priv->enable_ssc`, which is the pre-`0b31f297557f` behaviour this commit restores
+- Retire trigger: not applicable — nothing carried. If the base ever absorbs `0b31f297557f` without this commit, re-open the candidate
+- Disposition: OUT
+
+#### M3
+
+- Capture revision: merged mainline commit, captured 2026-08-10
+- Subject: media: rockchip: rga: avoid odd frame sizes for YUV formats
+- Identity: commit `92f50870ae987b8e2e5334e4ee38f82f6f405d78`
+- Thread review: not read — excluded by the approved import tier before technical screening began
+- Prerequisite graph: not resolved — excluded before screening
+- Follow-up sweep: not run — excluded before screening
+- Apply base-only: not attempted — excluded before screening
+- Apply stacked: not attempted — excluded before screening
+- Overlap: not assessed — excluded before screening; RGA is touched by no series member
+- Build result: not run — excluded before screening
+- Regression state: not assessed — excluded before screening
+- Retire trigger: not applicable — nothing carried. Re-open only if the approved import tier is widened to RGA
+- Disposition: OUT
+
+#### M4
+
+- Capture revision: merged mainline commit set, captured 2026-08-10
+- Subject: Panthor runtime/reset/MMU/firmware stability set
+- Identity: commits `e62179fd3e23ecfaedf7101e19ec0d3e4f51de76`, `1b8d771fb214e1f783d66caf13d35d7eda39a643`, `1f27cef1f41dac0bd254d8741766f189936c9880`, `b921b8613790a3f9e78ab64017fa7149ef0b750c`, `4a2c8cbe9bcba170706fdf08b1c84b6cbcf5b044`, `2b8f13d3c7e26c46c20d9e367904cf01729c88e6`
+- Thread review: not read — excluded by the approved import tier before technical screening began
+- Prerequisite graph: not resolved — excluded before screening. The set is six commits on its face, which is already past this lane's two-prerequisite ceiling
+- Follow-up sweep: not run — excluded before screening
+- Apply base-only: not attempted — excluded before screening
+- Apply stacked: not attempted — excluded before screening
+- Overlap: not assessed — excluded before screening; the GPU driver is touched by no series member
+- Build result: not run — excluded before screening
+- Regression state: not assessed — excluded before screening
+- Retire trigger: not applicable — nothing carried. Re-open only if the approved import tier is widened to Panthor
+- Disposition: OUT
+
+#### M5
+
+- Capture revision: `PATCHv2` posting, merged for 7.2-rc1 per the Collabora table; captured 2026-08-10
+- Subject: media: synopsys: hdmirx: Fix HPD lane hold time — the Collabora table names this row "HDMI-RX EDID fix", which is the symptom, not the mechanism
+- Identity: lore `20260325105742.63236-1-dmitry.osipenko@collabora.com`; the stable backport in the base is `7dd27810eea0`, itself the backport of mainline `d1162a5adbb5`
+- Thread review: single message, `Signed-off-by: Dmitry Osipenko`, no objections in thread
+- Prerequisite graph: none — a two-line `msleep(100)` → `msleep(100 + 50)` change in `hdmirx_hpd_ctrl()`
+- Follow-up sweep: not needed; the change is already in the base via 7.1.6
+- Apply base-only: forward `git apply --check` FAILS, reverse `git apply -R --check` SUCCEEDS — the post-image is the base. Verified against the real `v7.1.7` checkout, not inferred from `docs/EVAL-0002-EDID.md`
+- Apply stacked: not attempted; a patch already present in the base cannot be stacked onto it
+- Overlap: shares `snps_hdmirx.c` with `0002`/`0003`/`0005`, but shares no mechanism — `0002` is IRQ masking, lock-loop rework and DMA reset; this is HPD hold time
+- Build result: not applicable — nothing imported
+- Regression state: none known; in the base since `v7.1.6`
+- Retire trigger: not applicable — nothing carried. This row exists so that a future reader does not re-import it. It is **not** a replacement for `0002`; see `docs/EVAL-0002-EDID.md`
+- Disposition: ALREADY-IN-BASE / NO IMPORT
+
+#### M6
+
+- Capture revision: merged mainline commit, carried since the `0007` import; re-verified 2026-08-10
+- Subject: iommu/rockchip: disable fetch dte time limit
+- Identity: commit `8d4346ecd4950ae08cc76a6de327c264e846758c`, lore `20260428-spu-iommudtefix-v2-1-f592f579e508@pengutronix.de`
+- Thread review: `Acked-by: Heiko Stuebner`, applied by Joerg Roedel; no `Fixes:` tag and no `Cc: stable`, which is why 7.1.y will not pick it up on its own
+- Prerequisite graph: none — `RK_MMU_AUTO_GATING` and `rk_iommu_read/write` already exist in the base
+- Follow-up sweep: unchanged since the `0007` import sweep; no landed follow-up on `rockchip-iommu.c` invalidates it
+- Apply base-only: applies with no fuzz — this is what the existing `0007` import does today
+- Apply stacked: `scripts/apply.sh` applies the full 12-member series to `v7.1.7`, `0007` included, on 2026-08-10
+- Overlap: none — `0007` is the only member touching `drivers/iommu/`
+- Build result: `git am` of the whole series succeeds; no unresolved symbol
+- Regression state: none known
+- Retire trigger: pinned base reaches `v7.2`, then retire through `retired/REGISTRY.md`
+- Disposition: ALREADY CARRIED
+
+#### M7
+
+- Capture revision: `PATCHv3` posting, merged for 7.2-rc1 per the Collabora table; captured 2026-08-10
+- Subject: Add support for I2S MCLK output gate clocks (RK3588)
+- Identity: lore `20260320-rk3588-mclk-gate-grf-v3-0-980338eacd2c@superkali.me`
+- Thread review: already read and written up in this document — see "I2S MCLK gate clocks — skipped, known regression on Rock 5B+"
+- Prerequisite graph: four deep, recorded in that section; the lane's ceiling is two
+- Follow-up sweep: not re-run — the recorded Rock 5B+ regression has no landed fix, which is the blocking finding and does not change with a sweep
+- Apply base-only: not re-attempted — the decision is behavioural, not an apply result
+- Apply stacked: not re-attempted, same reason
+- Overlap: would touch the I2S/clock path `0006` depends on, which is precisely why the recorded Rock 5B+ regression is disqualifying here
+- Build result: not run — the candidate is excluded on a recorded regression, not on build
+- Regression state: documented Rock 5B+ regression with no landed fix. This is an owner decision already taken; it is not re-litigated here
+- Retire trigger: not applicable — nothing carried. Re-open only if the recorded regression is demonstrably fixed upstream
+- Disposition: OUT
+
+#### M8
+
+- Capture revision: `PATCHv2` posting, 13 patches, merged for 7.2-rc1 per the Collabora table; captured 2026-08-10 from the canonical thread archive
+- Subject: arm64: dts: rockchip: Wire up frl-enable-gpios for RK3576/RK3588 boards
+- Identity: lore `20260428-dts-rk-frl-enable-gpios-v2-0-924df9db884a@collabora.com`
+- Thread review: cover plus 13 patches plus one reply; a clean, uncontested device-tree wiring series
+- Prerequisite graph: the *driver* half is already in the base — `dw_hdmi_qp-rockchip.c` reads `frl-enable-gpios` at line 553 and the property is documented in `rockchip,rk3588-dw-hdmi-qp.yaml`. The series itself is 13 sequential patches, and patches 11–13 are unrelated `pinctrl-names` cleanup
+- Follow-up sweep: not run — the disposition turns on payload scope, which no follow-up changes
+- Apply base-only: the thread parses and the 13 patches extract cleanly; a full apply was not run because the candidate is excluded on scope
+- Apply stacked: not attempted, same reason
+- Overlap: patches 04 and 12 touch `rk3588-orangepi-5-plus.dts`, which `0006` also edits — a real overlap risk for a payload with no capture-path benefit
+- Build result: not run — excluded on scope
+- Regression state: none known upstream. Absent the GPIO the encoder falls back cleanly to TMDS, which the binding states explicitly, so declining costs no working behaviour
+- Retire trigger: not applicable — nothing carried. Re-open if CeraLive ever ships HDMI **output** above 4K60, which needs FRL and therefore this bias wiring
+- Disposition: OUT
+
+#### U1
+
+- Capture revision: `PATCHv3`, posted 2026-04-08; captured 2026-08-10 from the canonical thread archive
+- Subject: mmc: sdhci-of-dwcmshc: Disable clock before DLL configuration
+- Identity: lore `1775632729-22841-1-git-send-email-shawn.lin@rock-chips.com`
+- Thread review: two messages — the posting (`Signed-off-by: Shawn Lin`, `Acked-by: Adrian Hunter`) and a reply from Ulf Hansson
+- Prerequisite graph: depends on U2's Rockchip platform-data refactor, which is why U2 is ordered before U1 wherever both are considered
+- Follow-up sweep: not needed; the change is already present in the base
+- Apply base-only: forward FAILS, reverse `git apply -R --check` SUCCEEDS on every hunk
+- Apply stacked: not attempted; already present in the base
+- Overlap: none with any series member
+- Build result: not applicable — nothing imported. The base carries the exact constructs the posting adds: `/* Disable clock while config DLL */` (line 787), the `enable_clk:` label (876) and `sdhci_enable_clk(host, 0)` (884)
+- Regression state: none known
+- Retire trigger: not applicable — nothing carried
+- Disposition: ALREADY-IN-BASE / NO IMPORT
+
+#### U2
+
+- Capture revision: `PATCHv2`, posted 2026-03-27; captured 2026-08-10 from the canonical thread archive
+- Subject: mmc: sdhci-dwcmshc: Refactor Rockchip platform data for controller revisions
+- Identity: lore `1774620875-18258-1-git-send-email-shawn.lin@rock-chips.com`
+- Thread review: two messages — the posting (`Signed-off-by: Shawn Lin`) and `Acked-by: Adrian Hunter`
+- Prerequisite graph: none; it is itself U1's prerequisite
+- Follow-up sweep: not needed; the refactor is already present in the base
+- Apply base-only: forward FAILS and reverse FAILS, but only on one hunk, and the content check settles it — see Build result
+- Apply stacked: not attempted; already present in the base
+- Overlap: none with any series member
+- Build result: not applicable — nothing imported. Every construct the refactor introduces is in the base: `struct rockchip_pltfm_data` (line 328) with its `revision` member (335), `to_pltfm_data(dwc_priv, rockchip)` (757), the `revision == 0` / `revision == 1` tests (828, 854) and the three `sdhci_dwcmshc_rk35xx_pdata` initialisers (2131, 2147, 2163). The reverse apply fails only because a later cosmetic change dropped a pair of parentheses at line 854
+- Regression state: none known
+- Retire trigger: not applicable — nothing carried
+- Disposition: ALREADY-IN-BASE / NO IMPORT
+
+#### U3
+
+- Capture revision: `PATCHv1` (posted as a bare `[PATCH]`), 2026-03-25; captured 2026-08-10 from the canonical thread archive
+- Subject: phy: rockchip: naneng-combphy: Fix TX detect RX termination errata
+- Identity: lore `1774423383-36599-1-git-send-email-shawn.lin@rock-chips.com`
+- Thread review: three messages — the posting (`Signed-off-by: Shawn Lin`), an author ping on 2026-04-27, and Vinod Koul on 2026-05-10 asking for a `Fixes:` tag and an erratum reference. Unanswered, no reroll, no `Reviewed-by`, no `Nacked-by`. The open question is about the commit message, not the register write
+- Prerequisite graph: none — `rockchip_combphy_updatel()` and the `RK3568_PHYREG*` block are in the base, and `RK3568_PHYREG26` is defined by the patch itself
+- Follow-up sweep: `phy-rockchip-naneng-combphy.c` took `0b31f297557f` (2026-05-19) and `be2b5b17b705` (2026-07-20) in mainline since the posting; neither is in `v7.1.7` and neither touches the RTERM path
+- Apply base-only: applies with no fuzz to `v7.1.7`
+- Apply stacked: applies with no fuzz on top of the existing series
+- Overlap: none — no other series member touches `drivers/phy/`
+- Build result: `git am` of the 12-member series succeeds; no unresolved symbol
+- Regression state: none known; no reported regression on the thread
+- Retire trigger: the posting merges AND the pinned base absorbs it — both, then retire through `retired/REGISTRY.md`
+- Disposition: IN
+
+#### U4
+
+- Capture revision: `PATCHv5`, 10 patches, posted 2026-07-23; captured 2026-08-10 from the canonical thread archive
+- Subject: phy: rockchip: samsung-hdptx: Clock fixes and API transition cleanups
+- Identity: lore `20260723-hdptx-clk-fixes-v5-0-8e786067865f@collabora.com`
+- Thread review: 31 messages. Manivannan Sadhasivam reviewed all ten on 2026-08-07 and gave `Reviewed-by` on eight — but asked for a behaviour change on 02/10 ("If the hardware state is invalid, why can't this be a hard failure?") and repeated it on 03/10, both unanswered
+- Prerequisite graph: internally sequential — 03 and 06–10 fail a base-only apply on their own and only land after their predecessors, so taking any single fix means taking its chain
+- Follow-up sweep: not decisive — the blocking finding is an open in-thread change request, which no mainline sweep can resolve
+- Apply base-only: all ten apply with no fuzz **in sequence** to `v7.1.7`
+- Apply stacked: not attempted — the candidate is excluded on review state, not on apply
+- Overlap: none with any series member
+- Build result: not run — excluded on review state
+- Regression state: no reported regression; the exclusion is that 02 and 03 are still being negotiated
+- Retire trigger: would not work. What merges will be a v6 whose 02/03 behave differently from what a v5 import would ship, so "retire when this merges" would silently stop matching — the same failure that turned away the fdinfo candidate
+- Disposition: OUT
+
+#### U5
+
+- Capture revision: `PATCHv3`, standalone — **no cover letter and zero sibling patches**; posted 2026-05-21 by Simon Wright; captured 2026-08-10 from the canonical thread archive
+- Subject: [PATCH v3] drm/bridge: dw-hdmi-qp: use drm_hdmi_acr_get_n_cts() helper for audio N/CTS
+- Identity: lore `86fcf349-0a7a-4618-9001-612371b0f71b@symple.nz`
+- Thread review: two messages — the posting (`Signed-off-by`, `Tested-by`, `Reported-by`, all Simon Wright) and Cristian Ciocaltea on 2026-06-03 giving `Reviewed-by` and `Tested-by` with "The patch looks good to me." No change requested, no reroll
+- Prerequisite graph: none — `drm_hdmi_acr_get_n_cts()` is already exported by `drivers/gpu/drm/display/drm_hdmi_helper.c` in the base
+- Follow-up sweep: the only mainline commit on `dw-hdmi-qp.c` since the posting is `fb145be7964d` (2026-05-21, common TMDS char rate constant), which does not touch the N/CTS path
+- Apply base-only: applies with no fuzz to `v7.1.7`
+- Apply stacked: applies with no fuzz on top of the existing series, and before `0012`
+- Overlap: shares `dw-hdmi-qp.c` with `0012` and does not collide — this replaces the private N/CTS table, `0012` changes the audio enable/prepare hooks; applying `0011` then `0012` was verified clean in that order
+- Build result: `git am` of the 12-member series succeeds; no unresolved symbol
+- Regression state: none known
+- Retire trigger: the posting merges AND the pinned base absorbs it — both, then retire through `retired/REGISTRY.md`
+- Disposition: IN
+
+#### U6
+
+- Capture revision: `PATCHv1` (posted as a bare `[PATCH]`), 2026-05-19; captured 2026-08-10 from the canonical thread archive
+- Subject: drm/bridge: dw-hdmi-qp: Return -EOPNOTSUPP in HDMI audio functions
+- Identity: lore `20260519-fix-hdmi-audio-warnings-v1-1-9608966c993f@collabora.com`
+- Thread review: five messages — the posting (`Signed-off-by: Detlev Casanova`), Sebastian Reichel asking only for a `Fixes: fd0141d1a8a2a` tag, `Tested-by: Maud Spierings` on an Orange Pi 5+ (2026-07-06), an author nudge (2026-08-06) and `Tested-by: Diederik de Haas` (2026-08-08) reporting hundreds of the errors it removes. No change to the payload was requested
+- Prerequisite graph: none — two hunks, no new symbol
+- Follow-up sweep: the only mainline commit on `dw-hdmi-qp.c` since the posting is `fb145be7964d` (2026-05-21), which does not touch the audio hooks
+- Apply base-only: applies with no fuzz to `v7.1.7`
+- Apply stacked: applies with no fuzz on top of the existing series and after `0011`
+- Overlap: shares `dw-hdmi-qp.c` with `0011` and does not collide — see the `0011` row
+- Build result: `git am` of the 12-member series succeeds; no unresolved symbol
+- Regression state: none known; two independent `Tested-by` reports on RK3588 hardware
+- Retire trigger: the posting merges AND the pinned base absorbs it — both, then retire through `retired/REGISTRY.md`
+- Disposition: IN
+
+#### U7
+
+- Capture revision: `PATCHv6`, 4 patches, posted 2025-07-15; captured 2026-08-10 from the canonical thread archive
+- Subject: PCI: Add support for resetting the Root Ports in a platform specific way
+- Identity: lore `20250715-pci-port-reset-v6-0-6f9cce94e7bb@oss.qualcomm.com`
+- Thread review: 25 messages, long-running cross-subsystem discussion; the b4 relay rewrites `From:` on some archived copies, which is why the importer records the observed senders beside the digest rather than inside it
+- Prerequisite graph: unbounded for this base — the series was written against a mid-2025 tree and touches PCI core (`PCI/ERR`), `pci-host-common`, `pcie-qcom` and `pcie-dw-rockchip` together
+- Follow-up sweep: not decisive — the candidate fails on apply before a sweep matters
+- Apply base-only: 1/4 applies; **2/4, 3/4 and 4/4 all FAIL** in sequence — `pci-host-common.h:16`, `dwc/Kconfig:296` and `pcie-dw-rockchip.c:23` have all moved in `v7.1.7`
+- Apply stacked: not attempted — a series that fails base-only cannot pass stacked
+- Overlap: none with any series member
+- Build result: not run — the series does not apply
+- Regression state: not assessed — the candidate fails on apply
+- Retire trigger: not applicable — nothing carried. Re-open only if the series is reposted against a 7.x tree
+- Disposition: OUT
+
+<!-- candidate-matrix: end -->
+
+### Merged candidates: nothing was imported, and that is the result
+
+Of the eight merged-side candidates, **none** produced an import, and each has a
+different reason:
+
+- **M1** and **M5** are already in `v7.1.7`. Both were checked against the real
+  checkout rather than assumed: each reverse-applies cleanly with
+  `git apply -R --check`, which only succeeds when every hunk's post-image is
+  already the base. M1 carried `Cc: stable`, so 7.1.y picked it up; M5 arrived as
+  `7dd27810eea0` at `v7.1.6`.
+- **M6** has been carried as `0007` since its own import; it is verified, not
+  re-imported.
+- **M2** repairs a regression that the pinned base does not have. `v7.1.7` still
+  writes the SSC spread direction unconditionally inside each per-type `switch`;
+  the consolidation commit that broke it, `0b31f297557f`, is not in the base.
+  Importing the fix would be importing a fix for nothing.
+- **M8** is thirteen device-tree patches across roughly fifty boards, wiring an
+  HDMI **output** FRL voltage-bias GPIO. The driver half is already in the base
+  and the binding says an absent GPIO simply means TMDS-only, so declining costs
+  no working behaviour on a capture appliance.
+- **M3**, **M4** and **M7** were excluded by owner decision before technical
+  screening; their rows record that as the finding rather than leaving a gap.
+
+Row-by-row evidence is in the matrix above. The screening base was a real
+`v7.1.7` checkout, and the apply results quoted there are `git apply` output.
+
+
+### What the round changed
+
+Three imports, all unmerged lore postings, all through
+`scripts/import-lore-series.py` and none hand-transcribed: `0010` (U3), `0011`
+(U5) and `0012` (U6). Ordinals continue after `0009`; the `0004` gap is untouched.
+
+**No merged candidate was imported, and that is a result, not an omission.** M1 and
+M5 are already in `v7.1.7` and were verified so against the real tree rather than
+assumed; M6 has been carried as `0007` since its own import; M2 repairs a
+regression the base does not have; M8 is out of scope; M3, M4 and M7 were excluded
+by owner decision before screening.
+
+**U1 and U2 are both already in the base**, so the "U2 before U1" prerequisite
+order never becomes an import order. `scripts/check-series-ledger.py
+--require-before U2:U1` still asserts it: the ordering must hold if both are ever
+carried, and until then both must carry a recorded non-`IN` disposition rather
+than simply be absent.
 
 ---
 

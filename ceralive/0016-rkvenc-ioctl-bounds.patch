@@ -1,0 +1,381 @@
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
+@@ -7,6 +7,7 @@
+  */
+ 
+ #include <linux/cdev.h>
++#include <linux/overflow.h>
+ #include <linux/delay.h>
+ #include <linux/dma-buf.h>
+ #include <linux/device/class.h>
+@@ -157,6 +158,74 @@ static void rkvenc_free_class_msg(struct rkvenc_task *task)
+ 	}
+ }
+ 
++/*
++ * Validate a register request's SHAPE before anything computes with it.
++ *
++ * req->offset and req->size arrive verbatim from userspace in mpp_msg_v1 and
++ * were previously used unchecked, which broke the arithmetic below in three
++ * independent ways:
++ *
++ *   - size < 4 makes `offset + size - 4` UNDERFLOW, so a one-byte request
++ *     produces an end-of-request address just below 4 GiB and overlaps every
++ *     register class at once;
++ *   - offset + size can WRAP, which produces an end address BELOW the start and
++ *     silently passes an overlap test it should fail;
++ *   - an unaligned offset makes the register index arithmetic
++ *     ((offset - base_s) / 4) truncate, so a copy lands at the wrong dword and
++ *     runs `size` bytes from there.
++ *
++ * The register file is a dword array, so requiring 4-byte alignment on both
++ * offset and size is not a new restriction -- it is the restriction the rest of
++ * the code already assumed.
++ */
++static bool req_shape_valid(const struct mpp_request *req)
++{
++	if (req->size < sizeof(u32))
++		return false;
++	if (!IS_ALIGNED(req->offset, sizeof(u32)))
++		return false;
++	if (!IS_ALIGNED(req->size, sizeof(u32)))
++		return false;
++	if (check_add_overflow(req->offset, req->size, &(u32){ 0 }))
++		return false;
++
++	return true;
++}
++
++/*
++ * Resolve the byte window a clamped request names inside a class's own
++ * register buffer, refusing anything that does not fit ENTIRELY within it.
++ *
++ * This is the one place the two independent size sources are reconciled: the
++ * class buffer is sized from the hardware description (base_e - base_s + 4),
++ * while the request's offset and size came from userspace. Comparing them here,
++ * once, is what stops a request that merely OVERLAPS a class from being copied
++ * as though it were contained by it.
++ */
++static int rkvenc_class_reg_window(struct rkvenc_task *task, u32 class,
++				   const struct mpp_request *req, void **out)
++{
++	const struct rkvenc_hw_info *hw = task->hw_info;
++	u32 base_s = hw->reg_msg[class].base_s;
++	u32 size = task->reg[class].size;
++	u32 start, end;
++
++	if (!task->reg[class].data || !size)
++		return -EINVAL;
++	if (req->offset < base_s)
++		return -EINVAL;
++
++	start = req->offset - base_s;
++	if (check_add_overflow(start, req->size, &end))
++		return -EINVAL;
++	if (end > size)
++		return -EINVAL;
++
++	*out = (u8 *)task->reg[class].data + start;
++
++	return 0;
++}
++
+ /* ---- Check if request overlaps a class ---- */
+ static bool req_over_class(struct mpp_request *req,
+ 			   struct rkvenc_task *task, u32 class)
+@@ -167,12 +236,15 @@ static bool req_over_class(struct mpp_request *req,
+ 	u32 base_s = hw->reg_msg[class].base_s;
+ 	u32 base_e = hw->reg_msg[class].base_e;
+ 
++	if (!req_shape_valid(req))
++		return false;
++
+ 	return (req->offset <= base_e && req_e >= base_s);
+ }
+ 
+ /* ---- Update request to fit within class boundaries ---- */
+-static void rkvenc_update_req(struct rkvenc_task *task, u32 class,
+-			      struct mpp_request *src, struct mpp_request *dst)
++static int rkvenc_update_req(struct rkvenc_task *task, u32 class,
++			     struct mpp_request *src, struct mpp_request *dst)
+ {
+ 	const struct rkvenc_hw_info *hw = task->hw_info;
+ 	u32 base_s = hw->reg_msg[class].base_s;
+@@ -183,12 +255,24 @@ static void rkvenc_update_req(struct rkvenc_task *task, u32 class,
+ 	u32 s = max(req_s, base_s);
+ 	u32 e = min(req_e, base_e);
+ 
++	/*
++	 * req_over_class() said the ranges intersect; this asserts it rather
++	 * than assuming it, because `e - s + 4` on an empty intersection
++	 * underflows into a ~4 GiB size that the copy below would then use.
++	 */
++	if (e < s)
++		return -EINVAL;
++	if (s < base_s || e > base_e)
++		return -EINVAL;
++
+ 	dst->cmd = src->cmd;
+ 	dst->flags = src->flags;
+ 	dst->offset = s;
+ 	dst->size = e - s + sizeof(u32);
+ 	/* Adjust data pointer for the offset */
+ 	dst->data = (void __user *)((u8 __user *)src->data + (s - req_s));
++
++	return 0;
+ }
+ 
+ /* ---- Extract RCB info ---- */
+@@ -202,6 +286,15 @@ static int rkvenc2_extract_rcb_info(struct rkvenc2_rcb_info *rcb_inf,
+ 		rkvenc_err("count %d, max_size %d\n", cnt, max_size);
+ 		return -EINVAL;
+ 	}
++	/*
++	 * A partial trailing element would be copied in and then counted out,
++	 * leaving cnt elements of which the last is half-initialised stack.
++	 */
++	if (!req->size || req->size % sizeof(rcb_inf->elem[0])) {
++		rkvenc_err("rcb info size %u is not a whole number of elements\n",
++			   req->size);
++		return -EINVAL;
++	}
+ 	if (copy_from_user(rcb_inf->elem, req->data, req->size)) {
+ 		rkvenc_err("copy_from_user failed\n");
+ 		return -EINVAL;
+@@ -241,11 +334,22 @@ static int rkvenc_extract_task_msg(struct rkvenc_session *session,
+ 					goto fail;
+ 				}
+ 				wreq = &task->w_reqs[task->w_req_cnt];
+-				rkvenc_update_req(task, j, req, wreq);
+-				data = (u8 *)task->reg[j].data + (wreq->offset - hw->reg_msg[j].base_s);
+-				if (!data) {
+-					rkvenc_err("get class reg fail, offset %08x\n", wreq->offset);
+-					ret = -EINVAL;
++				ret = rkvenc_update_req(task, j, req, wreq);
++				if (ret) {
++					rkvenc_err("bad write request for class %d\n", j);
++					goto fail;
++				}
++				/*
++				 * The clamped request must land wholly inside
++				 * the class buffer that was just allocated. The
++				 * old `if (!data)` could never be true -- it
++				 * tested a pointer derived from a non-NULL base
++				 * -- so nothing bounded this copy at all.
++				 */
++				ret = rkvenc_class_reg_window(task, j, wreq, &data);
++				if (ret) {
++					rkvenc_err("write request %08x+%u outside class %d\n",
++						   wreq->offset, wreq->size, j);
+ 					goto fail;
+ 				}
+ 				if (copy_from_user(data, wreq->data, wreq->size)) {
+@@ -270,19 +374,37 @@ static int rkvenc_extract_task_msg(struct rkvenc_session *session,
+ 					goto fail;
+ 				}
+ 				rreq = &task->r_reqs[task->r_req_cnt];
+-				rkvenc_update_req(task, j, req, rreq);
++				ret = rkvenc_update_req(task, j, req, rreq);
++				if (ret) {
++					rkvenc_err("bad read request for class %d\n", j);
++					goto fail;
++				}
+ 				task->reg[j].valid = 1;
+ 				task->r_req_cnt++;
+ 			}
+ 		} break;
+ 		case MPP_CMD_SET_REG_ADDR_OFFSET: {
+-			rkvenc_extract_reg_offset_info(&task->off_inf, req);
++			/*
++			 * Both parsers returned an error that the caller threw
++			 * away, so a rejected metadata blob produced a task
++			 * built from a HALF-PARSED offset table and ran anyway.
++			 */
++			ret = rkvenc_extract_reg_offset_info(&task->off_inf, req);
++			if (ret) {
++				rkvenc_err("bad register offset metadata\n");
++				goto fail;
++			}
+ 		} break;
+ 		case MPP_CMD_SET_RCB_INFO: {
+ 			struct rkvenc2_session_priv *priv = session->priv;
+ 
+-			if (priv)
+-				rkvenc2_extract_rcb_info(&priv->rcb_inf, req);
++			if (priv) {
++				ret = rkvenc2_extract_rcb_info(&priv->rcb_inf, req);
++				if (ret) {
++					rkvenc_err("bad RCB metadata\n");
++					goto fail;
++				}
++			}
+ 		} break;
+ 		default:
+ 			break;
+@@ -312,7 +434,11 @@ static int rkvenc_task_get_format(struct rkvenc_dev *mpp,
+ 	if (!class_reg || !class_size)
+ 		return -EINVAL;
+ 
++	if (hw->fmt_reg.base < class_base)
++		return -EINVAL;
+ 	offset = hw->fmt_reg.base - class_base;
++	if (offset + sizeof(u32) > class_size)
++		return -EINVAL;
+ 	val = class_reg[offset / sizeof(u32)];
+ 	task->fmt = (val >> bitpos) & ((1 << bitlen) - 1);
+ 
+@@ -413,6 +539,10 @@ static void rkvenc2_set_rcbbuf(struct rkvenc_dev *enc,
+ }
+ 
+ /* ---- Alloc task from session ---- */
++/*
++ * Returns an ERR_PTR on failure, never NULL: the caller reports the exact errno
++ * to userspace, and the ioctl harness asserts a per-case expected value.
++ */
+ static struct rkvenc_task *rkvenc_alloc_task(struct rkvenc_session *session,
+ 					     struct rkvenc_task_msgs *msgs)
+ {
+@@ -423,7 +553,8 @@ static struct rkvenc_task *rkvenc_alloc_task(struct rkvenc_session *session,
+ 
+ 	task = kzalloc(sizeof(*task), GFP_KERNEL);
+ 	if (!task)
+-		return NULL;
++		return ERR_PTR(-ENOMEM);
++	ret = -EINVAL;
+ 
+ 	mpp_task = &task->mpp_task;
+ 	rkvenc_task_init(session, mpp_task);
+@@ -439,7 +570,7 @@ static struct rkvenc_task *rkvenc_alloc_task(struct rkvenc_session *session,
+ 	/* get format */
+ 	ret = rkvenc_task_get_format(mpp, task);
+ 	if (ret)
+-		goto free_task;
++		goto free_class_msg;
+ 
+ 	/* process fd in register */
+ 	if (!(msgs->flags & MPP_FLAGS_REG_FD_NO_TRANS)) {
+@@ -555,10 +686,17 @@ static struct rkvenc_task *rkvenc_alloc_task(struct rkvenc_session *session,
+ 
+ fail:
+ 	rkvenc_task_finalize(session, mpp_task);
++free_class_msg:
+ 	rkvenc_free_class_msg(task);
+ free_task:
+ 	kfree(task);
+-	return NULL;
++	/*
++	 * Every failure used to become a bare NULL, which the ioctl reported as
++	 * -ENOMEM. A malformed request is not an out-of-memory condition, and a
++	 * harness that asserts an expected errno per case cannot tell them
++	 * apart, so the real error is carried out.
++	 */
++	return ERR_PTR(ret);
+ }
+ 
+ /* ---- Result: copy status regs back to userspace ---- */
+@@ -571,18 +709,14 @@ static int rkvenc_result(struct rkvenc_dev *mpp,
+ 	for (i = 0; i < task->r_req_cnt; i++) {
+ 		struct mpp_request *req = &task->r_reqs[i];
+ 		const struct rkvenc_hw_info *hw = task->hw_info;
+-		u32 class_base;
+-		u32 *reg;
++		void *reg = NULL;
+ 		int c;
+ 
+ 		/* Find class for this read request offset */
+ 		for (c = 0; c < hw->reg_class; c++) {
+ 			if (req->offset >= hw->reg_msg[c].base_s &&
+-			    req->offset < hw->reg_msg[c].base_e) {
+-				class_base = hw->reg_msg[c].base_s;
+-				reg = (u32 *)((u8 *)task->reg[c].data + (req->offset - class_base));
++			    req->offset < hw->reg_msg[c].base_e)
+ 				break;
+-			}
+ 		}
+ 
+ 		if (c == hw->reg_class) {
+@@ -590,9 +724,23 @@ static int rkvenc_result(struct rkvenc_dev *mpp,
+ 			return -EINVAL;
+ 		}
+ 
++		/*
++		 * THE RESULT COPY IS AN INFORMATION-DISCLOSURE PATH, and it was
++		 * unbounded. The old code located the class by its START offset
++		 * only and then copied req->size bytes from there straight to
++		 * userspace, so a request that begins one dword inside a class
++		 * and claims a large size read past the end of a kmalloc'd
++		 * buffer into whatever followed it on the kernel heap.
++		 */
++		if (rkvenc_class_reg_window(task, c, req, &reg)) {
++			rkvenc_err("read request %08x+%u outside class %d\n",
++				   req->offset, req->size, c);
++			return -EINVAL;
++		}
++
+ 		if (copy_to_user(req->data, reg, req->size)) {
+ 			rkvenc_err("copy_to_user reg fail\n");
+-			return -EIO;
++			return -EFAULT;
+ 		}
+ 	}
+ 
+@@ -755,9 +903,22 @@ static int rkvenc_process_request(struct rkvenc_session *session,
+ 		if (!session->mpp) {
+ 			struct rkvenc_dev *dev =
+ 				session->srv->sub_devices[MPP_DEVICE_RKVENC];
+-
+-			if (dev)
+-				rkvenc_session_attach_device(session, dev);
++			int ret;
++
++			if (!dev)
++				return -ENODEV;
++			/*
++			 * The return was discarded, so a failed DMA-session
++			 * allocation left session->mpp set and session->dma
++			 * NULL -- a session that looks attached and fails every
++			 * subsequent import. session->mpp is cleared on failure
++			 * so a later open on the same fd can retry cleanly.
++			 */
++			ret = rkvenc_session_attach_device(session, dev);
++			if (ret) {
++				session->mpp = NULL;
++				return ret;
++			}
+ 		}
+ 
+ 		/* Init session private data */
+@@ -774,8 +935,16 @@ static int rkvenc_process_request(struct rkvenc_session *session,
+ 	case MPP_CMD_INIT_TRANS_TABLE: {
+ 		int cnt = req->size / sizeof(u16);
+ 
+-		if (cnt > MPP_MAX_REG_TRANS_NUM) {
+-			rkvenc_err("trans count %d too large\n", cnt);
++		/*
++		 * The bound was on the ELEMENT count while the copy used the
++		 * BYTE count, so an odd size of 2*MPP_MAX_REG_TRANS_NUM + 1
++		 * rounded cnt down, passed this check and then overran
++		 * trans_table by one byte. Bound the bytes, which is what the
++		 * copy actually consumes.
++		 */
++		if (cnt <= 0 || req->size > sizeof(session->trans_table)) {
++			rkvenc_err("trans table size %u (%d entries) out of range\n",
++				   req->size, cnt);
+ 			return -EINVAL;
+ 		}
+ 		if (copy_from_user(session->trans_table, req->data, req->size)) {
+@@ -1020,9 +1189,10 @@ static long rkvenc_dev_ioctl(struct file *filp, unsigned int cmd, unsigned long
+ 		struct rkvenc_taskqueue *queue = session->mpp->queue;
+ 
+ 		task = rkvenc_alloc_task(session, &msgs);
+-		if (!task) {
+-			rkvenc_err("alloc task failed\n");
+-			return -ENOMEM;
++		if (IS_ERR(task)) {
++			ret = PTR_ERR(task);
++			rkvenc_err("alloc task failed: %d\n", ret);
++			return ret;
+ 		}
+ 
+ 		msgs.task = &task->mpp_task;

@@ -38,6 +38,21 @@ jobs:
       - name: patches/ payload is byte-identical to its source lane
         run: python3 scripts/verify-payload-parity.py
 
+      - name: series, generated patches and the status ledger tell one story
+        run: |
+          scripts/check-series-ledger.py --self-test
+          scripts/check-series-ledger.py --require-before U2:U1
+          scripts/check-series-ledger.py --exact docs/UPSTREAM-STATUS.md
+
+      - name: the candidate reconciliation matrix is complete
+        run: |
+          python3 scripts/validate-candidate-matrix.py docs/UPSTREAM-STATUS.md \
+            --aliases M1,M2,M3,M4,M5,M6,M7,M8,U1,U2,U3,U4,U5,U6,U7 \
+            --source-sha256 729b87afb5a4fb097713b79e264a3688e25f3f971a8b9fcbc6c73d49340dccb9
+
+      - name: provenance and lore-import fixtures
+        run: python3 -m unittest tests.test_lore_import tests.test_build_series_provenance
+
       - name: upstream/ is unmodified since import
         run: |
           source kernel-pin.env

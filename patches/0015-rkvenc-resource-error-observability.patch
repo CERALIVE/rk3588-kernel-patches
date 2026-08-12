@@ -1,0 +1,419 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Andres Cera <andres.cera@hotmail.com>
+Date: Sun, 10 Aug 2026 11:00:00 -0500
+Subject: [PATCH 15/26] media: rockchip: rkvenc: fail on a missing required resource and stop swallowing runtime errors
+
+MOTIVATION. The driver treated almost every resource the 0001
+binding actually REQUIRES (reg, interrupts, three clocks, three
+resets, iommus, rockchip,srv/ccu) as optional: clock-get failures
+were logged and silently replaced with NULL, a failed IOMMU probe
+left iommu_info NULL and probe continued, reset acquisition turned
+every error into "no reset", and clk_prepare_enable() /
+pm_runtime_get_sync() / rkvenc_hw_finish() / rkvenc_hw_reset()
+returns were all discarded.
+
+BEHAVIOUR. Required-vs-optional is now read from the binding 0001
+itself ships (rockchip,sram / rockchip,rcb-iova stay genuinely
+optional, with one explicit log line naming an absent property).
+Clock, IOMMU and runtime-PM failures now propagate through
+dev_err_probe() / fatal error paths instead of shipping a
+permanently-bound device with no clock or no IOMMU; a refused
+runtime clock enable now unwinds the clocks it did enable and
+aborts the task; a failed status readback is recorded on the task
+and forces a reset rather than handing userspace stale registers.
+
+NON-GOALS. Does not change which DT properties are required --
+only how their absence or failure is reported. Optional SRAM
+behaviour is unchanged.
+
+PROVENANCE. First-party CeraLive fix to the imported 0001 driver;
+no upstream counterpart.
+
+EVIDENCE POINTER. Source-verified and build-clean; hardware
+validation pending. Forced by 0013's fail_clock_enable_once and
+exercised by tests/rkvenc-fault-qa.sh --case fail-clock-enable. See
+docs/BOARD-QUALIFICATION.md.
+
+First-party: authored by CeraLive against v7.1.7, with no upstream
+counterpart in rockchip-rk3588-mainline-patches. The source of record is
+ceralive/0015-rkvenc-resource-error-observability.patch; patches/ is generated from it by
+scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the
+same added/removed-line parity the upstream lane gets.
+
+NOT upstream-bound: this targets the CeraLive device tree only and is not a
+submission to linux-media, linux-rockchip or the fork parent. No Signed-off-by
+is added, because a DCO assertion belongs to whoever actually submits it.
+
+---
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c
+@@ -271,9 +271,19 @@ static int rkvenc2_alloc_rcbbuf(struct platform_device *pdev, struct rkvenc_dev
+ 	struct iommu_domain *domain;
+ 	struct device *dev = &pdev->dev;
+ 
++	/*
++	 * OPTIONAL, and absent from the mainline RK3588 device tree: neither
++	 * rkvenc-core node declares rockchip,rcb-iova or rockchip,sram, so this
++	 * is the normal path on the shipped boards. It is logged at info level
++	 * exactly once so "no SRAM row-cache buffer" is a stated fact in the
++	 * boot log rather than something inferred from silence -- the encoder
++	 * works without it, at a memory-bandwidth cost.
++	 */
+ 	ret = device_property_read_u32_array(dev, "rockchip,rcb-iova", vals, 2);
+-	if (ret)
++	if (ret) {
++		dev_info(dev, "no rockchip,rcb-iova property; running without the SRAM row-cache buffer\n");
+ 		return ret;
++	}
+ 
+ 	iova = PAGE_ALIGN(vals[0]);
+ 	sram_used = PAGE_ALIGN(vals[1]);
+@@ -284,7 +294,13 @@ static int rkvenc2_alloc_rcbbuf(struct platform_device *pdev, struct rkvenc_dev
+ 
+ 	sram_np = of_parse_phandle(dev->of_node, "rockchip,sram", 0);
+ 	if (!sram_np) {
+-		dev_err(dev, "could not find phandle sram\n");
++		/*
++		 * rockchip,rcb-iova WITHOUT rockchip,sram is a malformed node,
++		 * not an opt-out: the first says where to map and the second
++		 * says what to map. Named as such rather than logged as a
++		 * missing optional resource.
++		 */
++		dev_err(dev, "rockchip,rcb-iova is declared but rockchip,sram is missing; the SRAM row-cache buffer cannot be mapped\n");
+ 		return -ENODEV;
+ 	}
+ 
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.c
+@@ -507,9 +507,22 @@ int rkvenc_hw_run(struct rkvenc_dev *enc, struct rkvenc_mpp_task *mpp_task)
+ 	rkvenc_debug_enter();
+ 
+ 	/* Power on encoder and its IOMMU */
+-	if (enc->iommu_info && enc->iommu_info->pdev)
+-		pm_runtime_get_sync(&enc->iommu_info->pdev->dev);
+-	pm_runtime_get_sync(enc->dev);
++	if (enc->iommu_info && enc->iommu_info->pdev) {
++		ret = pm_runtime_get_sync(&enc->iommu_info->pdev->dev);
++		if (ret < 0) {
++			pm_runtime_put_noidle(&enc->iommu_info->pdev->dev);
++			rkvenc_err("iommu resume failed: %d\n", ret);
++			return ret;
++		}
++	}
++	ret = pm_runtime_get_sync(enc->dev);
++	if (ret < 0) {
++		pm_runtime_put_noidle(enc->dev);
++		if (enc->iommu_info && enc->iommu_info->pdev)
++			pm_runtime_put_sync(&enc->iommu_info->pdev->dev);
++		rkvenc_err("encoder resume failed: %d\n", ret);
++		return ret;
++	}
+ 	pm_stay_awake(enc->dev);
+ 
+ 	/*
+@@ -525,7 +538,9 @@ int rkvenc_hw_run(struct rkvenc_dev *enc, struct rkvenc_mpp_task *mpp_task)
+ 		goto err_pm;
+ 	}
+ 
+-	rkvenc_hw_clk_on(enc);
++	ret = rkvenc_hw_clk_on(enc);
++	if (ret)
++		goto err_pm;
+ 
+ 	/* Reset group down_read if available */
+ 	if (enc->reset_group)
+@@ -737,15 +752,47 @@ int rkvenc_hw_reset(struct rkvenc_dev *enc)
+ 
+ 	atomic_set(&enc->reset_request, 0);
+ 
++	/*
++	 * The soft-reset timeout is REPORTED rather than swallowed. It used to
++	 * be discarded here after a bare rkvenc_err(), so a core that needed the
++	 * CRU fallback -- or one whose CRU fallback was unavailable because the
++	 * resets are absent -- looked to every caller exactly like a clean
++	 * reset.
++	 */
++	if (ret && !(enc->rst_a && enc->rst_h && enc->rst_core)) {
++		dev_err(enc->dev,
++			"soft reset failed (%d) and no CRU reset is available; the core may still be hung\n",
++			ret);
++		return ret;
++	}
++
+ 	return 0;
+ }
+ 
+ /* ---- Clock on/off ---- */
+-void rkvenc_hw_clk_on(struct rkvenc_dev *enc)
++int rkvenc_hw_clk_on(struct rkvenc_dev *enc)
+ {
+-	rkvenc_clk_safe_enable(enc->aclk_info.clk);
+-	rkvenc_clk_safe_enable(enc->hclk_info.clk);
+-	rkvenc_clk_safe_enable(enc->core_clk_info.clk);
++	int ret;
++
++	ret = rkvenc_clk_safe_enable(enc->aclk_info.clk);
++	if (ret)
++		goto err_aclk;
++	ret = rkvenc_clk_safe_enable(enc->hclk_info.clk);
++	if (ret)
++		goto err_hclk;
++	ret = rkvenc_clk_safe_enable(enc->core_clk_info.clk);
++	if (ret)
++		goto err_core;
++
++	return 0;
++
++err_core:
++	clk_disable_unprepare(enc->hclk_info.clk);
++err_hclk:
++	clk_disable_unprepare(enc->aclk_info.clk);
++err_aclk:
++	dev_err(enc->dev, "failed to enable the encoder clocks: %d\n", ret);
++	return ret;
+ }
+ 
+ void rkvenc_hw_clk_off(struct rkvenc_dev *enc)
+@@ -756,30 +803,35 @@ void rkvenc_hw_clk_off(struct rkvenc_dev *enc)
+ }
+ 
+ /* ---- HW init during probe ---- */
++/*
++ * REQUIRED, from the binding: every rkvenc-core node declares all three of
++ * aclk_vcodec, hclk_vcodec and clk_core in clock-names. The previous code
++ * logged each failure, replaced the clock with NULL and returned 0 anyway, so a
++ * missing clock -- or, much more commonly, a -EPROBE_DEFER because the CRU had
++ * not probed yet -- produced a bound device with no clock and an encoder that
++ * writes to an unclocked register block.
++ */
+ static int rkvenc_hw_init_clocks(struct rkvenc_dev *enc)
+ {
+-	int ret;
++	static const char * const names[] = {
++		"aclk_vcodec", "hclk_vcodec", "clk_core",
++	};
++	struct clk **targets[] = {
++		&enc->aclk_info.clk, &enc->hclk_info.clk, &enc->core_clk_info.clk,
++	};
+ 	struct device *dev = enc->dev;
++	unsigned int i;
+ 
+-	enc->aclk_info.clk = devm_clk_get(dev, "aclk_vcodec");
+-	if (IS_ERR(enc->aclk_info.clk)) {
+-		ret = PTR_ERR(enc->aclk_info.clk);
+-		enc->aclk_info.clk = NULL;
+-		dev_err(dev, "failed to get aclk_vcodec: %d\n", ret);
+-	}
+-
+-	enc->hclk_info.clk = devm_clk_get(dev, "hclk_vcodec");
+-	if (IS_ERR(enc->hclk_info.clk)) {
+-		ret = PTR_ERR(enc->hclk_info.clk);
+-		enc->hclk_info.clk = NULL;
+-		dev_err(dev, "failed to get hclk_vcodec: %d\n", ret);
+-	}
++	for (i = 0; i < ARRAY_SIZE(names); i++) {
++		struct clk *clk = devm_clk_get(dev, names[i]);
+ 
+-	enc->core_clk_info.clk = devm_clk_get(dev, "clk_core");
+-	if (IS_ERR(enc->core_clk_info.clk)) {
+-		ret = PTR_ERR(enc->core_clk_info.clk);
+-		enc->core_clk_info.clk = NULL;
+-		dev_err(dev, "failed to get clk_core: %d\n", ret);
++		if (IS_ERR(clk)) {
++			*targets[i] = NULL;
++			return dev_err_probe(dev, PTR_ERR(clk),
++					     "required clock '%s' is unavailable\n",
++					     names[i]);
++		}
++		*targets[i] = clk;
+ 	}
+ 
+ 	/* Set default rates */
+@@ -789,26 +841,40 @@ static int rkvenc_hw_init_clocks(struct rkvenc_dev *enc)
+ 	return 0;
+ }
+ 
++/*
++ * The RK3588 binding declares all three resets, but they are fetched with the
++ * _optional() accessor because they are only used by the CRU fallback in
++ * rkvenc_hw_reset() and a board variant may legitimately omit them -- an ABSENT
++ * reset (NULL) is therefore accepted, and named, rather than silently ignored.
++ *
++ * An ERROR is a different thing entirely and is now propagated: the previous
++ * code turned every failure into "no reset", which converted a -EPROBE_DEFER
++ * from a not-yet-probed reset controller into a permanent, silent loss of the
++ * hardware-reset path -- and that path is the only recovery from a hung core.
++ */
+ static int rkvenc_hw_init_resets(struct rkvenc_dev *enc)
+ {
++	static const char * const names[] = { "video_a", "video_h", "video_core" };
++	struct reset_control **targets[] = {
++		&enc->rst_a, &enc->rst_h, &enc->rst_core,
++	};
+ 	struct device *dev = enc->dev;
++	unsigned int i;
+ 
+-	enc->rst_a = devm_reset_control_get_optional(dev, "video_a");
+-	if (IS_ERR(enc->rst_a)) {
+-		enc->rst_a = NULL;
+-		dev_warn(dev, "no video_a reset\n");
+-	}
+-
+-	enc->rst_h = devm_reset_control_get_optional(dev, "video_h");
+-	if (IS_ERR(enc->rst_h)) {
+-		enc->rst_h = NULL;
+-		dev_warn(dev, "no video_h reset\n");
+-	}
++	for (i = 0; i < ARRAY_SIZE(names); i++) {
++		struct reset_control *rst;
+ 
+-	enc->rst_core = devm_reset_control_get_optional(dev, "video_core");
+-	if (IS_ERR(enc->rst_core)) {
+-		enc->rst_core = NULL;
+-		dev_warn(dev, "no video_core reset\n");
++		rst = devm_reset_control_get_optional(dev, names[i]);
++		if (IS_ERR(rst)) {
++			*targets[i] = NULL;
++			return dev_err_probe(dev, PTR_ERR(rst),
++					     "reset '%s' could not be acquired\n",
++					     names[i]);
++		}
++		*targets[i] = rst;
++		if (!rst)
++			dev_info(dev, "optional reset '%s' is absent on this board; the CRU reset fallback is unavailable\n",
++				 names[i]);
+ 	}
+ 
+ 	return 0;
+@@ -892,23 +958,48 @@ int rkvenc_hw_probe(struct rkvenc_dev *enc, struct platform_device *pdev)
+ 	enc->io_base = res->start;
+ 
+ 	/* Clocks and resets */
+-	rkvenc_hw_init_clocks(enc);
+-	rkvenc_hw_init_resets(enc);
++	ret = rkvenc_hw_init_clocks(enc);
++	if (ret)
++		goto failed;
++	ret = rkvenc_hw_init_resets(enc);
++	if (ret)
++		goto failed;
+ 
+ 	/* Set HW info early so it's available for HW ID read */
+ 	enc->hw_info = &rkvenc_v2_hw_info;
+ 	enc->trans_info = trans_rkvenc_v2;
+ 
+-	/* IOMMU */
++	/*
++	 * REQUIRED, from the binding: every rkvenc-core node declares `iommus`.
++	 * Every buffer this driver touches is imported through that IOMMU, so
++	 * continuing with iommu_info = NULL (as the previous code did) produces
++	 * a device that binds, advertises itself to userspace and then fails
++	 * every single import.
++	 */
+ 	enc->iommu_info = rkvenc_iommu_probe(dev);
+ 	if (IS_ERR(enc->iommu_info)) {
+-		dev_err(dev, "failed to attach iommu\n");
++		ret = PTR_ERR(enc->iommu_info);
+ 		enc->iommu_info = NULL;
++		dev_err_probe(dev, ret, "required IOMMU is unavailable\n");
++		goto failed;
+ 	}
+ 
+ 	/* Read hardware ID */
+-	pm_runtime_get_sync(dev);
+-	rkvenc_hw_clk_on(enc);
++	ret = pm_runtime_get_sync(dev);
++	if (ret < 0) {
++		/*
++		 * get_sync() leaves the usage count INCREMENTED even when it
++		 * fails, so the put is not optional on this path.
++		 */
++		pm_runtime_put_noidle(dev);
++		dev_err(dev, "failed to resume for the hardware-ID read: %d\n", ret);
++		goto failed;
++	}
++	ret = rkvenc_hw_clk_on(enc);
++	if (ret) {
++		pm_runtime_put_sync(dev);
++		goto failed;
++	}
+ 	rkvenc_v2_hw_info.hw.hw_id = rkvenc_read(enc,
+ 					rkvenc_v2_hw_info.hw.reg_id * sizeof(u32));
+ 	rkvenc_hw_clk_off(enc);
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h b/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h
+@@ -834,10 +834,18 @@ static inline void rkvenc_write_relaxed(struct rkvenc_dev *mpp, u32 reg, u32 val
+ 	writel_relaxed(val, mpp->reg_base + reg);
+ }
+ 
+-static inline void rkvenc_clk_safe_enable(struct clk *clk)
++/*
++ * A clock this driver holds is one the device tree DECLARED (all three of
++ * aclk_vcodec/hclk_vcodec/clk_core are mandatory on every rkvenc-core node), so
++ * a NULL here means the probe accepted a device it should have rejected and a
++ * non-zero return means the clock refused to start. Both used to be discarded,
++ * which is how the encoder came to run with a clock that is not on.
++ */
++static inline int rkvenc_clk_safe_enable(struct clk *clk)
+ {
+-	if (clk)
+-		clk_prepare_enable(clk);
++	if (!clk)
++		return -ENODEV;
++	return clk_prepare_enable(clk);
+ }
+ 
+ static inline void rkvenc_clk_safe_disable(struct clk *clk)
+@@ -934,7 +942,7 @@ irqreturn_t rkvenc_hw_irq(int irq, void *param);
+ int rkvenc_hw_run(struct rkvenc_dev *mpp, struct rkvenc_mpp_task *mpp_task);
+ int rkvenc_hw_finish(struct rkvenc_dev *mpp, struct rkvenc_mpp_task *mpp_task);
+ int rkvenc_hw_reset(struct rkvenc_dev *enc);
+-void rkvenc_hw_clk_on(struct rkvenc_dev *enc);
++int rkvenc_hw_clk_on(struct rkvenc_dev *enc);
+ void rkvenc_hw_clk_off(struct rkvenc_dev *enc);
+ 
+ /* HW info for VEPU580 */
+diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_task.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_task.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_task.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_task.c
+@@ -81,15 +81,33 @@ int rkvenc_task_finish(struct rkvenc_session *session,
+ {
+ 	struct rkvenc_dev *mpp = rkvenc_get_task_used_device(task, session);
+ 	struct rkvenc_taskqueue *queue = mpp->queue;
++	int ret;
+ 
+-	/* Read status registers back from HW */
+-	rkvenc_hw_finish(mpp, task);
++	/*
++	 * A failed readback means the status registers userspace is about to be
++	 * handed are STALE, not merely unread -- so the error is recorded on the
++	 * task rather than dropped. The teardown below still runs in full: the
++	 * clocks and PM references have to be released whatever the hardware
++	 * said, or a bad frame becomes a leaked power reference too.
++	 */
++	ret = rkvenc_hw_finish(mpp, task);
++	if (ret) {
++		dev_err(mpp->dev, "task %d: register readback failed: %d\n",
++			task->task_index, ret);
++		task->irq_status |= mpp->hw_info->err_mask;
++		atomic_inc(&mpp->reset_request);
++	}
+ 
+ 	/* Handle reset if needed */
+ 	if (mpp->reset_group) {
+ 		up_read(&mpp->reset_group->rw_sem);
+-		if (atomic_read(&mpp->reset_request) > 0)
+-			rkvenc_hw_reset(mpp);
++		if (atomic_read(&mpp->reset_request) > 0) {
++			ret = rkvenc_hw_reset(mpp);
++			if (ret)
++				dev_err(mpp->dev,
++					"task %d: hardware reset failed: %d\n",
++					task->task_index, ret);
++		}
+ 	}
+ 
+ 	/* Power off encoder and its IOMMU */
