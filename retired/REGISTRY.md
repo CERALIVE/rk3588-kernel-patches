@@ -83,12 +83,21 @@ upstream, superseded, or scoped out.
 
 | Patch | Lane | Ordinal | Retired | Kernel tag | Reason |
 |-------|------|---------|---------|------------|--------|
+| `0023-rkvenc-worker-task-lifetime.patch` | `ceralive` | 23 | 2026-08-12 | `v7.1.7` | Folded into `0021` — the worker use-after-free half. See `docs/UPSTREAM-STATUS.md` § retired ordinals |
+| `0024-rkvenc-secondary-core-iommu-domain-lifetime.patch` | `ceralive` | 24 | 2026-08-12 | `v7.1.7` | Folded into `0021` — the secondary-core NULL-domain half. See `docs/UPSTREAM-STATUS.md` § retired ordinals |
+| `0025-rkvenc-service-node-teardown-lifetime.patch` | `ceralive` | 25 | 2026-08-12 | `v7.1.7` | Folded into `0021` — the service-node teardown half. See `docs/UPSTREAM-STATUS.md` § retired ordinals |
 
-*No patch has been retired yet.* The header and rule rows above are mandatory even
-while the table is empty — they are the shape the parser validates against, and
-`retired/` staying empty is a fact worth being able to state.
+**Folded, not dropped.** These three are the only rows here that retire a patch
+whose *content the series still carries*: `0021`, `0023`, `0024` and `0025` fixed
+four defects in one rkvenc task/core/service lifecycle, found one at a time on a
+real Rock 5B+ because each fix made the next reachable, and they were merged into
+`0021` so a reader who hits any one symptom gets all four. The fold was proven
+byte-neutral before it landed: `0001`-`0020` + the merged `0021` + `0022` + `0026`
+produces git tree `e8133646d100f528c17f1834a82f20becfc48b6a`, the same tree object
+the four-patch sequence produced. The archived files below are the record of what
+each ordinal individually documented, and their ordinals are burned like `0004`'s.
 
-Column meanings, for when the first row lands:
+Column meanings:
 
 | Column | Content |
 |--------|---------|

@@ -40,8 +40,10 @@ backported patches continue the same counter from `0006`:
 | `0018` | truthful dma-heap partial registration | `ceralive/` | Not a defect fix. `dma_heap_add()` has no removal counterpart at this base, so a failed second registration leaves the first heap live for the boot. This says so instead of hiding it, and adds an injection seam so the failure is reachable from KUnit. **No atomicity is claimed.** |
 | `0019` | rkvenc worker lock context + dma-buf API | `ceralive/` | **Root-caused on a REAL Rock 5B+**, from a plain unfaulted encode under KASAN+LOCKDEP. A `struct mutex` taken inside `spin_lock_irqsave()`, and the *locked* dma-buf entry points called by a static importer that holds no `resv`. |
 | `0020` | rkvenc service survives a single core's unbind | `ceralive/` | **Root-caused on a REAL Rock 5B+**, by fault injection. `0014`'s own service state machine had no path back to `LIVE`, so one core's transient unbind left `/dev/mpp_service` returning `-ENODEV` for the rest of the boot — after the core had re-probed successfully. |
-| `0021` | rkvenc balanced `hw_run` teardown | `ceralive/` | **Root-caused on a REAL Rock 5B+**, by fault injection. `rkvenc_hw_run()` unwinds everything it acquired on failure, but `rkvenc_task_finish()` released the same set unconditionally — so a refused task gave back an rwsem it never took (`bad unlock balance`), disabled clocks that were never on, and underflowed the runtime-PM count for the boot. |
+| `0021` | rkvenc task, core and service lifecycle | `ceralive/` | **Root-caused on a REAL Rock 5B+**, over one continuous fault-injection and unbind session. Four defects in one lifecycle, in the order the board gave them up because each fix made the next reachable: `rkvenc_task_finish()` released unconditionally what `rkvenc_hw_run()` had already unwound (`bad unlock balance`, runtime-PM underflow); the worker then kept reading a task it had just freed (KASAN use-after-free); a secondary core stayed a dispatch target after a main-core rebind left its IOMMU domain NULL (Oops in `__iommu_attach_group()`); and a service-node unbind freed `srv` under an open descriptor, because its wait was skipped whenever a core had already claimed the quiesce. Carried as `0021`+`0023`+`0024`+`0025` while it was being discovered, folded into one patch afterwards — **byte-neutral**, proven by an identical `git am` tree object. |
 | `0022` | rkvenc ioctl request coverage and element bounds | `ceralive/` | **Root-caused on a REAL Rock 5B+**, from an ioctl drill that `0016` should have made green and did not. A register request naming bytes no class owns was clamped and accepted instead of refused; `INIT_TRANS_TABLE` bounded bytes but not alignment; an unreadable user buffer reported `-EIO`. Reading the same paths found two unbounded counts and a byte/element overrun no drill case covers. |
+| *0023*–*0025* | — | — | **Retired ordinals.** Carried while the `0021` lifecycle defects were being discovered one at a time, then folded into `0021`. The slots are burned like `0004`'s, not renumbered. What each one individually documented: [`docs/UPSTREAM-STATUS.md` § retired ordinals](docs/UPSTREAM-STATUS.md#retired-ordinals-0023-0024-0025); the archived files: [`retired/REGISTRY.md`](retired/REGISTRY.md). |
+| `0026` | hdmirx register lock hardirq context | `ceralive/` | **Root-caused AND re-verified on a REAL Rock 5B+**, the first time a physical HDMI source was attached to a lockdep boot. `rst_lock` is a `spinlock_t` taken from the CEC and HDMI hardirqs, which `CONFIG_PROVE_RAW_LOCK_NESTING` reports as an invalid wait context — and that report calls `debug_locks_off()`, silencing lockdep for the rest of the boot in *every* subsystem. Promoted to `raw_spinlock_t`; same scope, same leaf position, identical code on a non-RT build. |
 
 Plus [`overlays/rockchip-rk3588-rkvenc-mpp.dts`](overlays/rockchip-rk3588-rkvenc-mpp.dts),
 the device-tree overlay the encoder needs, carried verbatim.
@@ -63,7 +65,7 @@ written down, the verdict gets its own document. So far:
   Plus only, which would silently leave Rock 5B+ with no capture card.
 
 Several members carry an **`UNVALIDATED`** marker — `0008` and `0009` on Orange Pi
-5+, and the whole `0013`–`0022` block to varying degrees. What a real board has to
+5+, and the whole `0013`–`0022` + `0026` block to varying degrees. What a real board has to
 demonstrate before a marker comes off — every leg, every command, on both boards —
 is [`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md), and what is
 already proven, per patch, is the **Last checked** column in
@@ -71,8 +73,9 @@ already proven, per patch, is the **Last checked** column in
 
 **A patch being landed is not a patch being verified.** `0015` and `0016` were both
 ticked before anything ran on hardware, and the first real drill against them
-failed — `0021` and `0022` are what came out of that. Read the marker, not the
-merge.
+failed — `0021` and `0022` are what came out of that, and `0021` alone is four
+defects deep, because fixing the bug that aborts an error path is how you find the
+bugs further down it. Read the marker, not the merge.
 
 ## Layout
 

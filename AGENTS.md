@@ -209,11 +209,14 @@ verbatim by CI, so it cannot rot the same way.
 There is no `0004` upstream. **Do NOT renumber to close the gap** — the 1:1 filename
 correspondence with upstream is what makes the import auditable. First-party and
 backported patches continue the same counter (`0006`, `0008`, `0009` and
-`0013`–`0022` = `ceralive/`; `0007`, `0010`, `0011` and `0012` = `backports/`), so
-the ordinals read `1/22`, `2/22`, `3/22`, `5/22` … `22/22` — the gap at 4 stays
-visible, which is the whole point. `SERIES_TOTAL` in `build-series.py` is the
-**slot** count including that gap, not the member count; the build refuses an
-ordinal above it because the `N/SERIES_TOTAL` subject would otherwise lie.
+`0013`–`0022` and `0026` = `ceralive/`; `0007`, `0010`, `0011` and `0012` =
+`backports/`), so the ordinals read `1/26`, `2/26`, `3/26`, `5/26` … `26/26` — the
+gap at 4 stays visible, which is the whole point. **`0023`, `0024` and `0025` are
+three more gaps**, retired rather than never-published: they were folded into
+`0021` and their slots are burned, exactly like `0004`'s. `SERIES_TOTAL` in
+`build-series.py` is the **slot** count including every gap, not the member count;
+the build refuses an ordinal above it because the `N/SERIES_TOTAL` subject would
+otherwise lie.
 
 **`0005` is driver-only; `0006` is what makes HDMI-RX audio reachable.** Upstream's
 `0005` registers an ASoC `hdmi-audio-codec` child under `hdmi_receiver@fdee0000`
@@ -262,27 +265,38 @@ Two things about it are easy to get wrong:
   video encode does not work on the edge kernel". Marker and clearing
   conditions: [`docs/UPSTREAM-STATUS.md` § `0008`](docs/UPSTREAM-STATUS.md#0008--unvalidated-and-what-that-does-and-does-not-mean).
 
-**`0013`–`0022` are the first-party rkvenc / HDMI-RX / dma-heap quality block, and
-the ones a board has actually run are the exception.** `0013` is gated fault
-injection that contributes zero bytes to a production build; `0018` states an
+**`0013`–`0022` and `0026` are the first-party rkvenc / HDMI-RX / dma-heap quality
+block, and the ones a board has actually run are the exception.** `0013` is gated
+fault injection that contributes zero bytes to a production build; `0018` states an
 existing API's failure semantics truthfully rather than fixing a defect;
 `0014`–`0017` repair concrete defects in the code that runs when something goes
-wrong. `0019`–`0022` are different in kind: each was root-caused from a **real
-Rock 5B+ transcript**, not from reading. Per-patch detail — what each fixes, what
-it deliberately does not, and what would retire it — lives in
+wrong. `0019`–`0022` and `0026` are different in kind: each was root-caused from a
+**real Rock 5B+ transcript**, not from reading. Per-patch detail — what each fixes,
+what it deliberately does not, and what would retire it — lives in
 [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md), one row each; do not restate
 it here.
 
-Two things about this block are easy to get wrong:
+Three things about this block are easy to get wrong:
 
 - **"Marked done" and "verified" are different claims, and this block is the
   proof.** `0015` and `0016` were both landed and ticked before anything ran on
-  hardware. The first real drill against them failed: `0021` fixes an
-  acquire/release asymmetry `0015` made *reachable* (it propagated a clock-enable
+  hardware. The first real drill against them failed: `0021` fixes the rkvenc
+  task/core/service lifecycle `0015` made *reachable* (it propagated a clock-enable
   failure that used to be discarded; the unconditional release is `0001`'s), and
   `0022` fixes three of four still-failing cases in `tests/expected-errno.tsv`
   that `0016` was supposed to have closed. Do not read a landed patch as a
   validated one — read its `UNVALIDATED` marker.
+- **`0021` is ONE patch covering FOUR defects, and that is deliberate.** It was
+  carried as `0021`+`0023`+`0024`+`0025` while the defects were being discovered on
+  a board — balance, then worker lifetime, then core lifetime, then service
+  lifetime, each fix making the next reachable — and folded once the picture was
+  whole, because three of the four are unreachable in isolation. The fold was
+  proven **byte-neutral** (identical `git am` tree object) before it landed, so
+  every hardware result recorded against the old ordinals still stands. Do not
+  re-split it, and do not treat a `git blame` hit on `0023`/`0024`/`0025` as a
+  missing patch: [`docs/UPSTREAM-STATUS.md` § retired ordinals](docs/UPSTREAM-STATUS.md#retired-ordinals-0023-0024-0025)
+  is the map. One comment in `rkvenc_drv.c` still names `0024`; that is correct
+  history, and rewording it would have broken the byte-neutrality proof.
 - **A green `rkvenc-invalid-ioctl --all-malformed` is NOT the acceptance criterion
   for `0022`.** One case, `valid-after-failures`, is expected to stay red for a
   reason that is the harness's and not the driver's, and two of `0022`'s bounds
