@@ -224,6 +224,7 @@ state_held_open_fd() {
 		printf 'release\n' >"${fifo}"
 		wait "${holder}" 2>/dev/null
 		qa_rebind_all
+		qa_assert_no_sanitizer_report "${mark}" "unbind-timeout-negative"
 	fi
 	rm -f "${fifo}"
 }
