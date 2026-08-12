@@ -42,6 +42,7 @@ QA_STATES="idle,held-open-fd,inflight"
 QA_ITERATIONS=20
 QA_UNBIND_TIMEOUT=15
 QA_DRIVER_DIR="${QA_DRIVER_DIR:-/sys/bus/platform/drivers/rkvenc}"
+QA_DEVICE_DIR="${QA_DEVICE_DIR:-/sys/bus/platform/devices}"
 
 usage() { sed -n '2,29p' "${BASH_SOURCE[0]}"; }
 
@@ -49,15 +50,26 @@ usage() { sed -n '2,29p' "${BASH_SOURCE[0]}"; }
 # Discovery. The driver binds three NODE KINDS -- the service, the CCU and the
 # cores -- and which is a supplier of which is the whole subject of the test, so
 # they are classified by node name rather than by a hardcoded address.
+#
+# They are enumerated from the BUS's device directory, never from the driver's
+# own: a driver directory holds one symlink per BOUND device, and the device
+# this harness must rebind is by definition NOT bound at that moment. Discovery
+# there can only ever yield an empty name, so every bind write is skipped and
+# the run mistakes "nothing asked it to probe" for "it refused to probe". No
+# driver change can repair that -- the symlink's absence IS the driver core's
+# record that the device is unbound.
+#
+# The driver directory keeps the job it is authoritative for: whether a device
+# is currently BOUND (qa_is_bound), plus the bind/unbind attributes.
 # ---------------------------------------------------------------------------
 
 # A `case ... in ${var})` does NOT split alternations that arrive through a
 # variable, so the patterns are split explicitly and matched one at a time.
 qa_devices_matching() {
-	local patterns="$1" link name pattern
-	for link in "${QA_DRIVER_DIR}"/*; do
-		[[ -L "${link}" ]] || continue
-		name="$(basename "${link}")"
+	local patterns="$1" entry name pattern
+	for entry in "${QA_DEVICE_DIR}"/*; do
+		[[ -e "${entry}" ]] || continue
+		name="$(basename "${entry}")"
 		local IFS='|'
 		for pattern in ${patterns}; do
 			unset IFS
@@ -75,6 +87,15 @@ qa_devices_matching() {
 qa_service_device() { qa_devices_matching '*mpp-srv*|*mpp_service*|*mpp-service*' | head -1; }
 qa_ccu_device()     { qa_devices_matching '*rkvenc-ccu*|*rkvenc_ccu*' | head -1; }
 qa_core_devices()   { qa_devices_matching '*rkvenc-core*|*rkvenc_core*'; }
+
+qa_is_bound() { [[ -n "${1:-}" && -e "${QA_DRIVER_DIR}/$1" ]]; }
+
+# The states assert on a device that is present AND bound, which is what their
+# "no service device bound" diagnostic has always claimed to mean.
+qa_bound_service_device() {
+	local svc; svc="$(qa_service_device)"
+	qa_is_bound "${svc}" && printf '%s\n' "${svc}"
+}
 
 qa_unbind_bounded() {
 	local dev="$1" start end
@@ -98,9 +119,11 @@ qa_bind() {
 qa_rebind_all() {
 	local svc ccu core
 	svc="$(qa_service_device)"; ccu="$(qa_ccu_device)"
-	[[ -n "${svc}" ]] && qa_bind "${svc}"
-	[[ -n "${ccu}" ]] && qa_bind "${ccu}"
-	for core in $(qa_core_devices); do qa_bind "${core}"; done
+	qa_is_bound "${svc}" || { [[ -n "${svc}" ]] && qa_bind "${svc}"; }
+	qa_is_bound "${ccu}" || { [[ -n "${ccu}" ]] && qa_bind "${ccu}"; }
+	for core in $(qa_core_devices); do
+		qa_is_bound "${core}" || qa_bind "${core}"
+	done
 	if [[ -e "${QA_DEVICE}" ]]; then
 		qa_log "ok all devices rebound consumer-after-supplier (${QA_DEVICE} present)"
 	else
@@ -147,7 +170,7 @@ qa_open_must_fail_enodev() {
 
 state_idle() {
 	local svc mark
-	svc="$(qa_service_device)"
+	svc="$(qa_bound_service_device)"
 	[[ -n "${svc}" ]] || { qa_fail "no service device bound"; return 1; }
 	mark="$(qa_dmesg_mark)"
 
@@ -163,7 +186,7 @@ state_idle() {
 
 state_held_open_fd() {
 	local svc mark fifo expect_close="${1:-close}"
-	svc="$(qa_service_device)"
+	svc="$(qa_bound_service_device)"
 	[[ -n "${svc}" ]] || { qa_fail "no service device bound"; return 1; }
 	mark="$(qa_dmesg_mark)"
 
@@ -207,7 +230,7 @@ state_held_open_fd() {
 
 state_inflight() {
 	local svc mark i
-	svc="$(qa_service_device)"
+	svc="$(qa_bound_service_device)"
 	[[ -n "${svc}" ]] || { qa_fail "no service device bound"; return 1; }
 	mark="$(qa_dmesg_mark)"
 
@@ -252,9 +275,10 @@ run_self_test() {
 	# Device classification must be driven by node NAME, never by an address,
 	# or a DT change silently selects nothing and the harness passes vacuously.
 	QA_DRIVER_DIR="${work}/drivers/rkvenc"
-	mkdir -p "${QA_DRIVER_DIR}" "${work}/devices"
+	QA_DEVICE_DIR="${work}/devices"
+	mkdir -p "${QA_DRIVER_DIR}" "${QA_DEVICE_DIR}"
 	for node in fdba0000.mpp-srv fdbd0000.rkvenc-ccu fdbd0000.rkvenc-core fdbe0000.rkvenc-core; do
-		mkdir -p "${work}/devices/${node}"
+		mkdir -p "${QA_DEVICE_DIR}/${node}"
 		ln -s "../../devices/${node}" "${QA_DRIVER_DIR}/${node}"
 	done
 
@@ -274,13 +298,41 @@ run_self_test() {
 		printf '  FAIL core discovery: got %s\n' "$(qa_core_devices | wc -l)" >&2; rc=1
 	fi
 
-	# A missing driver directory must be loud, never an empty (vacuous) run.
-	QA_DRIVER_DIR="${work}/absent"
-	if [[ -z "$(qa_service_device)" ]]; then
-		printf '  ok  an absent driver directory yields no device (caller must fail)\n'
+	# The regression that made every unbind case unreachable: an UNBOUND
+	# device is gone from the driver directory but still on the bus, and it is
+	# the one the harness has to find in order to bind it back.
+	rm -f "${QA_DRIVER_DIR}/fdba0000.mpp-srv"
+	if [[ "$(qa_service_device)" == "fdba0000.mpp-srv" ]]; then
+		printf '  ok  an UNBOUND service device is still discovered (so it can be rebound)\n'
 	else
-		printf '  FAIL an absent driver directory yielded a device\n' >&2; rc=1
+		printf '  FAIL an unbound service device was not discovered: got "%s"\n' \
+			"$(qa_service_device)" >&2; rc=1
 	fi
+	if qa_is_bound fdba0000.mpp-srv; then
+		printf '  FAIL an unbound service device was reported as bound\n' >&2; rc=1
+	else
+		printf '  ok  an unbound service device is reported as NOT bound\n'
+	fi
+	if [[ -z "$(qa_bound_service_device)" ]]; then
+		printf '  ok  the states refuse to run against an unbound service device\n'
+	else
+		printf '  FAIL an unbound service device satisfied a state precondition\n' >&2; rc=1
+	fi
+	ln -s "../../devices/fdba0000.mpp-srv" "${QA_DRIVER_DIR}/fdba0000.mpp-srv"
+	if [[ "$(qa_bound_service_device)" == "fdba0000.mpp-srv" ]]; then
+		printf '  ok  a rebound service device satisfies the state precondition again\n'
+	else
+		printf '  FAIL a rebound service device was not accepted\n' >&2; rc=1
+	fi
+
+	# A missing device directory must be loud, never an empty (vacuous) run.
+	QA_DEVICE_DIR="${work}/absent"
+	if [[ -z "$(qa_service_device)" ]]; then
+		printf '  ok  an absent device directory yields no device (caller must fail)\n'
+	else
+		printf '  FAIL an absent device directory yielded a device\n' >&2; rc=1
+	fi
+	QA_DEVICE_DIR="${work}/devices"
 
 	# The quiesce assertion reads an errno out of a shell diagnostic, and the
 	# two errnos it has to tell apart differ only by a trailing "or address".
