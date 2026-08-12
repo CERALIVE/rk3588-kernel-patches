@@ -442,10 +442,71 @@ qa_assert_consumed() {
 }
 
 # ---------------------------------------------------------------------------
+# Kernel-log screening
+#
+# Defined before the encode probe because the probe asserts on the log: a
+# fault-armed encode's verdict is what the DRIVER said, not what gst-launch-1.0
+# returned.
+# ---------------------------------------------------------------------------
+
+# The command the screening reads the kernel ring buffer through. It is an array
+# and not a string so the self-test can point it at a captured log fixture the
+# same way the fixture legs point QA_DEBUGFS at a synthetic controls directory —
+# which is what makes the assertions below checkable on a workstation instead of
+# costing a board session. On a board it is `dmesg` and nothing else.
+declare -ga QA_DMESG_CMD=(dmesg)
+
+# qa_dmesg_mark — a line-count marker for qa_dmesg_since.
+qa_dmesg_mark() { "${QA_DMESG_CMD[@]}" | wc -l; }
+
+# qa_dmesg_since <marker> — the kernel-log lines emitted after the marker was
+# taken.
+qa_dmesg_since() { "${QA_DMESG_CMD[@]}" | tail -n +"$(( $1 + 1 ))"; }
+
+qa_assert_no_sanitizer_report() {
+	local since="$1" label="$2" hits
+	hits="$(qa_dmesg_since "${since}" |
+		grep -nE 'BUG:|Oops|KASAN: [a-z-]+ in |WARNING: possible circular locking dependency|possible recursive locking|INFO: task .* blocked|Kernel panic|Tainted:' || true)"
+	if [[ -z "${hits}" ]]; then
+		qa_log "ok ${label}: no sanitizer/lockdep report"
+	else
+		qa_fail "${label}: kernel reported:"
+		printf '%s\n' "${hits}" >&2
+	fi
+}
+
+# qa_assert_dmesg_count <marker> <extended-regex> <want-count> <what>
+#
+# The positive counterpart of qa_assert_no_sanitizer_report: some lines MUST be
+# there, and the COUNT is the assertion. "at least one" is deliberately not
+# accepted — a fault reported twice is a retry this series exists to rule out,
+# and a fault reported zero times is a knob that was consumed without the task
+# path noticing. Same reason qa_assert_consumed says "exactly once".
+qa_assert_dmesg_count() {
+	local since="$1" pattern="$2" want="$3" what="$4" got
+	got="$(qa_dmesg_since "${since}" | grep -cE "${pattern}" || true)"
+	qa_assert_eq "${want}" "${got}" "${what}"
+}
+
+# ---------------------------------------------------------------------------
 # Encode probe — "and the device still works afterwards"
 # ---------------------------------------------------------------------------
 
 QA_ENCODE_FRAMES="${QA_ENCODE_FRAMES:-60}"
+
+# The byte count a CLEAN QA_ENCODE_CANONICAL_FRAMES-frame run of the probe
+# pipeline below produces. It is a MEASURED board constant, not a nominal one:
+# every clean run of this exact pipeline across the 2026-08 campaign produced
+# exactly 1,854,524 bytes, on a Rock 5B+ and on an Orange Pi 5 Plus, on debug and
+# production kernels alike (docs/BOARD-QUALIFICATION.md §3e and §11).
+#
+# It exists so that "the fault-armed stream is measurably SHORTER" is an
+# assertion rather than a story. The frame count is carried WITH it because the
+# number means nothing without one, and both are overridable for a board that
+# legitimately encodes to a different size — changing the constant is a visible
+# diff, silently comparing against the wrong frame count would not be.
+QA_ENCODE_CANONICAL_FRAMES="${QA_ENCODE_CANONICAL_FRAMES:-60}"
+QA_ENCODE_CANONICAL_BYTES="${QA_ENCODE_CANONICAL_BYTES:-1854524}"
 
 # qa_encode <label> — a real hardware encode, asserted by OUTPUT SIZE.
 #
@@ -473,10 +534,83 @@ qa_encode() {
 	return 1
 }
 
+# qa_assert_fault_stream_shorter <label> <size>
+#
+# The stream half of a fault case's verdict, split out so it can be exercised
+# with a byte count instead of a board.
+#
+# SHORTER says the frame really was lost. NON-EMPTY says this was an encode that
+# lost a frame rather than a pipeline that never started — which is the shape the
+# truncated-DMA defect produced and must not be mistaken for a successful fault
+# injection. There is deliberately no tighter lower bound: the measured shortfall
+# was 8.5 % for a single lost frame in sixty, far more than that frame's average
+# share, because the loss perturbs the frames that reference it. Pinning "exactly
+# one frame" is the kernel log's job, not arithmetic's.
+qa_assert_fault_stream_shorter() {
+	local label="$1" size="$2" short pct
+
+	if (( size == 0 )); then
+		qa_fail "${label}: the encode produced NO bytes — a dead pipeline, not a lost frame"
+		return 1
+	fi
+	if (( size >= QA_ENCODE_CANONICAL_BYTES )); then
+		qa_fail "${label}: ${size} bytes is not shorter than the canonical ${QA_ENCODE_CANONICAL_BYTES} — the lost frame was silently substituted"
+		return 1
+	fi
+
+	# Tenths of a percent, rounded rather than truncated, so the number in a
+	# transcript matches the 8.5 % recorded in BOARD-QUALIFICATION.md §11
+	# instead of reading as 8.4 % and looking like a disagreement.
+	short=$(( QA_ENCODE_CANONICAL_BYTES - size ))
+	local tenths=$(( (short * 2000 + QA_ENCODE_CANONICAL_BYTES) / (QA_ENCODE_CANONICAL_BYTES * 2) ))
+	printf -v pct '%d.%d' $(( tenths / 10 )) $(( tenths % 10 ))
+	qa_log "ok ${label}: stream is ${size} bytes, ${short} short of the canonical ${QA_ENCODE_CANONICAL_BYTES} (${pct} %)"
+	return 0
+}
+
 # qa_encode_expect_failure <label> — the fault case's positive assertion.
+#
+# WHAT IT DELIBERATELY DOES NOT GATE ON: gst-launch-1.0's exit status. That used
+# to be the whole assertion and it is flaky BY CONSTRUCTION. The driver's
+# -ENODEV is raced inside the closed-source librockchip-mpp, which turns it into
+# `rc=0` with a short stream or `rc=134` (SIGABRT) with a truncated one depending
+# only on how long the ioctl path took — two faces of one userspace race, neither
+# of them a statement about the kernel. Measured in full in
+# docs/BOARD-QUALIFICATION.md §11. The status is still LOGGED, because which face
+# a run drew is worth having in the transcript.
+#
+# What it gates on instead is kernel-side and stream-side, and every part of it
+# is STRICTER than the exit code it replaces:
+#
+#   1. the worker reported the fault exactly once (`hw_run failed: -<errno>`);
+#   2. the POLL waiter was told the task aborted exactly once
+#      (`wait result ret -19`, rkvenc_wait_result()'s -ENODEV arm); and
+#   3. the stream is measurably shorter than a clean one, and not empty.
 qa_encode_expect_failure() {
-	local label="$1" out rc
+	local label="$1" out rc size mark errno errnum before="${QA_FAILURES}"
+
+	# The errno is resolved from the ARMED knob rather than passed in, for
+	# the same reason qa_arm resolves its own counter: a caller that spells
+	# it is a caller that can misspell it, and a wrong errno here reads
+	# exactly like a driver that never logged the failure at all.
+	if [[ -z "${QA_ARMED_KNOB}" ]]; then
+		qa_fail "${label}: called with nothing armed, so there is no fault to expect"
+		return 1
+	fi
+	errno="$(qa_errno_for "${QA_ARMED_KNOB}")"
+	if [[ -z "${errno}" ]]; then
+		qa_fail "${label}: ${QA_ARMED_KNOB} injects no errno, so a failed encode cannot be asserted"
+		return 1
+	fi
+	errnum="${QA_ERRNO_NUMBER[${errno}]}"
+
+	if (( QA_ENCODE_FRAMES != QA_ENCODE_CANONICAL_FRAMES )); then
+		qa_fail "${label}: the canonical ${QA_ENCODE_CANONICAL_BYTES}-byte reference was measured at ${QA_ENCODE_CANONICAL_FRAMES} frames, not ${QA_ENCODE_FRAMES} — set QA_ENCODE_CANONICAL_BYTES for this frame count"
+		return 1
+	fi
+
 	out="$(mktemp -t ceralive-qa-encode.XXXXXX.h264)"
+	mark="$(qa_dmesg_mark)"
 
 	timeout 120 gst-launch-1.0 -q \
 		videotestsrc num-buffers="${QA_ENCODE_FRAMES}" \
@@ -484,31 +618,20 @@ qa_encode_expect_failure() {
 		! mpph264enc ! h264parse ! filesink location="${out}" \
 		>/dev/null 2>&1
 	rc=$?
+	# MEASURED BEFORE IT IS DELETED. The byte count is the only number that
+	# separates "the frame was lost" from "nothing happened", and the `rm`
+	# used to destroy it one line before it was needed.
+	size=$(stat -c %s "${out}" 2>/dev/null || printf 0)
 	rm -f "${out}"
 
-	if (( rc != 0 )); then
-		qa_log "ok ${label}: encode failed as expected (rc=${rc})"
-		return 0
-	fi
-	qa_fail "${label}: encode SUCCEEDED while a fault was armed"
-	return 1
+	qa_log "${label}: gst-launch-1.0 rc=${rc} — DIAGNOSTIC ONLY, not the gate (BOARD-QUALIFICATION.md §11)"
+
+	qa_assert_dmesg_count "${mark}" "hw_run failed: -${errnum}, failing task " 1 \
+		"${label}: the worker reported the fault exactly once (hw_run failed: -${errnum})"
+	qa_assert_dmesg_count "${mark}" "wait result ret -${QA_ERRNO_NUMBER[ENODEV]}([^0-9]|$)" 1 \
+		"${label}: the waiter was told the task aborted exactly once (wait result ret -${QA_ERRNO_NUMBER[ENODEV]})"
+	qa_assert_fault_stream_shorter "${label}" "${size}"
+
+	(( QA_FAILURES == before ))
 }
 
-# ---------------------------------------------------------------------------
-# Kernel-log screening
-# ---------------------------------------------------------------------------
-
-# qa_dmesg_since <marker-file> — dmesg lines emitted after the marker was taken.
-qa_dmesg_mark() { dmesg | wc -l; }
-
-qa_assert_no_sanitizer_report() {
-	local since="$1" label="$2" hits
-	hits="$(dmesg | tail -n +"$(( since + 1 ))" |
-		grep -nE 'BUG:|Oops|KASAN: [a-z-]+ in |WARNING: possible circular locking dependency|possible recursive locking|INFO: task .* blocked|Kernel panic|Tainted:' || true)"
-	if [[ -z "${hits}" ]]; then
-		qa_log "ok ${label}: no sanitizer/lockdep report"
-	else
-		qa_fail "${label}: kernel reported:"
-		printf '%s\n' "${hits}" >&2
-	fi
-}

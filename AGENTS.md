@@ -50,7 +50,7 @@ rk3588-kernel-patches/
 ├── tests/                     # stdlib unittest fixtures for the Python tooling
 ├── docs/
 │   ├── UPSTREAM-STATUS.md     # per-patch upstream status + retire-on-merge triggers
-│   ├── BOARD-QUALIFICATION.md # the DEFERRED hardware checklist — every item unchecked, by design
+│   ├── BOARD-QUALIFICATION.md # the hardware checklist + its Run log — runs 1 and 2 executed
 │   ├── EVAL-0002-EDID.md      # verdict: keep 0002; the 7.2-rc1 fix is already in the base
 │   ├── EVAL-0005-AUDIO.md     # verdict: keep 0005+0006; the lore v4 series drops Rock 5B+
 │   ├── PROVENANCE.md          # licence/provenance audit incl. the MIT-claim caveat
@@ -335,10 +335,13 @@ Four things about it are easy to get wrong:
   shipped `99-rk-device-permissions.rules` udev policy's job. Do not encode
   permissions in the kernel patch.
 
-**`docs/BOARD-QUALIFICATION.md` is a specification, not a report — every item is
-unchecked on purpose.** Producing the checklist and executing it are two different
-jobs and only the first is done. Nothing in it has been run, so nothing in it may
-be quoted as a result. It also deliberately carries `N/A` legs for the imports T12
+**`docs/BOARD-QUALIFICATION.md` was written as a specification and is now also a
+report — read its Run log before quoting anything from it.** Producing the checklist
+and executing it are two different jobs, and the second one has now been done twice:
+run 1 (2026-08-09, Rock 5B+) ticked §2–§7 and §10a, and run 2 (2026-08-10 → 08-12,
+both boards) added the fault-injection campaign behind `0021`, `0022` and `0026`. An
+item is quotable as a result **only** where a `RUN-n` note is pasted under it; an
+unticked box still means not run, not "assumed fine". It also carries `N/A` legs for the imports T12
 and T13 evaluated and **declined** (I2S MCLK gating, PCIe system PM, V4L2 fdinfo
 stats, tracepoints, SCDC debugfs): completeness there means the leg is *present and
 marked*, not omitted, so a future reader can see it was considered. Do not delete

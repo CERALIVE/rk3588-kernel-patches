@@ -30,6 +30,7 @@ video encode does not work on the `edge` 7.1.5 kernel"*, which is the origin of
 | Run | Date | Board | Kernel | Series commit | Evidence |
 |-----|------|-------|--------|---------------|----------|
 | 1 | 2026-08-09 | Radxa Rock 5B+ | `7.1.7-ceralive-rk3588` (`7.1.7-ceralive1`) | `2e195f2d36dbbfed3835962c062cbf33271cbeb8` | `image-building-pipeline` `.omo/evidence/image-pipeline-quality/hardware-validation-round1.md` |
+| 2 | 2026-08-10 → 2026-08-12 | Radxa Rock 5B+ **and** Orange Pi 5 Plus | `7.1.7-ceralive-rk3588` (production) and `7.1.7-ceralive-rk3588-test` (KASAN + `PROVE_LOCKING` + `DEBUG_ATOMIC_SLEEP`) | `eb0f338edd6b203387ea22b4aceb6eb57136c68c` | `image-building-pipeline` `test-results/pipeline-restructure-kernel-backports/wave8/` — signed receipts 33/34/35/36/37/45 (Rock, debug), 46 (Rock, production), 47 (Orange Pi, production) |
 
 **Run 1 headline.** All three stacked defects of the pipeline's *"MPP hardware
 video encode does not work on the `edge` 7.1.5 kernel"* KNOWN ISSUE are **resolved
@@ -46,6 +47,114 @@ The image under test was a **PRODUCTION** image (no `CERALIVE_DEBUG_IMAGE`, no
 `debug-toolset` sysext), which ships `ffmpeg`/`ffprobe`/`v4l2-ctl` but **not**
 `alsa-utils`, `mediainfo` or `python3`; that cost `arecord -l` in §8a and
 `mediainfo` in §6b, both of which were substituted and the substitution recorded.
+
+**Run 2 headline.** Run 1 asked whether the series works. Run 2 asked what *breaks* it,
+on both boards, with fault injection against a debug kernel — and got answers.
+**Eight real defects were found and fixed**, none of which compile-and-boot could have
+surfaced, and every one of them found by forcing a negative path rather than by
+observing a failure in the wild:
+
+- **B — release imbalance.** `rkvenc_task_finish()` unconditionally handed back a
+  reset-group `rw_sem`, two runtime-PM references, a wakeup source and three clocks
+  that `rkvenc_hw_run()` holds across a return **only on success**, so every failed
+  dispatch produced a `bad unlock balance` next to a `Runtime PM usage count
+  underflow!`. One `TASK_STATE_HW_HELD` bit consumed with `test_and_clear_bit()`
+  covers all five and makes the teardown single-shot.
+- **C — missing ioctl/UAPI bounds.** The register-write check demanded exact byte
+  coverage, and **no two of the nine register classes abut**, so any request running
+  off a class edge landed in a hole and was refused — MPP's own 96-byte `BASE` write
+  (4 bytes short of the class end) was merely the shape that reached it first.
+  Replaced by a contiguity test derived from the declared table, with zero constants.
+  **Its first form carried its own regression**, which the next board run caught and
+  which was amended in place before the series moved on.
+- **F — worker use-after-free.** `rkvenc_task_worker_default()` read `mpp_task->state`
+  after `rkvenc_task_finish()` had woken a waiter that could already have dropped the
+  last reference and freed the task. Pre-existing in `0001`; not introduced by B's fix.
+- **G — core 1 loses its IOMMU domain on unbind.** A secondary core that unbound and
+  re-bound came back with a NULL domain and `rkvenc_iommu_attach()` dereferenced it.
+  The pre-existing `domain == iommu_get_domain_for_dev()` guard could not catch it,
+  because the default domain that call returns is never NULL.
+- **D — service-node teardown lifetime**, in three parts. The unbind returned into a
+  `remove()` that freed a `devm`-allocated `srv` which a still-open descriptor then
+  took a mutex on (`BUG: KASAN: slab-use-after-free in __mutex_lock`, at close time,
+  10 s after an unbind that had already "completed"); the quiesce logged *"refusing to
+  release service state"* and released it anyway; and a **third sub-defect**, reachable
+  only by the negative fixture — `rkvenc_service_sessions_gone()` took `session_lock`
+  from inside a `wait_event*()` **condition**, which `___wait_event()` evaluates after
+  `prepare_to_wait_event()` has set the task state (`WARNING … __might_sleep`). It had
+  never fired anywhere because `wait_event_timeout()` short-circuits when zero sessions
+  are open, so only a drain with a descriptor still open ever reaches the second
+  evaluation. `srv` is now reference-counted rather than `devm`-allocated, and the
+  condition is a lockless `READ_ONCE()`.
+- **Finding J — HDMI-RX CEC hardirq lockdep violation**, in the **upstream**
+  `synopsys_hdmirx` driver rather than in anything this series wrote. `rst_lock` is
+  declared `spinlock_t` (`LD_WAIT_CONFIG`) and taken from hardirq (`LD_WAIT_SPIN`) —
+  exactly the reported `{3:3}` inside `context-{2:2}`, and not a false positive. CEC
+  only won the race to report it first: with a 4K30 source attached `/proc/interrupts`
+  showed `rk_hdmirx_cec` at **1** interrupt against `rk_hdmirx-hdmi` at **37**, and
+  `debug_locks_off()` hid the other 37. Fixing only the CEC read would have relocated
+  the report and looked like a fix on any board with no source attached.
+
+**Run 2 — how the fixes were confirmed.** Every one of the above was re-verified on
+real hardware at the final series commit, not cross-referenced from the run that found
+it. The debug board ran the **full 12-command fault-injection block** — every `rkvenc`
+bind-time knob, the clock-enable fault, the delayed teardown, all four
+`rkvenc-unbind.sh` states plus the supplementary `timeout-negative` fixture, the
+HDMI-RX audio worker and clock faults, and a whole-boot kernel-log screen either side —
+**with lockdep genuinely armed for the entire run**, which is a first for this campaign
+and is the single most load-bearing fact in this entry. `/proc/lockdep_stats` read
+`debug_locks: 1` on the first command of a fresh cold boot *and* still `1` after the
+whole workload; the earlier runs' identical all-zero sweeps were **vacuous**, because
+finding J had already tripped `debug_locks_off()` before a shell existed. Both
+production candidates additionally ran the 11-command hardware drill clean. Encode
+figures were byte-for-byte reproducible across every build and both boards: 1080p
+**1,854,524 B**, 4K **7,390,209 B**, dual concurrent **19,206,933 B** each and
+bit-identical, 20/20 SIGTERM cycles with the element still registered. The four
+`rkvenc-unbind.sh` states passed with `all devices rebound consumer-after-supplier` in
+every one, over 20 cycles, with 1,854,524 B after each. **Eight hardware evidence
+receipts** were signed and independently verified (`exit 0`, against a pre-bound run
+key, with `patches_commit`, `tested_a_commit`, the A-tree hash, `patches_applied=22`
+and the bundle SHA-256 all asserted on the command line): 33/34/35/36/37/45 on the Rock
+5B+ debug kernel, 46 on the Rock 5B+ production candidate, 47 on the Orange Pi 5 Plus.
+The late patch consolidation was proven **content-neutral** before those receipts were
+re-signed against it — identical git tree object over the applied series, and a
+byte-identical extracted kernel `.config` on both boards.
+
+**Run 2 — two findings resolved as non-blockers, deliberately and with reasons.**
+**Defect H** is §11: a *kernel-side task failure does not reach the application*
+because `librockchip-mpp` races the driver's `-ENODEV`. It is real and measured, it is
+**not a kernel defect**, and nothing in this repository can fix it — so it is
+documented rather than chased, and run 2 replaced the QA assertion that was measuring
+it (see the end of §11). **Defect A** is a `possible recursive locking` report on the
+reset-group `rw_sem`: core 1 is only ever selected while core 0 has a task in flight,
+so every core-1 dispatch nests `down_read()` on the one shared rwsem in the one worker
+thread. lockdep is right, but the nesting **cannot deadlock today** — `grep` finds no
+`down_write` on that rwsem anywhere in the driver. Its real harm was that
+`debug_locks_off_graph_unlock()` blinded lockdep for the rest of the boot, which is
+precisely why "lockdep armed the whole run" is called out above. It did not fire at all
+in the final runs, with lockdep armed to have caught it.
+
+**Run 2 scope, corrections and limits, stated up front.** Two inherited board facts
+were **wrong and were corrected against the boards themselves** rather than carried
+forward: the Rock 5B+ **does** have a real 58.3 GB eMMC (`mmcblk0`, type `MMC`, name
+`HCG8e`, plus `mmcblk0boot0`/`boot1`; it boots from SD, which is why the eMMC set sits
+idle), so its eMMC leg is a genuine bounded `O_DIRECT` read and not an `N/A`
+substitution; the Orange Pi 5 Plus genuinely does **not** — its `mmc0`
+(`fe2e0000.mmc`) enumerates zero cards and only `mmcblk1` exists, so `emmc=none-fitted`
+there is a real board fact. The same re-derivation applied to the radios: Wi-Fi and
+Bluetooth are real on the Rock and absent on the Orange Pi, while USB3 is the reverse.
+Copying one board's `N/A` markers onto the other would have fabricated results on a
+unit that can satisfy them, which is R8 in practice rather than in principle. Still
+open, and unticked: §8b–§8e and §9 on the Orange Pi 5 Plus remain blocked upstream of
+this series by the `snps_hdmirx` TF-A/BL31 probe failure (unrelated to finding J, which
+is a later code path in a driver that on that board never probes at all); the
+`UNVALIDATED` markers in [`UPSTREAM-STATUS.md`](UPSTREAM-STATUS.md) were again **not**
+cleared, for the same reason run 1 did not clear them; and two harness defects proven
+this run are recorded rather than fixed — the `valid-after-failures` fixture off-by-one
+and the HDMI-RX clock case's unbounded single-sample read, which cost up to 12 retries
+of unmodified frozen command text against a servo whose inter-arrival time is measured
+at 1.4 s to >30 s. Both are **test** defects that read as driver results, which is the
+same class of mistake §11 exists to prevent.
 
 ---
 
@@ -954,8 +1063,9 @@ soak, not a register read.
 
 **This is a userspace characteristic of the shipped MPP stack, not a kernel defect,
 and nothing in this repository can fix it.** It is written down here because the
-fault-injection QA asserts on `gst-launch-1.0`'s exit status, and that assertion is
-measuring `librockchip-mpp`, not the driver.
+fault-injection QA used to assert on `gst-launch-1.0`'s exit status, and that
+assertion was measuring `librockchip-mpp`, not the driver. The measurement below is
+what retired that assertion; what replaced it is at the end of this section.
 
 Measured on a Rock 5B+ (`7.1.7-ceralive-rk3588-test`, KASAN + `PROVE_LOCKING`) with
 `librockchip-mpp1 1.5.0-1`, `gstreamer1.0-rockchip1 1.14-4`
@@ -992,10 +1102,10 @@ evidence about the driver**.
 > `rkvenc_task_worker_default()`; the abort is at least as consistent with that
 > corruption as with clean error reporting.
 
-**Consequence for QA.** `tests/rkvenc-fault-qa.sh`'s `fail-clock-enable` case asserts
-`gst-launch-1.0` exits non-zero (`qa_encode_expect_failure`). On this MPP that
-assertion is **flaky by construction** and currently fails deterministically. The
-honest assertion for a *kernel* patch series is kernel-side and stream-side:
+**Consequence for QA.** `tests/rkvenc-fault-qa.sh`'s `fail-clock-enable` case used to
+assert that `gst-launch-1.0` exits non-zero (`qa_encode_expect_failure`). On this MPP
+that assertion is **flaky by construction** and failed deterministically. The honest
+assertion for a *kernel* patch series is kernel-side and stream-side:
 
 1. `fail_clock_enable_once_consumed` incremented exactly once (already asserted);
 2. the kernel logged `hw_run failed: -5` **and** `wait result ret -19` — the driver
@@ -1003,11 +1113,26 @@ honest assertion for a *kernel* patch series is kernel-side and stream-side:
 3. the fault-armed stream is **measurably shorter** than the canonical no-fault
    stream — the frame really was lost rather than silently substituted.
 
-Point 3 also requires `qa_encode_expect_failure()` to stop `rm`-ing its output
-before measuring it; it currently discards the one number that distinguishes "the
-frame was lost" from "nothing happened". **This change has NOT been made** — it
-alters what a released QA gate asserts and is an orchestrator decision, not a
-side-effect of a driver fix.
+**This change HAS now been made** (run 2). It was an orchestrator decision rather than
+a side-effect of a driver fix, because it alters what a released QA gate asserts, and
+it was taken deliberately on the strength of the measurement above.
+`qa_encode_expect_failure()` now measures its output **before** deleting it — the `rm`
+used to destroy the one number that distinguishes "the frame was lost" from "nothing
+happened" — screens the kernel log between a `qa_dmesg_mark` taken either side of the
+encode for `hw_run failed: -<errno>` and `wait result ret -19` **exactly once each**,
+and compares the byte count against `QA_ENCODE_CANONICAL_BYTES` (1854524, the §3e
+figure, carried with the 60-frame count it was measured at). The exit status is still
+printed in the transcript, labelled as a diagnostic, and is no longer the gate.
+
+The replacement is **stricter**, not laxer, and in two directions at once: the `rc=0`
+run measured above now passes, where the old gate failed it; and a run whose kernel
+never logged the fault at all now fails, where the old gate would have passed it on any
+non-zero exit code — including the attempt-7 `rc=134` that was actually a
+`use-after-free`. Both directions, the exactly-once counting, the shorter-but-non-empty
+band and the two guards (nothing armed; a frame count the canonical size was not
+measured at) are pinned by `tests/rkvenc-fault-qa.sh --self-test`, which reads a
+captured log through `QA_DMESG_CMD` the same way the fixture legs read a synthetic
+debugfs through `QA_DEBUGFS` — so none of it needs a board.
 
 
 ## Open risks

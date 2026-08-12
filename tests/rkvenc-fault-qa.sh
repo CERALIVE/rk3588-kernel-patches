@@ -133,6 +133,8 @@ run_fail_clock_enable() {
 	mark="$(qa_dmesg_mark)"
 
 	qa_arm fail_clock_enable_once 1 || return 1
+	# Reads the armed knob to know which errno the kernel must have logged,
+	# so this call has to follow the arm and cannot be reordered above it.
 	qa_encode_expect_failure "fail-clock-enable"
 	qa_assert_consumed
 	qa_assert_no_sanitizer_report "${mark}" "fail-clock-enable"
@@ -314,6 +316,88 @@ selftest_fixture() {
 		"fixture: the pre-fix name fail_service_attach_consumed does not exist"
 }
 
+# The fault-encode verdict, exercised without a board.
+#
+# `fail-clock-enable` used to pass or fail on gst-launch-1.0's exit status, which
+# docs/BOARD-QUALIFICATION.md §11 measured as flaky by construction — it reports
+# timing inside librockchip-mpp, not kernel correctness. The replacement asserts
+# what the DRIVER did, and both halves of it are checkable here: the kernel-log
+# half reads a captured log through QA_DMESG_CMD exactly as the fixture legs read
+# a synthetic debugfs through QA_DEBUGFS, and the stream half is arithmetic over a
+# byte count. The fixture lines below are the real ones the board printed.
+selftest_fault_encode_assertions() {
+	local work="$1"
+	local log="${work}/dmesg-fixture"
+
+	QA_DMESG_CMD=(cat "${log}")
+
+	cat >"${log}" <<-'EOF'
+		[  118.204418] rkvenc fdbd0000.rkvenc-core: hw_run failed: -5, failing task 12
+		[  118.204431] rkvenc_dev_ioctl:1035: wait result ret -19
+	EOF
+	QA_FAILURES=0
+	qa_assert_dmesg_count 0 'hw_run failed: -5, failing task ' 1 worker >/dev/null 2>&1
+	qa_assert_dmesg_count 0 'wait result ret -19([^0-9]|$)' 1 waiter >/dev/null 2>&1
+	check "$([[ ${QA_FAILURES} -eq 0 ]] && echo 1 || echo 0)" \
+		"fault-encode: both kernel-log signatures are found exactly once"
+
+	# The case the old gate could not see. A driver that consumed the knob
+	# without the task path ever reporting it produced a silent log, and an
+	# exit-status gate would have called that a pass.
+	printf '[  118.204418] rkvenc fdbd0000.rkvenc-core: probe finished\n' >"${log}"
+	QA_FAILURES=0
+	qa_assert_dmesg_count 0 'hw_run failed: -5, failing task ' 1 worker >/dev/null 2>&1
+	check "$([[ ${QA_FAILURES} -gt 0 ]] && echo 1 || echo 0)" \
+		"fault-encode: a kernel that never reported the fault is a FAILURE"
+
+	# ...and so is a fault reported TWICE, which would be the retry the
+	# series exists to rule out.
+	{
+		printf '[  118.204418] rkvenc fdbd0000.rkvenc-core: hw_run failed: -5, failing task 12\n'
+		printf '[  118.304418] rkvenc fdbd0000.rkvenc-core: hw_run failed: -5, failing task 13\n'
+	} >"${log}"
+	QA_FAILURES=0
+	qa_assert_dmesg_count 0 'hw_run failed: -5, failing task ' 1 worker >/dev/null 2>&1
+	check "$([[ ${QA_FAILURES} -gt 0 ]] && echo 1 || echo 0)" \
+		"fault-encode: a fault reported TWICE is a FAILURE, not 'at least once'"
+
+	# shellcheck disable=SC2034  # read by lib/qa-common.sh's log screening
+	QA_DMESG_CMD=(dmesg)
+
+	# The stream band, against the numbers the board actually measured:
+	# 1,697,683 bytes fault-armed against a canonical 1,854,524 (§11).
+	QA_FAILURES=0
+	qa_assert_fault_stream_shorter stream 1697683 >/dev/null 2>&1
+	check "$([[ ${QA_FAILURES} -eq 0 ]] && echo 1 || echo 0)" \
+		"fault-encode: the measured 1697683-byte fault stream is accepted as short"
+
+	QA_FAILURES=0
+	qa_assert_fault_stream_shorter stream "${QA_ENCODE_CANONICAL_BYTES}" >/dev/null 2>&1
+	check "$([[ ${QA_FAILURES} -gt 0 ]] && echo 1 || echo 0)" \
+		"fault-encode: a full-length stream is a FAILURE — the frame was substituted, not lost"
+
+	QA_FAILURES=0
+	qa_assert_fault_stream_shorter stream 0 >/dev/null 2>&1
+	check "$([[ ${QA_FAILURES} -gt 0 ]] && echo 1 || echo 0)" \
+		"fault-encode: a zero-byte stream is a FAILURE, not a short one"
+
+	# Both guards that stop the assertion running against the wrong premise.
+	# Neither reaches gst-launch-1.0, so both are checkable here.
+	QA_FAILURES=0
+	QA_ARMED_KNOB=""
+	qa_encode_expect_failure unarmed >/dev/null 2>&1
+	check "$([[ ${QA_FAILURES} -gt 0 ]] && echo 1 || echo 0)" \
+		"fault-encode: expecting a failure with nothing armed is a FAILURE"
+
+	QA_FAILURES=0
+	QA_ARMED_KNOB=fail_clock_enable_once
+	QA_ENCODE_FRAMES=600 qa_encode_expect_failure frames >/dev/null 2>&1
+	check "$([[ ${QA_FAILURES} -gt 0 ]] && echo 1 || echo 0)" \
+		"fault-encode: a frame count the canonical byte size was not measured at is a FAILURE"
+	# shellcheck disable=SC2034  # read by lib/qa-common.sh's fault assertions
+	QA_ARMED_KNOB=""
+}
+
 run_self_test() {
 	local work rc=0
 	SELFTEST_RC=0
@@ -321,6 +405,7 @@ run_self_test() {
 
 	selftest_regressions "${work}"
 	selftest_fixture "${work}"
+	selftest_fault_encode_assertions "${work}"
 	rc="${SELFTEST_RC}"
 
 	# qa_result must refuse to print PASS while a failure is recorded.
