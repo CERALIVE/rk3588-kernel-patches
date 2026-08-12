@@ -21,7 +21,7 @@
 # self-reference convention so this file does not match its own documented
 # pattern.
 
-docs/BOARD-QUALIFICATION.md:74:- [x] Image built with `.\x2fv2\x2fbuild <board> --variant edge` from
-docs/UPSTREAM-STATUS.md:663:image-building-pipeline\x2fv2\x2fmkosi/build/base/usr/lib/systemd/system/
-docs/UPSTREAM-STATUS.md:669:`v2\x2fmkosi/customize/postinst.d/services.sh` masks exactly six units
-docs/UPSTREAM-STATUS.md:1102:| Is `debugfs` mounted on the shipped image? (the SCDC gate) | Direct inspection of `image-building-pipeline\x2fv2/mkosi` — the built base layer's systemd unit tree and the image's own unit-masking policy — plus the pipeline's real-hardware notes | **Yes.** `sys-kernel-debug.mount` present *and* in `sysinit.target.wants/`; not among the six units `suppress_unusable_boot_units` masks; `/sys/kernel/debug/...` demonstrably read on a live Rock 5B+ |
+docs/BOARD-QUALIFICATION.md:183:- [x] Image built with `.\x2fv2\x2fbuild <board> --variant edge` from
+docs/UPSTREAM-STATUS.md:940:image-building-pipeline\x2fv2\x2fmkosi/build/base/usr/lib/systemd/system/
+docs/UPSTREAM-STATUS.md:946:`v2\x2fmkosi/customize/postinst.d/services.sh` masks exactly six units
+docs/UPSTREAM-STATUS.md:1379:| Is `debugfs` mounted on the shipped image? (the SCDC gate) | Direct inspection of `image-building-pipeline\x2fv2/mkosi` — the built base layer's systemd unit tree and the image's own unit-masking policy — plus the pipeline's real-hardware notes | **Yes.** `sys-kernel-debug.mount` present *and* in `sysinit.target.wants/`; not among the six units `suppress_unusable_boot_units` masks; `/sys/kernel/debug/...` demonstrably read on a live Rock 5B+ |
