@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Tue, 11 Aug 2026 22:45:00 -0500
-Subject: [PATCH 25/25] media: rockchip: rkvenc: keep the service alive until its last descriptor closes
+Subject: [PATCH 25/26] media: rockchip: rkvenc: keep the service alive until its last descriptor closes
 
 MOTIVATION. A KASAN+lockdep Rock 5B+ reports 'BUG: KASAN:
 slab-use-after-free in __mutex_lock' from

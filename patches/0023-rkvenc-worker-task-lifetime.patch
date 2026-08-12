@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Tue, 11 Aug 2026 15:30:00 -0500
-Subject: [PATCH 23/25] media: rockchip: rkvenc: stop reading a task the worker has already released
+Subject: [PATCH 23/26] media: rockchip: rkvenc: stop reading a task the worker has already released
 
 MOTIVATION. A KASAN+lockdep Rock 5B+ running
 tests/rkvenc-fault-qa.sh --case fail-clock-enable reported 'BUG:
