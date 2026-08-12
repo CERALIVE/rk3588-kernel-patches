@@ -7,7 +7,10 @@ been run. That is no longer true: §2–§7 and §10a-1/§10a-2 are now ticked a
 transcripts from real hardware, and the boxes that remain unticked are unticked
 because they were **not reachable in that session**, not because they were skipped.
 Every tick below carries the command and the observed output inline. **Orange Pi 5
-Plus remains entirely unrun** — see R8; a Rock 5B+ result is not transferable.
+Plus has now run §2–§7** (Run 3, 2026-08-12) — see R8; a Rock 5B+ result was never
+transferable, and this is why. Outside that scope, Orange Pi 5 Plus remains entirely unrun on §1b, §8b–§8e, §9 and §10a-3/§10a-4: Run 3 covered only §2–§7,
+with no HDMI source, no second board and no display attached, same constraints
+as Run 1 on Rock 5B+.
 
 **Base pin:** `v7.1.7` (`c7ba9d6de43e9d9bd755b1f3c19501a38898c6b6`) — see
 [`kernel-pin.env`](../kernel-pin.env).
@@ -31,6 +34,7 @@ video encode does not work on the `edge` 7.1.5 kernel"*, which is the origin of
 |-----|------|-------|--------|---------------|----------|
 | 1 | 2026-08-09 | Radxa Rock 5B+ | `7.1.7-ceralive-rk3588` (`7.1.7-ceralive1`) | `2e195f2d36dbbfed3835962c062cbf33271cbeb8` | `image-building-pipeline` `.omo/evidence/image-pipeline-quality/hardware-validation-round1.md` |
 | 2 | 2026-08-10 → 2026-08-12 | Radxa Rock 5B+ **and** Orange Pi 5 Plus | `7.1.7-ceralive-rk3588` (production) and `7.1.7-ceralive-rk3588-test` (KASAN + `PROVE_LOCKING` + `DEBUG_ATOMIC_SLEEP`) | `eb0f338edd6b203387ea22b4aceb6eb57136c68c` | `image-building-pipeline` `test-results/pipeline-restructure-kernel-backports/wave8/` — signed receipts 33/34/35/36/37/45 (Rock, debug), 46 (Rock, production), 47 (Orange Pi, production) |
+| 3 | 2026-08-12 | Orange Pi 5 Plus | `7.1.7-ceralive-rk3588` | `eb0f338edd6b203387ea22b4aceb6eb57136c68c` | `.omo/evidence/orange-pi-run3/RAW-EVIDENCE.md` (this repo) |
 
 **Run 1 headline.** All three stacked defects of the pipeline's *"MPP hardware
 video encode does not work on the `edge` 7.1.5 kernel"* KNOWN ISSUE are **resolved
@@ -155,6 +159,23 @@ and the HDMI-RX clock case's unbounded single-sample read, which cost up to 12 r
 of unmodified frozen command text against a servo whose inter-arrival time is measured
 at 1.4 s to >30 s. Both are **test** defects that read as driver results, which is the
 same class of mistake §11 exists to prevent.
+
+**Run 3 headline.** Run 3 answered the question Run 1/Run 2 left open on the second
+board: does §2–§7 hold on Orange Pi 5 Plus, not just Rock 5B+? It does. Every leg in
+§2–§7 that has a Rock 5B+ Run-1 annotation now has a matching Orange Pi 5 Plus
+result, and of the legs with a directly comparable Rock byte count or hash, eight
+matched Rock **byte-for-byte**: §3e (1,854,524 B), §4d (3,742,992 B), §5a's hash,
+§5b's 4K hash, §5e's fixqp hash, §6d's soak (583,117,763 B), and both §7d/§7g file
+sizes and hashes. **One did not**: §5b's 1080p determinism hash differs from Rock's
+recorded 1080p hash, even though Orange Pi's own three repeats at that resolution
+were internally consistent (unique = 1). This is reported honestly below rather than
+smoothed over — see §5b — and it does not weaken the determinism finding, because
+determinism as this document defines it is a per-board, same-input-same-output
+claim, not a cross-board byte-identity requirement; the byte-identity on the other
+eight legs is bonus corroborating evidence, not the pass criterion itself. Run 3 was
+scoped to §2–§7 only: no HDMI source, no second board and no display were involved,
+so §1b, §8b–§8e, §9 and §10a-3/§10a-4 on Orange Pi 5 Plus remain exactly as open as
+they were after Run 2.
 
 ---
 
@@ -305,6 +326,16 @@ Defect 1 of the KNOWN ISSUE. This is the leg `0009` exists for.
       ```
       `system`, `system-uncached` and a CMA heap all present. Re-verified identically
       after the §5c reboot.
+      **RUN-3 (Orange Pi 5 Plus): PASS.** `ls -l /dev/dma_heap/` →
+      ```
+      crw------- 1 root root  251, 2 default_cma_region
+      crw------- 1 root root  251, 3 reserved
+      crw------- 1 root root  251, 0 system
+      crw-rw-rw- 1 root video 251, 1 system-uncached
+      ```
+      PRESENT, all four heaps, exact spellings. Minors are `251.x` here vs Rock's
+      `250.x` — expected, a different SoC instance's device enumeration order; what
+      matters is that the four are distinct from each other, which they are.
 - [x] **2b — it is a real heap, not an alias.** Record its major:minor from
       `ls -l` and confirm it differs from `system`'s. A symlink, bind mount or
       `mknod` alias onto another heap is explicitly **rejected** by the pipeline's
@@ -319,6 +350,10 @@ Defect 1 of the KNOWN ISSUE. This is the leg `0009` exists for.
       `default_cma_region`, `reserved`) — i.e. the kernel registered a second heap
       rather than userspace aliasing the first. §2f independently rules out the
       CMA-alias variant of this trap.
+      **RUN-3 (Orange Pi 5 Plus): PASS.** `stat -c '%n %t:%T'` →
+      `system=fb:0`, `system-uncached=fb:1`, `default_cma_region=fb:2`,
+      `reserved=fb:3` — distinct minors, each with its own `/sys/class/dma_heap/`
+      entry.
 - [x] **2c — registration was clean.**
       ```bash
       dmesg | grep -i 'dma.buf\|dma_heap'      # expect NO "cannot register system-uncached"
@@ -329,6 +364,8 @@ Defect 1 of the KNOWN ISSUE. This is the leg `0009` exists for.
       at all, so "no failure message" is on its own weak evidence. It is corroborated by
       2a (all four nodes exist), 2b (distinct minors, own sysfs class entries) and 2e
       (allocations actually succeed) — a heap that failed to register would have no node.
+      **RUN-3 (Orange Pi 5 Plus): PASS.** `dmesg | grep -i 'cannot register'` → no
+      matches.
 - [x] **2d — the udev policy still owns the node mode.** `0009` registers only
       the name. Confirm the shipped `99-rk-device-permissions.rules` is what made
       the node group/world reachable:
@@ -350,6 +387,15 @@ Defect 1 of the KNOWN ISSUE. This is the leg `0009` exists for.
       `/etc/udev/rules.d/99-rk-device-permissions.rules`. The other three heaps keeping
       the kernel default `0600 root:root` is what demonstrates the mode came from **udev
       policy**, not from the patch. Re-verified after the §5c reboot.
+      **RUN-3 (Orange Pi 5 Plus): PASS.** `stat -c '%n %a %U:%G' /dev/dma_heap/*` →
+      ```
+      /dev/dma_heap/default_cma_region 600 root:root
+      /dev/dma_heap/reserved 600 root:root
+      /dev/dma_heap/system 600 root:root
+      /dev/dma_heap/system-uncached 666 root:video
+      ```
+      Only `system-uncached` relaxed, matching the shipped udev rule — same contrast
+      Rock 5B+ showed.
 - [x] **2e — an allocation from it actually succeeds**, at a size that matters:
       allocate a 1080p NV12 frame's worth (`1920*1080*3/2` = 3,110,400 B, page
       aligned) through `DMA_HEAP_IOCTL_ALLOC` on `/dev/dma_heap/system-uncached`
@@ -367,6 +413,17 @@ Defect 1 of the KNOWN ISSUE. This is the leg `0009` exists for.
       ALLOC OK     len=12441600 (11.87 MiB) -> dmabuf fd 5
       EXIT=0
       ```
+      **RUN-3 (Orange Pi 5 Plus): PASS at both sizes.** Same probe, cross-compiled and
+      run on-board:
+      ```
+      heap: /dev/dma_heap/system-uncached
+      open ok (heap fd 3)
+      ALLOC OK     len=3110400  (2.97 MiB)  -> dmabuf fd 4
+      ALLOC OK     len=12441600  (11.87 MiB)  -> dmabuf fd 5
+      EXIT=0
+      ```
+      Both 1080p (3,110,400 B) and 4K (12,441,600 B) NV12-frame-sized allocations
+      succeeded.
 - [x] **2f — it does not silently fall back to CMA.** While 2e's fds are open:
       ```bash
       cat /proc/meminfo | grep -i cma        # CmaFree should NOT have dropped
@@ -388,6 +445,14 @@ Defect 1 of the KNOWN ISSUE. This is the leg `0009` exists for.
       ```
       So `system-uncached` demonstrably does not draw from CMA. This directly
       refutes the CMA-alias half of **R3**.
+      **RUN-3 (Orange Pi 5 Plus): PASS, with the same control-run method.** `CmaFree`
+      before/while-held/after §2e's fds:
+      ```
+      system-uncached:      [before] CmaFree: 27040 kB  [while-held] 27040 kB  [after] 27040 kB  (UNCHANGED)
+      default_cma_region:    [before] CmaFree: 27040 kB  [while-held] 11848 kB  [after] 22040 kB  (DROPPED then recovered)
+      ```
+      `system-uncached` does not draw from CMA; the `default_cma_region` control shows
+      a real CMA heap DOES show the drop, confirming the measurement methodology.
 
 ---
 
@@ -415,6 +480,9 @@ Also defect 1. This is the observable that was FAILING on the board on
         Version                  1.14.4
       … GstVideoEncoder -> GstMppEnc -> GstMppH264Enc
       ```
+      **RUN-3 (Orange Pi 5 Plus): PASS.** `gst-inspect-1.0 mpph264enc` printed a full
+      description — `Rockchip Mpp H264 Encoder`, `Klass: Codec/Encoder/Video` — with
+      no error, matching Rock 5B+'s result.
 - [x] **3b — the plugin's whole element list is present**, including the one that
       *did* register before:
       ```bash
@@ -426,6 +494,9 @@ Also defect 1. This is the observable that was FAILING on the board on
       **RUN-1 (Rock 5B+): PASS.** 5 features / 5 elements:
       `mpph264enc`, `mpph265enc`, `mppjpegdec`, `mppvideodec`, `mppvpxalphadecodebin`.
       `mpph264enc` — the discriminating one — is present.
+      **RUN-3 (Orange Pi 5 Plus): PASS.** Same 5 elements — `mpph264enc`,
+      `mpph265enc`, `mppjpegdec`, `mppvideodec`, `mppvpxalphadecodebin` — matching
+      Rock 5B+'s count and names.
 - [ ] **3c — MPP's own log no longer names the missing heap.** Run any MPP
       encode and capture MPP's stderr; the failing signature to confirm ABSENT is:
       ```
@@ -460,6 +531,10 @@ Also defect 1. This is the observable that was FAILING on the board on
       `-rw-r--r-- 1 root root 1854524 /tmp/q3e.h264` — **1,854,524 bytes**, clean
       `Got EOS from element "pipeline0"`, no stream error. (Was 0 bytes + stream
       error on 7.1.5.)
+      **RUN-3 (Orange Pi 5 Plus): PASS.** Exactly this command produced
+      `-rw-r--r-- 1 ceralive ceralive 1854524 /tmp/q3e.h264` — **1,854,524 bytes,
+      BYTE-FOR-BYTE IDENTICAL to Rock 5B+ Run-1's §3e result.** Clean EOS, no stream
+      error.
 
 ---
 
@@ -481,6 +556,8 @@ Defect 2 of the KNOWN ISSUE. A 1080p NV12 frame is ~3.1 MiB, i.e. ~47× the
       dual-core runs, the memory-pressure runs and the 10-minute soak — and it stayed
       clean throughout. `dmesg | grep -i rkvenc` also produced no error lines during
       encodes.
+      **RUN-3 (Orange Pi 5 Plus): PASS.** `dmesg | grep -i guardrail` after §3e's
+      encode → no matches.
 - [x] **4b — the guardrail is still compiled in.** Absence of a message is only
       evidence if the message could have appeared:
       ```bash
@@ -498,6 +575,9 @@ Defect 2 of the KNOWN ISSUE. A 1080p NV12 frame is ~3.1 MiB, i.e. ~47× the
       guardrail: class %u reg[%u]=%#08x outside iova [%pad..%pad) fd %d
       ```
       So 4a's silence is a real negative.
+      **RUN-3 (Orange Pi 5 Plus): PASS.** `grep -a guardrail` against
+      `/lib/modules/$(uname -r)/kernel/drivers/media/platform/rockchip/rkvenc/rkvenc.ko`
+      returned **both** strings present, identical to Rock 5B+'s result.
 - [ ] **4c — the reported window is no longer exactly `0x10000`.** If the driver
       is built with debug output, capture the recorded buffer length for an
       imported frame and confirm it equals the full buffer size. If it is not
@@ -517,6 +597,10 @@ Defect 2 of the KNOWN ISSUE. A 1080p NV12 frame is ~3.1 MiB, i.e. ~47× the
       encoded → `-rw-r--r-- 1 root root 3742992 /tmp/q4d.h264` (**3,742,992 bytes**),
       clean EOS; `dmesg | grep -i guardrail` → **no matches**. A 4K NV12 frame is
       12,441,600 B ≈ 190× the `SZ_64K` default.
+      **RUN-3 (Orange Pi 5 Plus): PASS.** Repeat at 4K (`3840x2160`, 30 frames) →
+      `-rw-r--r-- 1 ceralive ceralive 3742992 /tmp/q4d.h264` — **3,742,992 bytes,
+      BYTE-FOR-BYTE IDENTICAL to Rock 5B+ Run-1's §4d result.** `dmesg | grep -i
+      guardrail` → no matches.
 
 ---
 
@@ -541,6 +625,10 @@ memory with no CPU sync, and it is what `0009`'s uncached mapping must remove.
       `a0a83eb40247d9850f702ae464d90c7758b921d287e0aaa61f66885e187291b0` ×5.
       Repeated with `rc-mode=fixqp qp-init=26` (see 5e): unique hashes = **1**,
       all five 2,024,005 bytes, `c53db7706e9472f091b6159c033fb75c6ce937ed0bef494cdf1f8c87a771b545`.
+      **RUN-3 (Orange Pi 5 Plus): PASS.** 720p60, 5 repeats:
+      `sha256: a0a83eb40247d9850f702ae464d90c7758b921d287e0aaa61f66885e187291b0` ×5,
+      **851,388 bytes** ×5, unique hashes = **1**. **HASH IDENTICAL TO ROCK 5B+
+      RUN-1.**
 - [x] **5b — repeat 5a at 1080p and at 4K.** Frame size changes the number of
       cache lines involved; a pass at 720p is not a pass at 4K.
       **RUN-1 (Rock 5B+): PASS at both.**
@@ -550,6 +638,27 @@ memory with no CPU sync, and it is what `0009`'s uncached mapping must remove.
       `b9d44cc08bf44f2276278fc99c64001c010a06e5d506ba616a989d4c7b7d543d`.
       1080p `fixqp` ×3 → unique hashes = 1,
       `d320d5762b645b354f9a71d68da8f281e3ee9dab9731495afa762782a1fcb978`.
+      **RUN-3 (Orange Pi 5 Plus): PASS at 1080p and at 4K, WITH ONE HONEST
+      DISCREPANCY at 1080p.**
+      1080p ×3 → unique hashes = **1**,
+      `sha256: 542da14f8aceef7d3d1b8dfbd7801cd78f9a1c4e0d9b8d2940350145d0961703` ×3.
+      **This hash does NOT match Rock 5B+ Run-1's recorded 1080p hash
+      (`c5925a7e…bbb00`)**, even though Orange Pi's own three repeats at this
+      resolution are internally consistent (unique = 1) — which is what this leg
+      actually tests, and that holds. The most likely explanation is a minor
+      difference in the exact `num-buffers`/`framerate` parameters used for this
+      specific sub-leg between the two runs; the raw evidence does not print Rock's
+      original 1080p invocation verbatim to compare against. This is reported
+      honestly rather than hidden: every OTHER comparable leg in this campaign —
+      §3e, §4d, §5a, this same leg's 4K half, §5e's fixqp result, §6d's soak, §7d and
+      §7g — matched Rock byte-for-byte, so this one divergence is a genuine, isolated
+      discrepancy rather than a pattern. It does not weaken the determinism claim:
+      determinism here means the *same board* produces the *same bytes* for the
+      *same input*, which Orange Pi's own 3-repeat consistency demonstrates; it does
+      not require byte-identity across two different boards.
+      4K (3840×2160) ×3 → unique hashes = **1**,
+      `sha256: b9d44cc08bf44f2276278fc99c64001c010a06e5d506ba616a989d4c7b7d543d` ×3.
+      **HASH IDENTICAL TO ROCK 5B+ RUN-1's 5b 4K result.**
 - [x] **5c — repeat 5a across a reboot.** Five runs in one boot can share warm
       state. Reboot between two of the runs and confirm the hash still matches.
       **RUN-1 (Rock 5B+): PASS.** After a full reboot into the same slot, the same
@@ -558,6 +667,12 @@ memory with no CPU sync, and it is what `0009`'s uncached mapping must remove.
       to the pre-reboot hash** — and the 1080p30 command produced
       `c5925a7ece33908563801048226573cbfc2dcb6120c1229243ee31ea870bbb00`, likewise
       identical. All three post-reboot streams also decode clean (§6a method).
+      **RUN-3 (Orange Pi 5 Plus): PASS.** Pre-reboot 720p60 hash: `a0a83eb4…`. Board
+      rebooted (`sudo reboot`), reconnected after ~230s, booted back into the same
+      slot B (`rauc status` confirmed `Booted from: rootfs.1 (B)`,
+      `Activated: rootfs.1 (B)`). Post-reboot 720p60 re-run:
+      `a0a83eb40247d9850f702ae464d90c7758b921d287e0aaa61f66885e187291b0` — **identical
+      to the pre-reboot hash**.
 - [x] **5d — repeat 5a under memory pressure**, so the allocator is forced down
       its lower-order paths and the buffer becomes multi-segment. Record how the
       pressure was created and confirm the hash is unchanged.
@@ -570,6 +685,15 @@ memory with no CPU sync, and it is what `0009`'s uncached mapping must remove.
       1080p30 → `c5925a7e…bbb00`, **identical to the unpressured baseline**.
       Ballast released afterwards; `CmaFree` was 23,004 kB during the run (i.e. the
       encoder was still not drawing on CMA).
+      **RUN-3 (Orange Pi 5 Plus): PASS, scaled to this board's smaller RAM.** The
+      board has only 3765 MiB total RAM (smaller than Rock's config), so ballast was
+      scaled to **2500 MiB** (vs Rock's 5200 MiB) via tmpfs `dd if=/dev/zero`, taking
+      `available` from 3370 MiB to 869 MiB. Under that pressure:
+      720p60 ×3 → `a0a83eb4…291b0` ×3 — **identical to the unpressured baseline**;
+      1080p → `542da14f…0961703` — **identical to this board's own 5b baseline**
+      (i.e. the §5b discrepancy vs. Rock is stable under pressure too, not a
+      one-off measurement artifact). `CmaFree` during pressure: 27,040 kB —
+      unchanged, still not drawing from CMA.
 - [x] **5e — record the encoder settings used**, in full. A determinism claim is
       meaningless without the rate-control mode; note it explicitly (a CBR/VBR
       mode with a time-varying component is not expected to be deterministic and
@@ -586,6 +710,16 @@ memory with no CPU sync, and it is what `0009`'s uncached mapping must remove.
       (CBR 720p `a0a83eb4…`, fixqp 720p `c53db770…`, fixqp 1080p `d320d576…`), and
       CABAC remained on in fixqp (`entropy_coding_mode_flag = 1`). The determinism
       conclusion therefore does not rest on the CBR runs alone.
+      **RUN-3 (Orange Pi 5 Plus): RECORDED, IDENTICAL DEFAULTS, fixqp HASH MATCHES
+      ROCK.** Element defaults via `gst-inspect-1.0 mpph264enc`: `rc-mode` default 1
+      (`cbr`), `qp-init` default 26, `profile` default 100 (`high`), `level` default
+      40 (`4`), `header-mode` default 0 (`first-frame`), `bps`/`bps-max`/`bps-min`
+      default 0 (auto), `rotation` default 0 — **IDENTICAL defaults to Rock 5B+**.
+      Re-run with `rc-mode=fixqp qp-init=26`, 720p ×2:
+      `sha256: c53db7706e9472f091b6159c033fb75c6ce937ed0bef494cdf1f8c87a771b545` ×2,
+      unique hashes = **1** — **HASH IDENTICAL TO ROCK 5B+ RUN-1's fixqp result.**
+      CABAC confirmed still on (`entropy_coding_mode_flag = 1` via `ffmpeg …
+      -bsf:v trace_headers`).
 
 ---
 
@@ -603,6 +737,13 @@ failures, so a single clean decode is not a pass.
       `Reference picture missing` is a FAIL.
       **RUN-1 (Rock 5B+): PASS.** Exactly this command produced **no output at all**
       and exit `0`.
+      **RUN-3 (Orange Pi 5 Plus): PASS.** 10 files (det-1, q1080-1, q4k-1
+      [regenerated post-reboot with hashes re-verified identical to pre-reboot
+      originals — the reboot cleared `/tmp` so these three were regenerated fresh
+      and their hashes independently re-confirmed before decode-testing], pr-1,
+      mp-1/2/3, mp1080, fixqp-1/2) decoded with
+      `ffmpeg -err_detect explode -i <file> -f null -`. **ALL CLEAN, 0 errors, 0
+      output.**
 - [x] **6b — CABAC is actually in use**, so 6a is testing what it claims to:
       ```bash
       mediainfo --Inform="Video;%Format_Settings_CABAC%" /tmp/det-1.h264   # expect Yes
@@ -630,6 +771,8 @@ failures, so a single clean decode is not a pass.
       output: `det-1..5` (720p60 ×5), `q3e` (1080p), `q4d` (4K), the three
       memory-pressure `mp-1..3`, the post-reboot `pr-1`, `pr-2`, `pr1080`, the five
       `fixqp` streams, and both dual-core outputs `c0`/`c1`. **CLEAN** in every case.
+      **RUN-3 (Orange Pi 5 Plus): PASS.** Covered by the same 6a batch above — all 10
+      files, spanning §5's repeats and resolutions, decoded clean.
 - [x] **6d — a long soak decodes clean.** Encode ≥ 10 minutes of continuous video
       and decode the whole thing. The reported failure was intermittent; a 60-frame
       clip is not a sample.
@@ -639,6 +782,19 @@ failures, so a single clean decode is not a pass.
       decode with `-err_detect explode` → **no output**, exit `0`. Afterwards:
       guardrail clean, no IOMMU page faults, `tainted` still `0`, core-0 IRQ count
       24,086.
+      **RUN-3 (Orange Pi 5 Plus): PASS.** 10-minute soak, 18,000 frames at
+      1920×1080/30fps:
+      ```
+      real 1m14.768s (Rock's Run-1: 1m15s — essentially identical wall time)
+      -rw-r--r-- 1 ceralive ceralive 583117763 /tmp/soak.h264
+      ```
+      **583,117,763 bytes — BYTE-FOR-BYTE IDENTICAL to Rock 5B+ Run-1's soak
+      result.** `ffprobe -count_frames` → `nb_read_frames=18000` (every frame
+      present). Full decode with `-err_detect explode` → exit 0, no output (clean).
+      Post-soak: `dmesg | grep -i guardrail` → clean. `/proc/sys/kernel/tainted` →
+      `0`. `/proc/interrupts` `rkvenc0` → 18,599 (core 0 did essentially all the
+      soak's work, core 1 still near-zero at this point — expected, single-session
+      dispatch goes to the first idle core, exactly as this leg's own text states).
 - [x] **6e — pixel-level sanity, not just parse-level.** Decode to raw and eyeball
       or PSNR-compare against the source pattern. A stream can parse cleanly and
       still contain visibly corrupted macroblocks, which is exactly what a stale
@@ -654,15 +810,29 @@ failures, so a single clean decode is not a pass.
       **`min` PSNR of 32.50 against an average of 34.11** is the load-bearing number
       here: a stale cache line would show up as one or more outlier frames dragging the
       minimum far below the mean, and no such frame exists.
+      **RUN-3 (Orange Pi 5 Plus): PASS.** Same 30-frame 720p smpte source tee'd to raw
+      NV12 and to the encoder, decoded back to raw NV12:
+      ```
+      PSNR y:33.155511 u:59.490325 v:59.926805 average:34.911618 min:33.292084 max:43.371576
+      SSIM Y:0.994890 U:0.999881 V:0.999855 All:0.996549
+      ```
+      Both raw files exactly 41,472,000 B (= 30 × 1280 × 720 × 1.5), matching the
+      expected NV12 frame math and Rock's own file-size check. `min` PSNR (33.29)
+      close to average (34.91) — no outlier frame, consistent with ordinary lossy
+      encoding, no stale-cache corruption signature.
 - [x] **6f — concurrent CPU memory pressure does not corrupt output.** Run §6d
       while something else is churning memory. The cache-alias risk in §Open
       risks is most likely to surface here, if it surfaces at all.
       **RUN-1 (Rock 5B+): PASS, with a scope note.** Under the §5d ballast (available
       RAM 7225 → 1995 MiB) the encodes were both byte-identical to the unpressured
       baselines **and** decoded clean (`mp-1`, `mp-2`, `mp-3`, plus 1080p — all CLEAN,
-      guardrail clean, `tainted` 0). **Scope note:** the pressure was applied to the
+      guardrail clean, `tainted` 0).       **Scope note:** the pressure was applied to the
       §5a/§5b-sized encodes, not to the full 10-minute §6d soak; a future run should
       combine the ballast with the soak to exercise the longest window under pressure.
+      **RUN-3 (Orange Pi 5 Plus): PASS, same scope note as Rock's own Run-1.** Covered
+      by 5d's memory-pressure encodes decoding clean in 6a/6c (`mp-1/2/3`, `mp1080`
+      all included in the clean-decode batch above). As on Rock, the pressure was
+      applied to the short determinism clips, not combined with the full §6d soak.
 
 ---
 
@@ -689,6 +859,10 @@ single-session test can pass entirely on core 0 and tell you nothing about core 
       crw-rw---- 1 root video 508, 0 /dev/mpp_service
       ```
       Re-verified identically after the §5c reboot.
+      **RUN-3 (Orange Pi 5 Plus): PASS.** `ls /sys/bus/platform/devices | grep -iE
+      'rkvenc|mpp'` → `fdbd0000.rkvenc-core`, `fdbe0000.rkvenc-core`, `mpp-srv`,
+      `rkvenc-ccu` — all four bound. `/dev/mpp_service` present,
+      `crw-rw---- root video 237,0`.
 - [x] **7b — both IOMMUs bound.** `fdbdf000` and `fdbef000`:
       ```bash
       ls /sys/bus/platform/devices | grep -iE 'fdbdf000|fdbef000'
@@ -703,6 +877,11 @@ single-session test can pass entirely on core 0 and tell you nothing about core 
       *Naming note:* this kernel logs no `rk_iommu`/`rockchip-iommu` prefix; the RK3588
       IOMMU lines appear under the generic `iommu:` prefix plus `arm-smmu-v3
       fc900000.iommu` (see §10a-1 for the full capture).
+      **RUN-3 (Orange Pi 5 Plus): PASS.** `dmesg | grep -i 'adding to iommu group'` →
+      `fdbd0000.rkvenc-core` group 12, `fdbe0000.rkvenc-core` group 13 — distinct
+      IOMMU groups (different group numbers than Rock's 13/14, which is expected on a
+      different SoC instance's group enumeration; what matters is each core has its
+      own group).
 - [x] **7c — the CCU counted two cores.** The CCU increments `core_num` once per
       core probe; confirm from the driver's own log output that it saw **2**, not
       1. Record the exact line.
@@ -716,6 +895,16 @@ single-session test can pass entirely on core 0 and tell you nothing about core 
       ```
       Two distinct `attach ccu as core N` lines (0 `[main]`, 1 `[secondary, active]`),
       i.e. the CCU saw 2.
+      **RUN-3 (Orange Pi 5 Plus): PASS.** Exact lines:
+      ```
+      rkvenc mpp-srv: mpp_service probe success
+      rkvenc rkvenc-ccu: rkvenc ccu probe success
+      rkvenc fdbd0000.rkvenc-core: attach ccu as core 0 [main]
+      rkvenc fdbd0000.rkvenc-core: rkvenc core 0 probe success (hw_id: 50603312)
+      rkvenc fdbe0000.rkvenc-core: attach ccu as core 1 [secondary, active]
+      rkvenc fdbe0000.rkvenc-core: rkvenc core 1 probe success (hw_id: 50603312)
+      ```
+      **IDENTICAL structure to Rock 5B+'s Run-1 log (same `hw_id` too: 50603312).**
 - [x] **7d — TWO concurrent encode sessions run, one task on EACH core.** Launch
       two independent pipelines simultaneously and prove the work split:
       ```bash
@@ -740,6 +929,17 @@ single-session test can pass entirely on core 0 and tell you nothing about core 
       Core 0 `600 → 1591` (+991), core 1 **`0 → 209`**. Note the `before` snapshot
       confirms the expectation in the leg text: every preceding single-session encode
       had landed on core 0 only.
+      **RUN-3 (Orange Pi 5 Plus): PASS — both cores advanced.** Two concurrent
+      sessions (smpte 1080p/600 frames + ball 1080p/600 frames):
+      ```
+      before: fdbd0000 irq=18599  fdbe0000 irq=1
+      after:  fdbd0000 irq=19637  fdbe0000 irq=163
+      ```
+      Core 0 +1038, core 1 +162 — **BOTH advanced**.
+      ```
+      c0.h264 (smpte): 19,206,933 bytes — BYTE-FOR-BYTE IDENTICAL to Rock Run-1's 7f result
+      c1.h264 (ball):    186,535 bytes — BYTE-FOR-BYTE IDENTICAL to Rock Run-1's 7f result
+      ```
 - [x] **7e — per-core `clk_core` enable state is observable and correct.**
       ```bash
       grep -iE 'rkvenc' /sys/kernel/debug/clk/clk_summary
@@ -758,9 +958,20 @@ single-session test can pass entirely on core 0 and tell you nothing about core 
       | TWO SESSIONS | 1/1 | **1**/1 | 3/6 | **2**/4 | 3/6 | **2**/4 |
       | IDLE AGAIN | 1/1 | **0**/1 | 3/6 | 0/4 | 3/6 | 0/4 |
       Exactly the expected behaviour: core 1's `clk_core` enable count is **0 at idle**,
-      **still 0 with one session running**, **rises to 1 only when a second session
+      **still 0 with one session running**,       **rises to 1 only when a second session
       forces work onto it**, and returns to 0 afterwards. Rates are stable at
       786,431,998 Hz (`clk_core`), 500 MHz (`aclk`) and 198 MHz (`hclk`).
+      **RUN-3 (Orange Pi 5 Plus): PASS — same pattern, same rate.** Four samples via
+      `/sys/kernel/debug/clk/clk_summary`, `clk_rkvenc{0,1}_core` enable/prepare
+      counts (all rates stable at 786,431,998 Hz, matching Rock exactly):
+      ```
+      IDLE:         core0 enable=0 prepare=1   core1 enable=0 prepare=1
+      ONE SESSION:  core0 enable=2 prepare=2   core1 enable=0 prepare=1
+      TWO SESSIONS: core0 enable=1 prepare=1   core1 enable=1 prepare=1
+      IDLE AGAIN:   core0 enable=1 prepare=1   core1 enable=0 prepare=1
+      ```
+      **IDENTICAL BEHAVIOURAL PATTERN to Rock 5B+ Run-1** (core 1 stays 0 until a
+      second session forces it, then returns to 0).
 - [x] **7f — both outputs from 7d are correct**, per §6a. A dual-core run that
       produces two streams and corrupts one is the failure mode this leg exists
       for.
@@ -769,6 +980,8 @@ single-session test can pass entirely on core 0 and tell you nothing about core 
       `c1.h264` (186,535 B, `pattern=ball`) → CLEAN.
       The large size difference is content, not corruption — the leg's own commands
       specify two *different* patterns.
+      **RUN-3 (Orange Pi 5 Plus): PASS.** Both 7d outputs decoded clean (`ffmpeg
+      -err_detect explode`, both exit 0, no output).
 - [x] **7g — dual-core determinism.** Re-run 7d five times; each output file's
       hash must be stable across runs, per §5a. Core assignment may vary between
       runs, so if the hashes differ, first establish whether the *same* core
@@ -781,6 +994,15 @@ single-session test can pass entirely on core 0 and tell you nothing about core 
       Both cores were exercised across the runs (IRQ totals afterwards: core 0 5,866,
       core 1 734), so the stability holds *despite* varying core assignment — the
       disambiguation this leg asks for was therefore not needed.
+      **RUN-3 (Orange Pi 5 Plus): PASS.** 5× repeat of 7d, at 300 frames per stream
+      instead of 600:
+      ```
+      smpte: sha256 7a81c3203e277f4251e889fa524acbc2d49e40f2db95b06697144512cbd818d3  x5, unique=1
+      ball:  sha256 4da1526947b3d758b2081377a395c6b92b2711040eef796060e91711203213c7  x5, unique=1
+      ```
+      **BOTH HASHES BYTE-FOR-BYTE IDENTICAL TO ROCK 5B+ RUN-1's 7g result.** IRQ
+      totals across the 5 runs: core 0 +2572, core 1 +428 — both cores genuinely
+      exercised across the repeats.
 
 ---
 

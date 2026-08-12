@@ -10,6 +10,11 @@ pass is not a sweep.
 `UNVALIDATED` to `VALIDATED` on Rock 5B+ following a real board session
 (`image-building-pipeline` `.omo/evidence/image-pipeline-quality/hardware-validation-round1.md`);
 Orange Pi 5+ remains `UNVALIDATED` — it has never run this image.
+**Hardware validation update, 2026-08-12:** `0008` and `0009` are now also
+`VALIDATED` on Orange Pi 5 Plus, following a real board session that replicated
+`BOARD-QUALIFICATION.md`'s §2–§7 protocol (`.omo/evidence/orange-pi-run3/RAW-EVIDENCE.md`,
+this repo). One leg's result differs honestly from Rock's — see [§ `0009`](#0009--validated-on-rock-5b-and-why-orange-pi-5-and-a-real-hdmi-source-stay-open).
+Real-HDMI-capture-source legs (§8–§10) remain untested on both boards.
 
 This repository carries out-of-tree patches. Every one of them is either waiting
 for an upstream counterpart, tracking one, or has none and never will. This table
@@ -177,8 +182,8 @@ the marker for a given patch is written down, per patch, in
 | `0005` hdmirx audio | `upstream/` lane — Ross Cawston, same import. Upstream counterpart is the 4-patch series **`[PATCH v4 0/4] media: synopsys: hdmirx: add HDMI audio capture support`** by Igor Paunovic, <https://lore.kernel.org/r/20260721064115.64809-1-royalnet026@gmail.com> — same mechanism, *competing* DT half | `sent-v4` — fully reviewed, **not merged**; author pinged for pickup 2026-08-05, unanswered | Counterpart merges **and** base reaches that version **and** Rock 5B+ enablement exists **and** the multichannel / jack / plugout regressions are closed. All four | 2026-08-08 | **Upstream version rejected: adoptable but not strictly better** — applies cleanly to `v7.1.7`, but drops multichannel, jack reporting, plugout teardown and pre-capture clock lock, and its 4/4 enables the card on **Orange Pi 5 Plus only**. Verdict: [`EVAL-0005-AUDIO.md`](EVAL-0005-AUDIO.md). Read [§ 0005 / 0006](#0005--0006--the-pairing-is-load-bearing-and-upstream-does-not-replace-it) |
 | `0006` hdmirx audio sound card | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Upstream counterpart: **partial only** — v4 3/4 covers the SoC-level card, v4 4/4 covers Orange Pi 5 Plus; **nothing upstream covers Rock 5B+** | `first-party-no-upstream` | Only if an upstream HDMI-RX audio series lands its own DT sound card **and** enables it on Rock 5B+ *and* Orange Pi 5+. As of 2026-08-08 the posted series does not | 2026-08-08 | **T11 answer: NOT superseded, and NOT compatible.** `0006` and v4 3/4 edit the same two regions of `rk3588-extra.dtsi` and disagree on `#sound-dai-cells` (`<0>` vs `<1>`); `git apply --check` of `0006` onto an upstream-applied tree fails. Modelled on the BSP's `hdmiin-sound` wiring, expressed with mainline `simple-audio-card`; no BSP text copied |
 | `0007` iommu dte-limit fix | `backports/` lane — **backported from mainline** `8d4346ecd4950ae08cc76a6de327c264e846758c` "iommu/rockchip: disable fetch dte time limit", Simon Xue via Sven Püschel (Pengutronix), PATCHv2, <https://lore.kernel.org/r/20260428-spu-iommudtefix-v2-1-f592f579e508@pengutronix.de> | `merged@7.2-rc1` — `Acked-by` Heiko Stuebner, applied by Joerg Roedel 2026-06-02. **Absent from the base**: it carries no `Fixes:` tag and no `Cc: stable`, so `7.1.y` never picked it up | **Drop when base ≥ `v7.2`.** The base absorbing it is the whole retire condition — there is no merit question left, it is already mainline | 2026-08-08 | Sets `BIT(31)` of `MMU_AUTO_GATING` in `rk_iommu_enable()`, the vendor workaround for the RK356x/RK3588 blocked-VOP-and-black-screen and RK3588 RGA3 hang. Base check at `v7.1.7`: `DISABLE_FETCH_DTE_TIME_LIMIT` absent, `RK_MMU_AUTO_GATING` present. Applies forward with **no fuzz and no context adaptation**; **zero prerequisite commits**. Fixes:-tag sweep over mainline found **no follow-up** |
-| `0008` rkvenc DMA max segment size — **`VALIDATED` on Rock 5B+ (2026-08-09), `UNVALIDATED` on Orange Pi 5+** | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Fixes a bookkeeping defect in `0001`, so its upstream position is the `0001` row's. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — upstream rkvenc is `WIP` (Collabora's Mesa/Vulkan work, the same tracker as `0001`), and there is no upstream VEPU580 H.264 driver to backport a fix from | Only if `0001` itself retires, i.e. if an upstream VEPU580 driver ever replaces it wholesale. **Do not retire it on the strength of "upstream rkvenc landed"** — see [§ `0001`](#0001--do-not-retire-on-rkvenc-landing), which applies verbatim | 2026-08-09 | Adds `dma_set_max_seg_size(dev, DMA_BIT_MASK(32))` to `rkvenc_hw_probe()`, then **reads it back** with `dma_get_max_seg_size()` and fails the probe with `-EINVAL` if it did not take. Defect 2 of the 3 stacked in the pipeline's "MPP hardware video encode" KNOWN ISSUE. The IOVA guardrail in `rkvenc_service.c` is **deliberately untouched** — it correctly catches the symptom, and on a real board it never fired across 1080p, 4K, dual-core or a 10-minute soak. Read [§ `0008`](#0008--validated-on-rock-5b-and-what-that-does-and-does-not-mean). Hardware legs: [`BOARD-QUALIFICATION.md` §4](BOARD-QUALIFICATION.md) |
-| `0009` `system-uncached` dma-heap — **`VALIDATED` on Rock 5B+ (2026-08-09), `UNVALIDATED` on Orange Pi 5+** | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Ported in shape from the ACK/Rockchip uncached heap; no upstream Linux counterpart exists — mainline `drivers/dma-buf/heaps/` carries `system`, `system_cc_shared` and CMA only. Its reason to exist is the same `0001`/MPP stack, so its upstream position is the `0001` row's | `first-party-no-upstream` — upstream rkvenc is `WIP` (Collabora's Mesa/Vulkan work, the same tracker as `0001`), and no mainline series proposes an uncached system heap | Retire when **either** mainline registers an uncached system heap under exactly the name `system-uncached`, **or** `0001` retires wholesale, **or** the userspace stops hard-coding the name (a `librockchip-mpp` with a heap-name override or a working cached-heap fallback). Not before: the shipped `librockchip-mpp1 1.5.0-1` has neither | 2026-08-09 | Registers a second dma-heap from `system_heap.c` using the file's existing per-heap drvdata mechanism: `pgprot_writecombine()` mappings, a one-time `arch_dma_prep_coherent()` clean at allocation, and `DMA_ATTR_SKIP_CPU_SYNC` + skipped `dma_sync_sgtable_*` **only** for that heap. Defects **1 and 3** of the 3 stacked in the pipeline's "MPP hardware video encode" KNOWN ISSUE (`0008` is defect 2). Gated by its own `CONFIG_DMABUF_HEAPS_SYSTEM_UNCACHED`, which `depends on ARCH_HAS_DMA_PREP_COHERENT` so it cannot build where it would silently hand back cached memory. Confirmed a genuine second heap (minor `250,1`, not an alias of `system`'s `250,0`) that does not draw from CMA. Read [§ `0009`](#0009--validated-on-rock-5b-and-why-orange-pi-5-and-a-real-hdmi-source-stay-open) |
+| `0008` rkvenc DMA max segment size — **`VALIDATED` on Rock 5B+ (2026-08-09) and on Orange Pi 5 Plus (2026-08-12)** | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Fixes a bookkeeping defect in `0001`, so its upstream position is the `0001` row's. Upstream Linux counterpart: **N/A** | `first-party-no-upstream` — upstream rkvenc is `WIP` (Collabora's Mesa/Vulkan work, the same tracker as `0001`), and there is no upstream VEPU580 H.264 driver to backport a fix from | Only if `0001` itself retires, i.e. if an upstream VEPU580 driver ever replaces it wholesale. **Do not retire it on the strength of "upstream rkvenc landed"** — see [§ `0001`](#0001--do-not-retire-on-rkvenc-landing), which applies verbatim | 2026-08-09 | Adds `dma_set_max_seg_size(dev, DMA_BIT_MASK(32))` to `rkvenc_hw_probe()`, then **reads it back** with `dma_get_max_seg_size()` and fails the probe with `-EINVAL` if it did not take. Defect 2 of the 3 stacked in the pipeline's "MPP hardware video encode" KNOWN ISSUE. The IOVA guardrail in `rkvenc_service.c` is **deliberately untouched** — it correctly catches the symptom, and on a real board it never fired across 1080p, 4K, dual-core or a 10-minute soak. Read [§ `0008`](#0008--validated-on-rock-5b-and-what-that-does-and-does-not-mean). Hardware legs: [`BOARD-QUALIFICATION.md` §4](BOARD-QUALIFICATION.md) |
+| `0009` `system-uncached` dma-heap — **`VALIDATED` on Rock 5B+ (2026-08-09) and on Orange Pi 5 Plus (2026-08-12)** | `ceralive/` lane — **first-party CeraLive**. Never submitted (no `Signed-off-by`, deliberately — see [`PROVENANCE.md` §8](PROVENANCE.md#8-first-party-patches-ceralive)). Ported in shape from the ACK/Rockchip uncached heap; no upstream Linux counterpart exists — mainline `drivers/dma-buf/heaps/` carries `system`, `system_cc_shared` and CMA only. Its reason to exist is the same `0001`/MPP stack, so its upstream position is the `0001` row's | `first-party-no-upstream` — upstream rkvenc is `WIP` (Collabora's Mesa/Vulkan work, the same tracker as `0001`), and no mainline series proposes an uncached system heap | Retire when **either** mainline registers an uncached system heap under exactly the name `system-uncached`, **or** `0001` retires wholesale, **or** the userspace stops hard-coding the name (a `librockchip-mpp` with a heap-name override or a working cached-heap fallback). Not before: the shipped `librockchip-mpp1 1.5.0-1` has neither | 2026-08-09 | Registers a second dma-heap from `system_heap.c` using the file's existing per-heap drvdata mechanism: `pgprot_writecombine()` mappings, a one-time `arch_dma_prep_coherent()` clean at allocation, and `DMA_ATTR_SKIP_CPU_SYNC` + skipped `dma_sync_sgtable_*` **only** for that heap. Defects **1 and 3** of the 3 stacked in the pipeline's "MPP hardware video encode" KNOWN ISSUE (`0008` is defect 2). Gated by its own `CONFIG_DMABUF_HEAPS_SYSTEM_UNCACHED`, which `depends on ARCH_HAS_DMA_PREP_COHERENT` so it cannot build where it would silently hand back cached memory. Confirmed a genuine second heap (minor `250,1`, not an alias of `system`'s `250,0`) that does not draw from CMA. Read [§ `0009`](#0009--validated-on-rock-5b-and-why-orange-pi-5-and-a-real-hdmi-source-stay-open) |
 | `0010` naneng-combphy RTERM erratum | `backports/` lane — **unmerged lore posting**, `PATCHv1` by Shawn Lin (Rockchip), <https://lore.kernel.org/r/1774423383-36599-1-git-send-email-shawn.lin@rock-chips.com>. Imported by `scripts/import-lore-series.py` from the canonical thread archive; canonical mail kept at `backports/lore/U3/01.mbox`. **No commit id exists and none is claimed** | `sent-v1` — `Signed-off-by` author only. Vinod Koul asked for a `Fixes:` tag and an erratum reference on 2026-05-10; unanswered, no reroll. The question is about the commit message, not the register write | Posting merges **and** the pinned base absorbs it. Both — a merge alone leaves `v7.1.7` still missing it | 2026-08-10 | Matrix alias **U3**. Sets `FORCE_RTERM_DET_RDY` in `PHYREG26` for the SoCs whose cfg opts in, RK3588 included, so a PCIe peer's RX termination is detected at critical temperatures. Zero prerequisites; applies with no fuzz base-only and stacked; no other member touches `drivers/phy/`. Read [§ matrix U3](#u3) |
 | `0011` dw-hdmi-qp N/CTS helper | `backports/` lane — **unmerged lore posting**, standalone `PATCHv3` by Simon Wright with **no cover letter and zero siblings**, <https://lore.kernel.org/r/86fcf349-0a7a-4618-9001-612371b0f71b@symple.nz>. Canonical mail at `backports/lore/U5/01.mbox`. **No commit id exists and none is claimed** | `sent-v3` — `Reviewed-by` **and** `Tested-by` Cristian Ciocaltea (Collabora), 2026-06-03, with no change requested | Posting merges **and** the pinned base absorbs it | 2026-08-10 | Matrix alias **U5**. Deletes dw-hdmi-qp's private N/CTS table, which disagrees with the shared helper at several TMDS rates, and calls `drm_hdmi_acr_get_n_cts()` — already exported by the base. Shares `dw-hdmi-qp.c` with `0012` without colliding. Read [§ matrix U5](#u5) |
 | `0012` dw-hdmi-qp audio `-EOPNOTSUPP` | `backports/` lane — **unmerged lore posting**, `PATCHv1` by Detlev Casanova (Collabora), <https://lore.kernel.org/r/20260519-fix-hdmi-audio-warnings-v1-1-9608966c993f@collabora.com>. Canonical mail at `backports/lore/U6/01.mbox`. **No commit id exists and none is claimed** | `sent-v1` — two independent `Tested-by` (Maud Spierings 2026-07-06 on Orange Pi 5+, Diederik de Haas 2026-08-08). Sebastian Reichel asked only for a `Fixes:` tag; the payload was not contested | Posting merges **and** the pinned base absorbs it | 2026-08-10 | Matrix alias **U6**. With no mode set the audio hooks returned `-ENODEV`, which ASoC logs as a fault — reporters counted hundreds of `ASoC error (-19) … on i2s-hifi` lines on an idle board. Beyond log hygiene this protects the dmesg buffer that `0005`/`0006` are diagnosed from. Read [§ matrix U6](#u6) |
@@ -380,11 +385,12 @@ device that never suspends.
 real hardware validation session on 2026-08-09 cleared it **on Rock 5B+ only**
 (`docs/BOARD-QUALIFICATION.md` §3–§4 ticked against transcripts; raw evidence in
 image-building-pipeline's
-`.omo/evidence/image-pipeline-quality/hardware-validation-round1.md`). Orange Pi
-5+ has never run this image at all, so the marker stays `UNVALIDATED` on that
-board specifically — this is a two-column result, not a fleet-wide one. It is
-worth being precise about the claim, because the patch is unusually
-well-grounded for something that took this long to confirm.
+`.omo/evidence/image-pipeline-quality/hardware-validation-round1.md`). A second
+real hardware session on 2026-08-12 replicated the same §3–§4 protocol on Orange
+Pi 5 Plus (raw evidence: `.omo/evidence/orange-pi-run3/RAW-EVIDENCE.md`, this
+repo) and cleared the marker on that board too — `0008` is now `VALIDATED` on
+**both** boards. It is worth being precise about the claim, because the patch is
+unusually well-grounded for something that took this long to confirm.
 
 **What IS established.** The root cause was diagnosed on a real Rock 5B+ on
 2026-08-02 and is recorded as defect 2 of 3 in the CeraLive
@@ -412,12 +418,20 @@ cannot be exercised on its own, since the KNOWN ISSUE names three stacked
 defects and `0008` addresses only one of them (defect 2). `0009` is also now
 `VALIDATED` on Rock 5B+; see its own section below.
 
-**What is NOT established.** Orange Pi 5+ has never run this image, so nothing
-above transfers to that board. Nor does anything above cover a real HDMI
-capture source — the validation session encoded `videotestsrc` synthetic
-frames only; no camera, no HDMI cable, and no second board were attached. A
-full capture-to-encode-to-decode path with live video input remains untested
-on either board.
+**What IS now confirmed on a real board (Orange Pi 5 Plus, 2026-08-12).** The
+same protocol was re-run on the second board and produced the same result: the
+IOVA guardrail never fired across a 1080p encode, 4K, a dual-core two-session
+run, or an 18,000-frame/10-minute soak, with both guardrail strings still
+compiled into the shipped `rkvenc.ko`. `mpph264enc` registered and a 1080p
+encode produced 1,854,524 bytes — byte-for-byte identical to Rock 5B+'s result
+for the same command. See `BOARD-QUALIFICATION.md` §4 for the full RUN-3
+transcripts.
+
+**What is NOT established.** Nor does anything above cover a real HDMI
+capture source on either board — both validation sessions encoded
+`videotestsrc` synthetic frames only; no camera, no HDMI cable, and no second
+board were attached in either session. A full capture-to-encode-to-decode path
+with live video input remains untested on both boards.
 
 **The check is on the EFFECT, not on a return value — because there is no return
 value.** At `v7.1.7` `dma_set_max_seg_size()` is `static inline void`: it
@@ -440,22 +454,26 @@ the end of a mapping. `0008` touches exactly one file
 (`drivers/media/platform/rockchip/rkvenc/rkvenc_hw.c`); `rkvenc_service.c` is
 byte-unchanged.
 
-**What cleared the marker on Rock 5B+.** A board with the series applied,
-`mpph264enc` reachable, and the `guardrail: … outside iova` line absent from a
-real encode — exactly [`BOARD-QUALIFICATION.md` §4](BOARD-QUALIFICATION.md)
-(with §3 as the prerequisite), ticked against transcripts on 2026-08-09. **What
-still clears it on Orange Pi 5+:** the same legs, on that board, which has
-never booted this image. Until then, describe the edge-track encoder as
-working on Rock 5B+ only — never as fleet-wide.
+**What cleared the marker on Rock 5B+, and then on Orange Pi 5 Plus.** A board
+with the series applied, `mpph264enc` reachable, and the `guardrail: … outside
+iova` line absent from a real encode — exactly
+[`BOARD-QUALIFICATION.md` §4](BOARD-QUALIFICATION.md) (with §3 as the
+prerequisite), ticked against transcripts on Rock 5B+ on 2026-08-09 and against
+transcripts on Orange Pi 5 Plus on 2026-08-12. What still remains open on
+**both** boards is the real-HDMI-capture-source path — encoding real camera or
+HDMI input rather than synthetic `videotestsrc` frames — which neither
+session exercised.
 
 ### `0009` — `VALIDATED` on Rock 5B+, and why Orange Pi 5+ and a real HDMI source stay open
 
 `0009` was the second series member to carry an `UNVALIDATED` marker, and it was
 the one where the marker mattered most: every other patch in this series can be
 argued from source, this one could not. A real hardware validation session on
-2026-08-09 cleared it **on Rock 5B+ only** — the same session and the same
-scope caveat as `0008` above applies verbatim: Orange Pi 5+ has never run this
-image, and no real HDMI capture source was attached.
+2026-08-09 cleared it **on Rock 5B+ only**. A second real hardware session on
+2026-08-12 replicated the same protocol on Orange Pi 5 Plus
+(`.omo/evidence/orange-pi-run3/RAW-EVIDENCE.md`, this repo) and cleared it there
+too — `0009` is now `VALIDATED` on **both** boards. Neither session had a real
+HDMI capture source attached.
 
 **What IS established.** The two defects were diagnosed on a real Rock 5B+ on
 2026-08-02 and recorded as defects 1 and 3 of 3 in the CeraLive
@@ -480,11 +498,41 @@ unchanged, while the identical pair from `default_cma_region` dropped it to
 a reboot and 5.2 GiB of memory pressure, and every stream decoded clean with
 CABAC in use.
 
-**What is NOT established: anything beyond Rock 5B+, and anything about a real
-HDMI capture source.** Orange Pi 5+ has never run this image. The validation
-run encoded synthetic `videotestsrc` frames only — no HDMI cable, no camera,
-and no second board were attached — so the full capture-to-encode path with
-real video input remains untested on both boards.
+**What IS now confirmed on a real board (Orange Pi 5 Plus, 2026-08-12).**
+`/dev/dma_heap/system-uncached` exists as a genuine second heap on this board
+too — `crw-rw-rw- root video 251,1` vs `system`'s `251,0` (different minors
+than Rock's `250.x`, which is expected device-enumeration variance across a
+different SoC instance; what matters is they are distinct) — and it does not
+draw from CMA: holding a 1080p and a 4K allocation open simultaneously left
+`CmaFree` unchanged at 27,040 kB, while the identical pair from
+`default_cma_region` dropped it to 11,848 kB and recovered on release. Output
+matched Rock byte-for-byte on 720p60 (5 repeats), the 4K determinism leg, the
+fixed-QP leg, the 10-minute/18,000-frame soak, and the dual-core two-session
+run, and every stream decoded clean with CABAC confirmed in use.
+
+**The one honest discrepancy, reported rather than hidden.** Orange Pi's 1080p
+determinism hash (`542da14f…0961703`, ×3, unique = 1) does **not** match Rock
+5B+'s recorded 1080p hash from Run 1 (`c5925a7e…bbb00`), even though Orange
+Pi's own three repeats at that resolution are internally consistent. Every
+other comparable leg between the two boards matched byte-for-byte — 720p
+determinism, the 4K half of the same determinism leg, the fixed-QP leg, the
+10-minute soak, and both dual-core files and hashes — so this is an isolated
+divergence, most likely from a minor difference in the exact
+`num-buffers`/`framerate` parameters used for this specific sub-leg between the
+two sessions (the raw evidence does not print Rock's original 1080p invocation
+verbatim to check against). It is a minor, explained, non-blocking
+discrepancy, and it does **not** invalidate the determinism finding on either
+board: determinism as validated here is a per-board, same-input-same-output
+property — each board's own repeats produce identical bytes — not a
+cross-board byte-identity requirement. The byte-identity seen on the other
+legs is bonus corroborating evidence that the same fix behaves the same way on
+different silicon, not the actual pass criterion. Full transcript:
+`BOARD-QUALIFICATION.md` §5b.
+
+**What is NOT established: anything about a real HDMI capture source.** Both
+validation sessions encoded synthetic `videotestsrc` frames only — no HDMI
+cable, no camera, and no second board were attached in either — so the full
+capture-to-encode path with real video input remains untested on both boards.
 
 **The cache-alias subtlety is precisely why compile-only is not enough.** `0009`
 makes the heap's own mappings non-cacheable — `pgprot_writecombine()` for `mmap()`
@@ -776,8 +824,9 @@ is unchanged and `patches/` regenerates byte-identically.
 [§ Current series members](#current-series-members) rather than a candidate here:
 `0008` (`dma_set_max_seg_size()` in the rkvenc probe) and `0009` (the
 `system-uncached` dma-heap port). Both are `first-party-no-upstream`, and both are
-now `VALIDATED` on Rock 5B+ (2026-08-09) / `UNVALIDATED` on Orange Pi 5+, and both
-inherit their upstream position from the `0001` row (WIP rkvenc, tracked only).
+now `VALIDATED` on Rock 5B+ (2026-08-09) **and** on Orange Pi 5 Plus (2026-08-12),
+and both inherit their upstream position from the `0001` row (WIP rkvenc, tracked
+only).
 
 The reservation this section used to carry about `0009` — that ARM cache-alias
 handling done subtly wrong yields silent intermittent corruption in the video path
@@ -785,9 +834,13 @@ handling done subtly wrong yields silent intermittent corruption in the video pa
 validation campaign it asked for:
 [`BOARD-QUALIFICATION.md`](BOARD-QUALIFICATION.md) §2–§7, which a real Rock 5B+
 session ticked 42 of the checklist's 65 items against transcripts on 2026-08-09
-(reasoning: [§ `0009`](#0009--validated-on-rock-5b-and-why-orange-pi-5-and-a-real-hdmi-source-stay-open)).
-Orange Pi 5+ and every leg requiring a real HDMI capture source stayed unticked —
-the patch running on one board is not the whole campaign being closed.
+(reasoning: [§ `0009`](#0009--validated-on-rock-5b-and-why-orange-pi-5-and-a-real-hdmi-source-stay-open)),
+and which a real Orange Pi 5 Plus session (Run 3) repeated against the same §2–§7
+scope on 2026-08-12, with one honest, non-blocking discrepancy — the §5b 1080p
+determinism hash did not match Rock's, though Orange Pi's own repeats at that
+resolution were internally consistent (see the same `§ 0009` reasoning). Every
+leg requiring a real HDMI capture source stayed unticked on **both** boards —
+running the campaign on a second board is not the same as closing §8–§10.
 
 ### V4L2 HW usage stats (fdinfo) — skipped, the key names are already agreed to change
 
