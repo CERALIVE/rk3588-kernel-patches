@@ -1,0 +1,234 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Andres Cera <andres.cera@hotmail.com>
+Date: Thu, 13 Aug 2026 23:30:00 -0500
+Subject: [PATCH 27/27] media: synopsys: hdmirx: stop trusting an SCDC bank the source never wrote
+
+MOTIVATION. A Rock 5B+ will not lock a Sony FX3 sending
+3840x2160@59.94p over HDMI 2.0. tx_5v_power_present() reads 1
+and the receiver retries plugout/plugin forever, but across
+~500 consecutive link-setup attempts
+hdmirx_tmds_clk_ratio_config() logged scdc_regbank_st:0x0 and
+'HDMITX less than 3.4Gbps' every single time, with not one
+'greater than 3.4Gbps'. Four cables including a certified UHS
+48 Gbps one, camera power-cycles, board reboots and HPD/EDID
+re-apply cycles all change nothing, while 4K29.97p locks
+cleanly on the same physical chain -- so the camera, cable,
+EDID and receiver are each demonstrably capable.
+
+THE DEFECT. hdmirx_tmds_clk_ratio_config() derives the whole
+decision from one expression:
+
+  tmds_clk_ratio = (val & SCDC_TMDSBITCLKRATIO) > 0;
+
+An SCDC register bank the source never wrote reads 0. An
+explicit TMDS_Bit_Clock_Ratio = 1/10 declaration also reads 0.
+The function cannot tell 'the source told me 1/10' from 'the
+source has told me nothing at all', and it treats the empty
+bank as authoritative rather than as an absence of data -- it
+does not merely default to 1/10, it actively drives
+PHY_CONFIG.TMDS_CLOCK_RATIO = 0 into the PHY once per wait
+iteration and once more at the end of every
+hdmirx_phy_config(). Once a source has failed to write SCDC
+during the current HPD cycle, a >340 MHz link is therefore
+structurally unlockable for the rest of that cycle.
+
+That also explains why 0002's PHY re-init at i == 300 cannot
+recover this, and why raising the retry count or extending
+WAIT_SIGNAL_LOCK_TIME would not either: hdmirx_phy_config()
+is a genuine from-scratch PHY bring-up, but its LAST statement
+is hdmirx_tmds_clk_ratio_config(), so every retry ends by
+restoring precisely the configuration that cannot lock a
+scrambled 594 MHz link. Each further attempt consumes the same
+zero-valued input and reaches the same state.
+WAIT_SIGNAL_LOCK_TIME, NO_LOCK_CFG_RETRY_TIME and
+WAIT_LOCK_STABLE_TIME are left exactly as 0002 set them.
+
+BEHAVIOUR, part 1 -- say which condition actually failed. The
+wait loop tests three bits, and the failure path could not
+report on two of them. It printed SCDC_REGBANK_STATUS3, which
+is NOT the register the ratio is derived from -- naming the
+wrong register while claiming to explain a ratio decision --
+and it never printed cmu_st at all, even though the loop reads
+CMU_STATUS every iteration and TMDSQPCLK_LOCKED_ST is one of
+the three lock conditions. The defect above was consequently
+undiagnosable from the log alone. The failure path now also
+prints, at v4l2_err: cmu_st, SCDC_REGBANK_STATUS1,
+CMU_TMDSQPCLK_FREQ, PHY_CONFIG, PHY_STATUS, SCDC_CONFIG,
+DESCRAND_EN_CONTROL and DESCRAND_SYNC_SEQ_STATUS. Pure
+observability; no behaviour change, no new register
+definitions.
+
+It paid for itself immediately. On the failing board cmu_st
+reads 0x10000051 -- TMDSQPCLK_LOCKED_ST already SET, so the
+CMU had locked the whole time and only TMDSVALID_STABLE_ST and
+HDMIRX_LOCK were failing; regbank_st1 reads 0x0, confirming the
+empty bank on the register the ratio genuinely comes from;
+phy_cfg reads 0x8000, i.e. TMDS_CLOCK_RATIO clear, the PHY sat
+at 1/10; and CMU_TMDSQPCLK_FREQ reads 34753 kHz, x4 = 139.0
+MHz, which is why that counter is printed and NOT acted on -- a
+594 MHz 1/40 link mis-driven at 1/10 measures as an ordinary
+sub-340 MHz link, so gating recovery on it would silently never
+fire.
+
+BEHAVIOUR, part 2 -- one last-resort attempt at the other
+ratio. When, and only when, a full WAIT_SIGNAL_LOCK_TIME wait
+has already COMPLETED and failed, AND the derived ratio is
+still 0, AND +5V is still present, set a per-device
+tmds_clk_ratio_forced flag, re-run hdmirx_phy_config() -- which
+now brings the PHY up at 1/40 -- and re-enter the wait exactly
+once. The flag is cleared if that attempt also fails, and
+cleared in hdmirx_plugout(), so every new connection starts
+from the spec-compliant SCDC-derived value and a stale override
+cannot survive a replug.
+
+RISK. A link that locks never reaches the failure branch, so no
+working configuration can regress: the new code is unreachable
+until the compliant path has demonstrably failed. Worst case is
+a genuinely sub-340 MHz source failing for an unrelated reason
+spending one extra ~4.2 s wait before giving up.
+
+HONEST LABELLING. Part 1 is a bug fix -- the log named the
+wrong register and omitted a lock condition. Part 2 is a
+RECOVERY HEURISTIC, not spec-compliant behaviour, and is
+justified only because the compliant path has provably
+deadlocked by the time it runs.
+
+PROVENANCE. First-party CeraLive fix to imported code:
+hdmirx_tmds_clk_ratio_config(), hdmirx_wait_signal_lock() and
+hdmirx_plugout() are v7.1.7's own, as reworked by the imported
+0002 and 0026. No upstream counterpart exists, and none is
+claimed.
+
+EVIDENCE. Validated on REAL hardware -- a Radxa Rock 5B+ with a
+Sony FX3 at 3840x2160@59.94p, on a kernel differing from the
+failing one by this patch alone, with nothing physical touched
+between the two captures. 600/600 frames captured at 3840x2160,
+steady 59.94 fps, zero errors; reproduced 4/4 across
+independent HPD renegotiation cycles, including one live
+mid-session SCDC-drop recovery. Every cycle's first failure
+line reads forced:0, so the flag really is cleared per plug
+cycle and each cycle genuinely retries the compliant path
+first, and every lock is immediately preceded by this patch's
+own recovery message. NOT yet measured: a regression run
+against a source that DOES write SCDC. See
+docs/UPSTREAM-STATUS.md and docs/BOARD-QUALIFICATION.md.
+
+First-party: authored by CeraLive against v7.1.7, with no upstream
+counterpart in rockchip-rk3588-mainline-patches. The source of record is
+ceralive/0027-hdmirx-phy-retry-hardening.patch; patches/ is generated from it by
+scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the
+same added/removed-line parity the upstream lane gets.
+
+NOT upstream-bound: this targets the CeraLive device tree only and is not a
+submission to linux-media, linux-rockchip or the fork parent. No Signed-off-by
+is added, because a DCO assertion belongs to whoever actually submits it.
+
+---
+diff --git a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
+--- a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
++++ b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
+@@ -201,6 +201,14 @@ struct snps_hdmirx_dev {
+ 	int det_irq;
+ 	bool hpd_trigger_level_high;
+ 	bool tmds_clk_ratio;
++	/*
++	 * Last-resort override, set only by hdmirx_wait_signal_lock() after a
++	 * complete wait has already failed with an SCDC register bank that
++	 * never carried a ratio, and cleared again on every plugout so a fresh
++	 * hot-plug always starts from the spec-compliant SCDC-derived value.
++	 * While set, hdmirx_tmds_clk_ratio_config() programs 1/40 regardless.
++	 */
++	bool tmds_clk_ratio_forced;
+ 	bool plugged;
+ 	int num_clks;
+ 	u32 edid_blocks_written;
+@@ -1246,6 +1254,7 @@ static void hdmirx_plugout(struct snps_hdmirx_dev *hdmirx_dev)
+ 		v4l2_ctrl_s_ctrl(hdmirx_dev->content_type,
+ 				 V4L2_DV_IT_CONTENT_TYPE_NO_ITC);
+ 
++	hdmirx_dev->tmds_clk_ratio_forced = false;
+ 	hdmirx_dev->plugged = false;
+ }
+ 
+@@ -1488,7 +1497,13 @@ static void hdmirx_tmds_clk_ratio_config(struct snps_hdmirx_dev *hdmirx_dev)
+ 
+ 	val = hdmirx_readl(hdmirx_dev, SCDC_REGBANK_STATUS1);
+ 	v4l2_dbg(3, debug, v4l2_dev, "%s: scdc_regbank_st:%#x\n", __func__, val);
+-	hdmirx_dev->tmds_clk_ratio = (val & SCDC_TMDSBITCLKRATIO) > 0;
++	/*
++	 * A bank the source never wrote reads 0, exactly like an explicit 1/10
++	 * declaration. The override exists because the two are indistinguishable
++	 * here, and only the caller knows a full wait has already failed.
++	 */
++	hdmirx_dev->tmds_clk_ratio = (val & SCDC_TMDSBITCLKRATIO) > 0 ||
++				     hdmirx_dev->tmds_clk_ratio_forced;
+ 
+ 	if (hdmirx_dev->tmds_clk_ratio) {
+ 		v4l2_dbg(3, debug, v4l2_dev, "%s: HDMITX greater than 3.4Gbps\n", __func__);
+@@ -2747,8 +2762,10 @@ static int hdmirx_wait_signal_lock(struct snps_hdmirx_dev *hdmirx_dev)
+ {
+ 	struct v4l2_device *v4l2_dev = &hdmirx_dev->v4l2_dev;
+ 	u32 mu_status, scdc_status, dma_st10, cmu_st;
++	bool ratio_retry_done = false;
+ 	u32 i, j = 0;
+ 
++retry:
+ 	for (i = 1; i < WAIT_SIGNAL_LOCK_TIME; i++) {
+ 		mu_status = hdmirx_readl(hdmirx_dev, MAINUNIT_STATUS);
+ 		scdc_status = hdmirx_readl(hdmirx_dev, SCDC_REGBANK_STATUS3);
+@@ -2782,6 +2799,55 @@ static int hdmirx_wait_signal_lock(struct snps_hdmirx_dev *hdmirx_dev)
+ 			 __func__, hdmirx_dev->tmds_clk_ratio);
+ 		v4l2_err(v4l2_dev, "%s: mu_st:%#x, scdc_st:%#x, dma_st10:%#x\n",
+ 			 __func__, mu_status, scdc_status, dma_st10);
++		/*
++		 * scdc_st above is SCDC_REGBANK_STATUS3, not the register the
++		 * ratio is derived from, and cmu_st is one of the three lock
++		 * conditions yet was never reported. Print what actually
++		 * discriminates the failure modes.
++		 */
++		v4l2_err(v4l2_dev,
++			 "%s: cmu_st:%#x, regbank_st1:%#x, qpclk:%ukHz, phy_cfg:%#x, phy_st:%#x\n",
++			 __func__, cmu_st,
++			 hdmirx_readl(hdmirx_dev, SCDC_REGBANK_STATUS1),
++			 hdmirx_readl(hdmirx_dev, CMU_TMDSQPCLK_FREQ),
++			 hdmirx_readl(hdmirx_dev, PHY_CONFIG),
++			 hdmirx_readl(hdmirx_dev, PHY_STATUS));
++		/*
++		 * SCRAMB_EN_SEL_QST's encoding is documented nowhere, so the
++		 * only way to learn whether the controller-side descrambler
++		 * ever engages is to watch its own sync-sequence status
++		 * alongside the value the driver programmed. Printed together
++		 * with SCDC_CONFIG so a failure that is really "our SCDC slave
++		 * is not powered/answering" is distinguishable from "the
++		 * source never wrote".
++		 */
++		v4l2_err(v4l2_dev,
++			 "%s: scdc_cfg:%#x, descrand_en:%#x, descrand_sync_st:%#x, forced:%d\n",
++			 __func__,
++			 hdmirx_readl(hdmirx_dev, SCDC_CONFIG),
++			 hdmirx_readl(hdmirx_dev, DESCRAND_EN_CONTROL),
++			 hdmirx_readl(hdmirx_dev, DESCRAND_SYNC_SEQ_STATUS),
++			 hdmirx_dev->tmds_clk_ratio_forced);
++
++		/*
++		 * The compliant path has now demonstrably deadlocked: a whole
++		 * wait elapsed while SCDC never carried a bit-clock ratio, so
++		 * every hdmirx_phy_config() re-init landed the PHY back at
++		 * 1/10. Try the other ratio exactly once before giving up.
++		 */
++		if (!ratio_retry_done && !hdmirx_dev->tmds_clk_ratio &&
++		    tx_5v_power_present(hdmirx_dev)) {
++			v4l2_err(v4l2_dev,
++				 "%s: SCDC carried no bit-clock ratio, retrying once forced to 1/40\n",
++				 __func__);
++			ratio_retry_done = true;
++			hdmirx_dev->tmds_clk_ratio_forced = true;
++			hdmirx_phy_config(hdmirx_dev);
++			j = 0;
++			goto retry;
++		}
++
++		hdmirx_dev->tmds_clk_ratio_forced = false;
+ 		return -1;
+ 	}
+ 

@@ -535,7 +535,7 @@ legs in `BOARD-QUALIFICATION.md`, never here.**
 | B1 | Write a 4K60-capable EDID (`SCDC_Present = 1`, `Max_TMDS_Character_Rate ≥ 594 MHz`, VIC 97) via `VIDIOC_S_EDID` and confirm the **source actually re-reads it** and offers 2160p60 | Needs a real HDMI source that re-reads on HPD and honours SCDC |
 | B2 | Confirm the SCDC bit-clock ratio flips to 1/40 and the receiver **locks at 594 MHz** — capture `signal lock ok, i:%d` at `debug=1` and record the iteration count | The lock path is register/PHY behaviour; `i` is the only direct evidence and it only exists at runtime |
 | B3 | Is the ≈147 ms consecutive-stability requirement **right** at 4K60 — sufficient to reject transients, and not so strict it rejects a genuinely locked link? | Requires observing real lock-bit behaviour during 4K60 negotiation |
-| B4 | Is the ≈4.2 s ceiling **enough** at 4K60, and does the `i == 300` PHY re-init actually recover a PHY that latched the pre-flip ratio? | Requires forcing the failure case on hardware |
+| B4 | **ANSWERED 2026-08-13 — see [§ B4 resolved](#b4-resolved-2026-08-13--the-re-init-does-not-recover-it-and-the-phy-was-never-stuck) below.** Was: is the ≈4.2 s ceiling **enough** at 4K60, and does the `i == 300` PHY re-init actually recover a PHY that latched the pre-flip ratio? | Answered by forcing the failure case on a Rock 5B+: **no**, the re-init cannot recover it — and the premise was wrong, the PHY was never stuck |
 | B5 | **The original open question, now sharpened to 4K60:** with the 150 ms hold in the base, is `0002`'s sequence still required for a 4K60 EDID to be re-read? | This is the retirement precondition for `0002`. Do not answer it from source |
 | B6 | Does 160 MiB of `hdmi_receiver_cma` hold up at 4K60 with a realistic vb2 queue depth, on **both** boards? | Allocation behaviour under load; the DT comment's 66 MB is a two-frame figure |
 | B7 | Does `0002`'s `msleep(500)` post-DMA-reset settle need to be that long at 4K60 — or is it over-conservative? | Only measurable against a real link |
@@ -543,6 +543,46 @@ legs in `BOARD-QUALIFICATION.md`, never here.**
 Until B5 is answered on a board, **`0002` is not a retirement candidate**, and the
 standing instruction quoted at the top of this document says the same thing from
 the other direction.
+
+#### B4 resolved, 2026-08-13 — the re-init does not recover it, and the PHY was never stuck
+
+B4 asked two things, and the second one is the interesting half: *does the
+`i == 300` PHY re-init actually recover a PHY that latched the pre-flip ratio?*
+The failure case was forced on a Radxa Rock 5B+ with a Sony FX3 at
+3840x2160@59.94p — a link that failed to lock ~500 consecutive times — and the
+answer is **no, and it never could**.
+
+**But the hypothesis B4 encoded was itself wrong.** B4 assumed a PHY holding a
+stale ratio that a hard reset ought to shake loose. The corrected diagnostics
+(`0027` part 1) showed the opposite: `CMU_STATUS` read `0x10000051` throughout,
+i.e. `TMDSQPCLK_LOCKED_ST` was **already asserted** — the PHY's clock was locked
+the entire time — and `PHY_CONFIG` read `0x8000`, `TMDS_CLOCK_RATIO` clear. The
+PHY was not stuck; it was being **correctly reprogrammed, from a wrong input,
+every single time**.
+
+The wrong input is the driver's own. `hdmirx_tmds_clk_ratio_config()` derives
+the ratio from `(val & SCDC_TMDSBITCLKRATIO) > 0` against `SCDC_REGBANK_STATUS1`,
+which read `0x0` — and an SCDC bank the source never wrote is indistinguishable
+there from an explicit 1/10 declaration. `hdmirx_phy_config()`'s **last**
+statement is that same function, so the `i == 300` re-init — a genuine
+from-scratch PHY bring-up in every other respect — ends by restoring exactly the
+1/10 configuration that cannot lock a scrambled 594 MHz link. A second, tenth or
+hundredth re-init consumes the same zero and reaches the same state, which
+disposes of the ≈4.2 s-ceiling half of B4 as well: a longer wait is a longer
+sequence of identical writes.
+
+**The fix is [`0027`](UPSTREAM-STATUS.md)**, not a change to `0002`'s ceiling or
+retry count — `WAIT_SIGNAL_LOCK_TIME`, `NO_LOCK_CFG_RETRY_TIME` and
+`WAIT_LOCK_STABLE_TIME` are all left exactly as `0002` set them. After a
+*completed* lock-loop failure with a still-empty SCDC bank, `0027` forces the
+ratio to 1/40 once, re-runs `hdmirx_phy_config()` and retries, clearing the flag
+on `hdmirx_plugout()`. Result on the same board: **600/600 frames at 3840x2160,
+steady 59.94 fps, zero errors, reproduced 4/4 across independent HPD
+renegotiation cycles**, including one live mid-session SCDC-drop recovery.
+
+**This does not change the `0002` verdict.** `0027` fixes a defect in code
+`0002` reworks and depends on; it neither replaces `0002` nor brings its
+retirement closer. B5 — the retirement precondition — remains open.
 
 ---
 

@@ -6,8 +6,9 @@ Holds the **mainline-track RK3588 kernel patch series** for CeraLive: VEPU580
 hardware encoder plus three HDMI-RX fixes imported from upstream, one backported
 IOMMU fix, three backported **unmerged lore postings** (a combphy erratum and
 two dw-hdmi-qp audio fixes), and first-party patches for HDMI-RX audio DT,
-encoder DMA/dma-heap fixes, and rkvenc/HDMI-RX quality hardening — converted to
-a `git am` mailbox series and pinned to an exact kernel tag.
+encoder DMA/dma-heap fixes, and rkvenc/HDMI-RX quality hardening (including the
+4K60 SCDC bit-clock-ratio recovery, `0027`) — converted to a `git am` mailbox
+series and pinned to an exact kernel tag.
 
 Produces **patch text only** — no `.deb`, no kernel, no image artifact. It is
 therefore **NOT in the device image `REPOS` array** and has **no `versions.yaml`
@@ -209,8 +210,8 @@ verbatim by CI, so it cannot rot the same way.
 There is no `0004` upstream. **Do NOT renumber to close the gap** — the 1:1 filename
 correspondence with upstream is what makes the import auditable. First-party and
 backported patches continue the same counter (`0006`, `0008`, `0009` and
-`0013`–`0022` and `0026` = `ceralive/`; `0007`, `0010`, `0011` and `0012` =
-`backports/`), so the ordinals read `1/26`, `2/26`, `3/26`, `5/26` … `26/26` — the
+`0013`–`0022`, `0026` and `0027` = `ceralive/`; `0007`, `0010`, `0011` and `0012` =
+`backports/`), so the ordinals read `1/27`, `2/27`, `3/27`, `5/27` … `27/27` — the
 gap at 4 stays visible, which is the whole point. **`0023`, `0024` and `0025` are
 three more gaps**, retired rather than never-published: they were folded into
 `0021` and their slots are burned, exactly like `0004`'s. `SERIES_TOTAL` in
@@ -265,13 +266,15 @@ Two things about it are easy to get wrong:
   video encode does not work on the edge kernel". Marker and clearing
   conditions: [`docs/UPSTREAM-STATUS.md` § `0008`](docs/UPSTREAM-STATUS.md#0008--unvalidated-and-what-that-does-and-does-not-mean).
 
-**`0013`–`0022` and `0026` are the first-party rkvenc / HDMI-RX / dma-heap quality
-block, and the ones a board has actually run are the exception.** `0013` is gated
-fault injection that contributes zero bytes to a production build; `0018` states an
-existing API's failure semantics truthfully rather than fixing a defect;
+**`0013`–`0022`, `0026` and `0027` are the first-party rkvenc / HDMI-RX / dma-heap
+quality block, and the ones a board has actually run are the exception.** `0013` is
+gated fault injection that contributes zero bytes to a production build; `0018`
+states an existing API's failure semantics truthfully rather than fixing a defect;
 `0014`–`0017` repair concrete defects in the code that runs when something goes
-wrong. `0019`–`0022` and `0026` are different in kind: each was root-caused from a
-**real Rock 5B+ transcript**, not from reading. Per-patch detail — what each fixes,
+wrong. `0019`–`0022`, `0026` and `0027` are different in kind: each was root-caused
+from a **real Rock 5B+ transcript**, not from reading — and `0027` went further,
+landing with its *fix* proven on the board rather than only its defect.
+Per-patch detail — what each fixes,
 what it deliberately does not, and what would retire it — lives in
 [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md), one row each; do not restate
 it here.

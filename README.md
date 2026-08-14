@@ -44,6 +44,7 @@ backported patches continue the same counter from `0006`:
 | `0022` | rkvenc ioctl request coverage and element bounds | `ceralive/` | **Root-caused on a REAL Rock 5B+**, from an ioctl drill that `0016` should have made green and did not. A register request naming bytes no class owns was clamped and accepted instead of refused; `INIT_TRANS_TABLE` bounded bytes but not alignment; an unreadable user buffer reported `-EIO`. Reading the same paths found two unbounded counts and a byte/element overrun no drill case covers. |
 | *0023*–*0025* | — | — | **Retired ordinals.** Carried while the `0021` lifecycle defects were being discovered one at a time, then folded into `0021`. The slots are burned like `0004`'s, not renumbered. What each one individually documented: [`docs/UPSTREAM-STATUS.md` § retired ordinals](docs/UPSTREAM-STATUS.md#retired-ordinals-0023-0024-0025); the archived files: [`retired/REGISTRY.md`](retired/REGISTRY.md). |
 | `0026` | hdmirx register lock hardirq context | `ceralive/` | **Root-caused AND re-verified on a REAL Rock 5B+**, the first time a physical HDMI source was attached to a lockdep boot. `rst_lock` is a `spinlock_t` taken from the CEC and HDMI hardirqs, which `CONFIG_PROVE_RAW_LOCK_NESTING` reports as an invalid wait context — and that report calls `debug_locks_off()`, silencing lockdep for the rest of the boot in *every* subsystem. Promoted to `raw_spinlock_t`; same scope, same leaf position, identical code on a non-RT build. |
+| `0027` | hdmirx SCDC bit-clock-ratio recovery | `ceralive/` | **Root-caused, fixed AND validated on a REAL Rock 5B+ in one session** — the first HDMI-RX patch here whose evidence is a working 4K60 capture. `hdmirx_tmds_clk_ratio_config()` cannot tell "the source declared 1/10" from "the source wrote no SCDC at all", so an empty `SCDC_REGBANK_STATUS1` was treated as authoritative and a 4K59.94p link was structurally unlockable — ~500+ consecutive failures — with `0002`'s PHY re-init unable to help, because it ends by re-deriving the ratio from that same empty register. Fixes the failure log too: it named `SCDC_REGBANK_STATUS3`, the wrong register, and never printed `cmu_st`. After a completed lock-loop failure the ratio is forced to 1/40 once and the wait re-entered; the flag clears on `hdmirx_plugout()`. **600/600 frames at 3840x2160, steady 59.94 fps, zero errors, 4/4 across HPD renegotiation cycles.** Answers `docs/EVAL-0002-EDID.md` B4 in the negative. |
 
 Plus [`overlays/rockchip-rk3588-rkvenc-mpp.dts`](overlays/rockchip-rk3588-rkvenc-mpp.dts),
 the device-tree overlay the encoder needs, carried verbatim.
@@ -65,7 +66,9 @@ written down, the verdict gets its own document. So far:
   Plus only, which would silently leave Rock 5B+ with no capture card.
 
 Several members carry an **`UNVALIDATED`** marker — `0008` and `0009` on Orange Pi
-5+, and the whole `0013`–`0022` + `0026` block to varying degrees. What a real board has to
+5+, and the whole `0013`–`0022` + `0026` block to varying degrees. `0027` is the
+exception that shows what clearing one looks like: it landed already validated,
+with a 600-frame 4K59.94p capture behind it. What a real board has to
 demonstrate before a marker comes off — every leg, every command, on both boards —
 is [`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md), and what is
 already proven, per patch, is the **Last checked** column in

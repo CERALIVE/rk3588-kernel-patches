@@ -1,0 +1,108 @@
+diff --git a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
+--- a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
++++ b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
+@@ -201,6 +201,14 @@ struct snps_hdmirx_dev {
+ 	int det_irq;
+ 	bool hpd_trigger_level_high;
+ 	bool tmds_clk_ratio;
++	/*
++	 * Last-resort override, set only by hdmirx_wait_signal_lock() after a
++	 * complete wait has already failed with an SCDC register bank that
++	 * never carried a ratio, and cleared again on every plugout so a fresh
++	 * hot-plug always starts from the spec-compliant SCDC-derived value.
++	 * While set, hdmirx_tmds_clk_ratio_config() programs 1/40 regardless.
++	 */
++	bool tmds_clk_ratio_forced;
+ 	bool plugged;
+ 	int num_clks;
+ 	u32 edid_blocks_written;
+@@ -1246,6 +1254,7 @@ static void hdmirx_plugout(struct snps_hdmirx_dev *hdmirx_dev)
+ 		v4l2_ctrl_s_ctrl(hdmirx_dev->content_type,
+ 				 V4L2_DV_IT_CONTENT_TYPE_NO_ITC);
+ 
++	hdmirx_dev->tmds_clk_ratio_forced = false;
+ 	hdmirx_dev->plugged = false;
+ }
+ 
+@@ -1488,7 +1497,13 @@ static void hdmirx_tmds_clk_ratio_config(struct snps_hdmirx_dev *hdmirx_dev)
+ 
+ 	val = hdmirx_readl(hdmirx_dev, SCDC_REGBANK_STATUS1);
+ 	v4l2_dbg(3, debug, v4l2_dev, "%s: scdc_regbank_st:%#x\n", __func__, val);
+-	hdmirx_dev->tmds_clk_ratio = (val & SCDC_TMDSBITCLKRATIO) > 0;
++	/*
++	 * A bank the source never wrote reads 0, exactly like an explicit 1/10
++	 * declaration. The override exists because the two are indistinguishable
++	 * here, and only the caller knows a full wait has already failed.
++	 */
++	hdmirx_dev->tmds_clk_ratio = (val & SCDC_TMDSBITCLKRATIO) > 0 ||
++				     hdmirx_dev->tmds_clk_ratio_forced;
+ 
+ 	if (hdmirx_dev->tmds_clk_ratio) {
+ 		v4l2_dbg(3, debug, v4l2_dev, "%s: HDMITX greater than 3.4Gbps\n", __func__);
+@@ -2747,8 +2762,10 @@ static int hdmirx_wait_signal_lock(struct snps_hdmirx_dev *hdmirx_dev)
+ {
+ 	struct v4l2_device *v4l2_dev = &hdmirx_dev->v4l2_dev;
+ 	u32 mu_status, scdc_status, dma_st10, cmu_st;
++	bool ratio_retry_done = false;
+ 	u32 i, j = 0;
+ 
++retry:
+ 	for (i = 1; i < WAIT_SIGNAL_LOCK_TIME; i++) {
+ 		mu_status = hdmirx_readl(hdmirx_dev, MAINUNIT_STATUS);
+ 		scdc_status = hdmirx_readl(hdmirx_dev, SCDC_REGBANK_STATUS3);
+@@ -2782,6 +2799,55 @@ static int hdmirx_wait_signal_lock(struct snps_hdmirx_dev *hdmirx_dev)
+ 			 __func__, hdmirx_dev->tmds_clk_ratio);
+ 		v4l2_err(v4l2_dev, "%s: mu_st:%#x, scdc_st:%#x, dma_st10:%#x\n",
+ 			 __func__, mu_status, scdc_status, dma_st10);
++		/*
++		 * scdc_st above is SCDC_REGBANK_STATUS3, not the register the
++		 * ratio is derived from, and cmu_st is one of the three lock
++		 * conditions yet was never reported. Print what actually
++		 * discriminates the failure modes.
++		 */
++		v4l2_err(v4l2_dev,
++			 "%s: cmu_st:%#x, regbank_st1:%#x, qpclk:%ukHz, phy_cfg:%#x, phy_st:%#x\n",
++			 __func__, cmu_st,
++			 hdmirx_readl(hdmirx_dev, SCDC_REGBANK_STATUS1),
++			 hdmirx_readl(hdmirx_dev, CMU_TMDSQPCLK_FREQ),
++			 hdmirx_readl(hdmirx_dev, PHY_CONFIG),
++			 hdmirx_readl(hdmirx_dev, PHY_STATUS));
++		/*
++		 * SCRAMB_EN_SEL_QST's encoding is documented nowhere, so the
++		 * only way to learn whether the controller-side descrambler
++		 * ever engages is to watch its own sync-sequence status
++		 * alongside the value the driver programmed. Printed together
++		 * with SCDC_CONFIG so a failure that is really "our SCDC slave
++		 * is not powered/answering" is distinguishable from "the
++		 * source never wrote".
++		 */
++		v4l2_err(v4l2_dev,
++			 "%s: scdc_cfg:%#x, descrand_en:%#x, descrand_sync_st:%#x, forced:%d\n",
++			 __func__,
++			 hdmirx_readl(hdmirx_dev, SCDC_CONFIG),
++			 hdmirx_readl(hdmirx_dev, DESCRAND_EN_CONTROL),
++			 hdmirx_readl(hdmirx_dev, DESCRAND_SYNC_SEQ_STATUS),
++			 hdmirx_dev->tmds_clk_ratio_forced);
++
++		/*
++		 * The compliant path has now demonstrably deadlocked: a whole
++		 * wait elapsed while SCDC never carried a bit-clock ratio, so
++		 * every hdmirx_phy_config() re-init landed the PHY back at
++		 * 1/10. Try the other ratio exactly once before giving up.
++		 */
++		if (!ratio_retry_done && !hdmirx_dev->tmds_clk_ratio &&
++		    tx_5v_power_present(hdmirx_dev)) {
++			v4l2_err(v4l2_dev,
++				 "%s: SCDC carried no bit-clock ratio, retrying once forced to 1/40\n",
++				 __func__);
++			ratio_retry_done = true;
++			hdmirx_dev->tmds_clk_ratio_forced = true;
++			hdmirx_phy_config(hdmirx_dev);
++			j = 0;
++			goto retry;
++		}
++
++		hdmirx_dev->tmds_clk_ratio_forced = false;
+ 		return -1;
+ 	}
+ 

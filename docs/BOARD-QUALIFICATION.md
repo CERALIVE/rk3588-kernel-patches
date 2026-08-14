@@ -35,6 +35,7 @@ video encode does not work on the `edge` 7.1.5 kernel"*, which is the origin of
 | 1 | 2026-08-09 | Radxa Rock 5B+ | `7.1.7-ceralive-rk3588` (`7.1.7-ceralive1`) | `2e195f2d36dbbfed3835962c062cbf33271cbeb8` | `image-building-pipeline` `.omo/evidence/image-pipeline-quality/hardware-validation-round1.md` |
 | 2 | 2026-08-10 → 2026-08-12 | Radxa Rock 5B+ **and** Orange Pi 5 Plus | `7.1.7-ceralive-rk3588` (production) and `7.1.7-ceralive-rk3588-test` (KASAN + `PROVE_LOCKING` + `DEBUG_ATOMIC_SLEEP`) | `eb0f338edd6b203387ea22b4aceb6eb57136c68c` | `image-building-pipeline` `test-results/pipeline-restructure-kernel-backports/wave8/` — signed receipts 33/34/35/36/37/45 (Rock, debug), 46 (Rock, production), 47 (Orange Pi, production) |
 | 3 | 2026-08-12 | Orange Pi 5 Plus | `7.1.7-ceralive-rk3588` | `eb0f338edd6b203387ea22b4aceb6eb57136c68c` | `.omo/evidence/orange-pi-run3/RAW-EVIDENCE.md` (this repo) |
+| 4 | 2026-08-13 | Radxa Rock 5B+ | `7.1.7-ceralive-rk3588` (`7.1.7-ceralive1`, 23 patches) | `098dce0` + `0027`, built before `0027` was registered — the payload is byte-identical to the `ceralive/0027-*.patch` this run's commit adds | § 9 B4 below; raw transcripts captured off the board (pre-flash failure and post-flash pass) |
 
 **Run 1 headline.** All three stacked defects of the pipeline's *"MPP hardware
 video encode does not work on the `edge` 7.1.5 kernel"* KNOWN ISSUE are **resolved
@@ -1085,6 +1086,15 @@ resolution/rate it was made at.
       (8a, 8f) both name the board explicitly and are both scoped to *card existence
       and codec binding*, not to working capture.
 
+**Run 4 headline.** The first run with a **4K60** source attached — a Sony FX3 at
+3840x2160@59.94p — and the first to answer any of §9. It answered **B4**, in the
+negative and against its own premise: the `i == 300` PHY re-init cannot recover
+this failure, and the PHY was never stuck to begin with. `0027` is what came out
+of it, and it is the first patch in this series to land with its *fix* proven on
+hardware rather than only its defect. B1, B2, B3, B5, B6 and B7 remain unrun —
+B2's `signal lock ok, i:%d` needs the driver at `debug=1`, which this run did not
+set, so the iteration-count input to B3 is still missing.
+
 ---
 
 ## 9. HDMI-RX EDID and 4K60 — checks B1–B7
@@ -1093,6 +1103,9 @@ Moved here from [`EVAL-0002-EDID.md`](EVAL-0002-EDID.md) § *"Requires board
 validation at 4K60"*, which parked them pending this document. **B5 is the
 retirement precondition for `0002`** — until it is answered on hardware, `0002`
 is not a retirement candidate.
+
+**RUN-4 answered B4; B1, B2, B3, B5, B6 and B7 are still unrun.** `0002` remains a
+non-retirement-candidate, because B5 is untouched.
 
 **RUN-1: NONE OF B1–B7 WERE RUN — every one needs a 4K60-capable HDMI *source*
 attached to the board's HDMI-IN port, and no HDMI source of any kind was connected
@@ -1114,10 +1127,51 @@ non-retirement-candidate.**
 - [ ] **B3 — is the ~147 ms consecutive-stability window the right threshold at
       4K60?** Answer from B2's measured iteration counts, not from the source.
       **RUN-1: NOT RUN — depends on B2's measurements.**
-- [ ] **B4 — is the ~4.2 s ceiling enough, and does the `i == 300` PHY re-init
+- [x] **B4 — is the ~4.2 s ceiling enough, and does the `i == 300` PHY re-init
       actually recover a PHY that latched the pre-flip ratio?** Force the case if
       it does not occur naturally.
       **RUN-1: NOT RUN — depends on B2; needs a 4K60 source.**
+      **RUN-4 (Rock 5B+, Sony FX3 @ 3840x2160@59.94p): ANSWERED — NO, and the
+      question's premise was wrong.** The case did not need forcing: this source
+      fails to lock every time, ~500+ consecutive attempts, each logging
+      `scdc_regbank_st:0x0`. With `0027`'s corrected diagnostics the failure prints:
+
+      ```
+      hdmirx_wait_signal_lock: signal not lock, tmds_clk_ratio:0
+      hdmirx_wait_signal_lock: mu_st:0x0, scdc_st:0x0, dma_st10:0x10
+      hdmirx_wait_signal_lock: cmu_st:0x10000051, regbank_st1:0x0, qpclk:34753kHz, phy_cfg:0x8000, phy_st:0x0
+      hdmirx_wait_signal_lock: scdc_cfg:0x1001, descrand_en:0x1, descrand_sync_st:0x3a, forced:0
+      hdmirx_wait_signal_lock: SCDC carried no bit-clock ratio, retrying once forced to 1/40
+      snps_hdmirx fdee0000.hdmi_receiver: audio on
+      ```
+
+      `cmu_st` `0x10000051` has `TMDSQPCLK_LOCKED_ST` **set** — the PHY's clock was
+      locked the whole time, so nothing had "latched a pre-flip ratio". `phy_cfg`
+      `0x8000` has `TMDS_CLOCK_RATIO` clear because `hdmirx_phy_config()`'s last
+      statement re-derives it from `regbank_st1`, which reads `0x0`. The re-init
+      therefore ends by restoring the exact configuration that cannot lock, and
+      **more re-inits or a longer ceiling consume the same zero input** — which
+      answers the ceiling half too. `qpclk` `34753 kHz` ×4 = 139.0 MHz, so
+      `CMU_TMDSQPCLK_FREQ` cannot discriminate the two cases and is printed, not
+      acted on. With `0027`'s forced-1/40 retry, on the same board and cable:
+
+      ```
+      $ v4l2-ctl -d /dev/hdmirx --query-dv-timings
+              Active width: 3840   Active height: 2160
+              Total width: 4400    Total height: 2250
+              Pixelclock: 593420000 Hz (59.94 frames per second)
+
+      $ v4l2-ctl -d /dev/hdmirx --stream-mmap --stream-count=600 --stream-to=/dev/null
+              <<<<< 59.94 fps  (x10 lines)
+              real    0m10.138s
+      ```
+
+      **600/600 frames, steady 59.94 fps, zero errors**, reproduced **4/4** — one
+      cold boot plus three `VIDIOC_S_EDID` HPD renegotiation cycles — including one
+      caught live mid-session recovering a fresh SCDC drop. Every cycle's first
+      failure line reads `forced:0`, proving `hdmirx_plugout()` clears the override
+      between connections. **Not answered here:** the regression leg against a
+      source that *does* write SCDC, and an FX3 cold power-cycle.
 - [ ] **B5 — with the 150 ms HPD hold already in the base (`7dd27810eea0`), is
       `0002`'s sequence still required for a 4K60 EDID to be re-read?** Run with
       and without `0002` and compare. **This is the `0002` retire trigger.**
