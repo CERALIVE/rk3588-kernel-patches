@@ -1,7 +1,7 @@
 diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
 --- a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
 +++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
-@@ -226,6 +226,89 @@ static int rkvenc_class_reg_window(struct rkvenc_task *task, u32 class,
+@@ -226,6 +226,149 @@ static int rkvenc_class_reg_window(struct rkvenc_task *task, u32 class,
  	return 0;
  }
  
@@ -26,6 +26,40 @@ diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c b/drivers/m
 +}
 +
 +/*
++ * Is the covered span exactly a run of WHOLE register classes, separated only
++ * by the map's own unowned holes?
++ *
++ * Every class the span touches must lie ENTIRELY inside it. A class the span
++ * merely CLIPS is a class the request half-named -- it "starts inside a class
++ * and claims a size that runs past its end", which is `class-overrun`'s own
++ * description in tests/expected-errno.tsv. With nothing clipped, the classes
++ * the span contains ARE the bytes the split kept, so owned == cov->bytes
++ * proves the remainder of the span is unowned map territory rather than a
++ * class that went missing along the way.
++ */
++static bool req_spans_whole_classes(const struct rkvenc_hw_info *hw,
++				    const struct req_coverage *cov)
++{
++	u32 owned = 0;
++	u32 i;
++
++	for (i = 0; i < hw->reg_class; i++) {
++		u32 s = hw->reg_msg[i].base_s;
++		u32 e = hw->reg_msg[i].base_e + (u32)sizeof(u32);
++
++		/* Disjoint from the span, so it has no opinion about it. */
++		if (e <= cov->lo || s >= cov->hi)
++			continue;
++		/* Touched but not contained: the span clipped this class. */
++		if (s < cov->lo || e > cov->hi)
++			return false;
++		owned += e - s;
++	}
++
++	return owned == cov->bytes;
++}
++
++/*
 + * Decide whether the per-class split may stand in for the request userspace
 + * actually asked for.
 + *
@@ -34,29 +68,51 @@ diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c b/drivers/m
 + * than refused. reg_msg[] is a SPARSE map: no two classes abut -- every
 + * neighbouring pair is separated by a hole, from six dwords (SQI to SCL) to
 + * 770 (PIC to RC) -- and it stops dead at DBG's end. So the dropped bytes come
-+ * in two shapes that matter very differently:
++ * in three shapes, and only the last of them is a lie:
 + *
 + *   - the split covered ONE unbroken run and the request merely spilled off
 + *     its edge into the neighbouring hole. The clamp has always absorbed that
-+ *     silently, and it is what librockchip-mpp really sends: its class BASE
-+ *     write is 96 bytes where the map owns 92 ([0x0000,0x005c)), so the last
-+ *     dword falls in the BASE-to-PIC hole and is dropped. Harmless, and the
-+ *     only behaviour this hardware has ever had.
++ *     silently, and it is what librockchip-mpp's class BASE write does: 96
++ *     bytes where the map owns 92 ([0x0000,0x005c)), so the last dword falls
++ *     in the BASE-to-PIC hole and is dropped. Harmless, and the only
++ *     behaviour this hardware has ever had.
 + *
-+ *   - the split covered SEVERAL disjoint runs with the map's holes BETWEEN
-+ *     them, so the driver stitched pieces of the register file together and
++ *   - the split covered SEVERAL runs, but every run is a WHOLE class and
++ *     every gap between them is one of the map's own holes. Nothing was
++ *     half-named: each byte the caller supplied for a real register still
++ *     reaches that register, from the offset the caller put it at, because
++ *     rkvenc_update_req() advances the per-part data pointer by the same
++ *     amount it advances the offset. MPP's H.265 register programme is
++ *     exactly this shape -- ONE 3228-byte write spanning SQI (488 bytes) and
++ *     SCL (2716) with the 24-byte SQI-to-SCL hole between them -- and
++ *     refusing it refused every H.265 encode this driver has ever been asked
++ *     for, while H.264, which issues no such write, went on working.
++ *
++ *   - the split covered several runs and CLIPPED a class to do it, so the
++ *     driver stitched PARTIAL pieces of the register file together and
 + *     reported the whole span as programmed -- or, worse, as read back. That
 + *     is `class-overrun` in tests/expected-errno.tsv, and it is the shape
 + *     worth refusing.
 + *
-+ * The discriminator is therefore not how MANY bytes were dropped but WHERE.
-+ * The parts are disjoint subranges of the request, so they sum to the span
-+ * they cover only when that span has no hole inside it; requiring the sum and
-+ * the span to agree is exactly "one contiguous run". Bounding the request by
-+ * the map's own extent then stops it claiming space past the last class, which
-+ * contiguity alone cannot catch because there is no following class to notice.
-+ * Both bounds are read out of reg_msg[], so a map with different holes -- or
-+ * none -- needs no change here.
++ * The discriminator is therefore not how MANY bytes were dropped, and not
++ * merely whether the run is unbroken, but whether every byte the split
++ * dropped INSIDE the span is unowned map territory and no class was left
++ * half-named. The parts are disjoint subranges, so sum == span still settles
++ * the one-run case without touching reg_msg[]; only a broken span has to ask
++ * the map whether its gaps are real. Bounding the request by the map's own
++ * extent then stops it claiming space past the last class, which neither test
++ * can catch because there is no following class to notice. Every bound is
++ * read out of reg_msg[], so a map with different holes -- or none -- needs no
++ * change here.
++ *
++ * READ and WRITE get the SAME rule, deliberately. Both consume the CLAMPED
++ * per-class parts and neither ever touches the caller's raw span again:
++ * rkvenc_extract_task_msg() copies each part into the class buffer that owns
++ * it, and rkvenc_result() walks task->r_reqs[] -- the parts, not the original
++ * request -- copying each one back out of its own class buffer, both bounded
++ * by 0016's rkvenc_class_reg_window(). A multi-class read is therefore no
++ * more exposed than a multi-class write, so weakening this test on one side
++ * only would be an asymmetry with nothing behind it.
 + */
 +static int req_coverage_check(struct rkvenc_task *task,
 +			      const struct mpp_request *req,
@@ -70,8 +126,12 @@ diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c b/drivers/m
 +	/* Nothing in the map owns any of it. */
 +	if (!cov->bytes)
 +		return -EINVAL;
-+	/* A hole INSIDE the covered span: disjoint runs stitched together. */
-+	if (cov->bytes != cov->hi - cov->lo)
++	/*
++	 * A hole INSIDE the covered span is disjoint runs stitched together --
++	 * unless every run is a whole class and every hole is the map's own.
++	 */
++	if (cov->bytes != cov->hi - cov->lo &&
++	    !req_spans_whole_classes(hw, cov))
 +		return -EINVAL;
 +
 +	for (i = 0; i < hw->reg_class; i++) {
@@ -91,7 +151,7 @@ diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c b/drivers/m
  /* ---- Check if request overlaps a class ---- */
  static bool req_over_class(struct mpp_request *req,
  			   struct rkvenc_task *task, u32 class)
-@@ -296,8 +379,9 @@ static int rkvenc2_extract_rcb_info(struct rkvenc2_rcb_info *rcb_inf,
+@@ -296,8 +439,9 @@ static int rkvenc2_extract_rcb_info(struct rkvenc2_rcb_info *rcb_inf,
  		return -EINVAL;
  	}
  	if (copy_from_user(rcb_inf->elem, req->data, req->size)) {
@@ -102,7 +162,7 @@ diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c b/drivers/m
  	}
  	rcb_inf->cnt = cnt;
  
-@@ -322,12 +406,28 @@ static int rkvenc_extract_task_msg(struct rkvenc_session *session,
+@@ -322,12 +466,28 @@ static int rkvenc_extract_task_msg(struct rkvenc_session *session,
  		switch (req->cmd) {
  		case MPP_CMD_SET_REG_WRITE: {
  			void *data;
@@ -131,7 +191,7 @@ diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c b/drivers/m
  				ret = rkvenc_alloc_class_msg(task, j);
  				if (ret) {
  					rkvenc_err("alloc class msg %d fail.\n", j);
-@@ -353,21 +453,41 @@ static int rkvenc_extract_task_msg(struct rkvenc_session *session,
+@@ -353,21 +513,41 @@ static int rkvenc_extract_task_msg(struct rkvenc_session *session,
  					goto fail;
  				}
  				if (copy_from_user(data, wreq->data, wreq->size)) {
@@ -152,7 +212,7 @@ diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c b/drivers/m
  			}
 +			ret = req_coverage_check(task, req, &cov);
 +			if (ret) {
-+				rkvenc_err("write request %08x+%u covers %u bytes, not one run\n",
++				rkvenc_err("write request %08x+%u covers %u bytes, not one run nor whole classes\n",
 +					   req->offset, req->size, cov.bytes);
 +				goto fail;
 +			}
@@ -174,7 +234,7 @@ diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c b/drivers/m
  				ret = rkvenc_alloc_class_msg(task, j);
  				if (ret) {
  					rkvenc_err("alloc class msg reg %d fail.\n", j);
-@@ -379,9 +499,23 @@ static int rkvenc_extract_task_msg(struct rkvenc_session *session,
+@@ -379,9 +559,23 @@ static int rkvenc_extract_task_msg(struct rkvenc_session *session,
  					rkvenc_err("bad read request for class %d\n", j);
  					goto fail;
  				}
@@ -191,14 +251,14 @@ diff --git a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c b/drivers/m
 +			 */
 +			ret = req_coverage_check(task, req, &cov);
 +			if (ret) {
-+				rkvenc_err("read request %08x+%u covers %u bytes, not one run\n",
++				rkvenc_err("read request %08x+%u covers %u bytes, not one run nor whole classes\n",
 +					   req->offset, req->size, cov.bytes);
 +				goto fail;
 +			}
  		} break;
  		case MPP_CMD_SET_REG_ADDR_OFFSET: {
  			/*
-@@ -960,8 +1094,17 @@ static int rkvenc_process_request(struct rkvenc_session *session,
+@@ -960,8 +1154,17 @@ static int rkvenc_process_request(struct rkvenc_session *session,
  		 * rounded cnt down, passed this check and then overran
  		 * trans_table by one byte. Bound the bytes, which is what the
  		 * copy actually consumes.
