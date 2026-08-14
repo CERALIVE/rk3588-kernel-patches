@@ -36,6 +36,8 @@ video encode does not work on the `edge` 7.1.5 kernel"*, which is the origin of
 | 2 | 2026-08-10 → 2026-08-12 | Radxa Rock 5B+ **and** Orange Pi 5 Plus | `7.1.7-ceralive-rk3588` (production) and `7.1.7-ceralive-rk3588-test` (KASAN + `PROVE_LOCKING` + `DEBUG_ATOMIC_SLEEP`) | `eb0f338edd6b203387ea22b4aceb6eb57136c68c` | `image-building-pipeline` `test-results/pipeline-restructure-kernel-backports/wave8/` — signed receipts 33/34/35/36/37/45 (Rock, debug), 46 (Rock, production), 47 (Orange Pi, production) |
 | 3 | 2026-08-12 | Orange Pi 5 Plus | `7.1.7-ceralive-rk3588` | `eb0f338edd6b203387ea22b4aceb6eb57136c68c` | `.omo/evidence/orange-pi-run3/RAW-EVIDENCE.md` (this repo) |
 | 4 | 2026-08-13 | Radxa Rock 5B+ | `7.1.7-ceralive-rk3588` (`7.1.7-ceralive1`, 23 patches) | `098dce0` + `0027`, built before `0027` was registered — the payload is byte-identical to the `ceralive/0027-*.patch` this run's commit adds | § 9 B4 below; raw transcripts captured off the board (pre-flash failure and post-flash pass) |
+| 5 | 2026-08-14 | Radxa Rock 5B+ | `7.1.7-ceralive-rk3588`, production `0027` artifact (`image-build-commit ff631ba`) | `00fc0b26540e94d310098a32773e150dcd7bdc41` (merged `0027`, PR #8) | `image-building-pipeline` `test-results/hdmirx-4k60/rock-4k60.md` §12 |
+| 6 | 2026-08-14 | Orange Pi 5 Plus | `7.1.7-ceralive-rk3588`, same patches_commit as Run 5 (carrying `0027`, PR #8) | `00fc0b26540e94d310098a32773e150dcd7bdc41` | `image-building-pipeline` `test-results/hdmirx-4k60/opi-4k60.md` |
 
 **Run 1 headline.** All three stacked defects of the pipeline's *"MPP hardware
 video encode does not work on the `edge` 7.1.5 kernel"* KNOWN ISSUE are **resolved
@@ -1095,6 +1097,24 @@ hardware rather than only its defect. B1, B2, B3, B5, B6 and B7 remain unrun —
 B2's `signal lock ok, i:%d` needs the driver at `debug=1`, which this run did not
 set, so the iteration-count input to B3 is still missing.
 
+**Run 5 / Run 6 headline — the dual-board qualification campaign, 2026-08-14.**
+The follow-on session RUN-4 called for: `debug=1`/`debug=3` armed *before* the link
+event on both boards, against the properly-provenanced production `0027` artifact
+rather than the unregistered draft RUN-4 built from. B1 and B2 are now answered on
+BOTH boards. Rock reproduced RUN-4's finding on the shipping build — the source
+never wrote SCDC, `0027`'s forced-1/40 retry fired once, and the link locked 276 ms
+later. Orange Pi 5 Plus, same camera moved over in the same session, produced the
+*other* half of the picture: the source wrote SCDC correctly on that HPD cycle, the
+link locked on the first attempt with no forced retry at all, and `0027`'s recovery
+path was present but genuinely unreached — not because it is unneeded there, but
+because SCDC-silence turned out to be a property of the *source's HPD cycle*, not a
+fixed board trait, proven by the same camera disagreeing with itself across the two
+boards in one session. B3, B5, B6 and B7 remain unrun on both boards; see each leg
+below for exactly what was and was not measured. The campaign also ran the product's
+encode gate (G3), found both boards' RK3588 VEPU580 rejects H.265 at every 4K60
+geometry identically, and confirmed that fact is entirely downstream of this series
+— see the postscript after B7.
+
 ---
 
 ## 9. HDMI-RX EDID and 4K60 — checks B1–B7
@@ -1104,29 +1124,77 @@ validation at 4K60"*, which parked them pending this document. **B5 is the
 retirement precondition for `0002`** — until it is answered on hardware, `0002`
 is not a retirement candidate.
 
-**RUN-4 answered B4; B1, B2, B3, B5, B6 and B7 are still unrun.** `0002` remains a
-non-retirement-candidate, because B5 is untouched.
+**RUN-5/RUN-6 — dual-board qualification campaign, 2026-08-14. B1 and B2 are now
+ANSWERED on BOTH boards; B4 was already answered by RUN-4 (Rock only, pre-production
+build) and is now corroborated by RUN-5 on the production `0027` artifact. B3, B5, B6
+and B7 remain unrun.** `0002` remains a non-retirement-candidate, because B5 is still
+untouched. Evidence: `image-building-pipeline` `test-results/hdmirx-4k60/rock-4k60.md`
+§12 (Rock, session 3, the production `ff631ba`/`0027` artifact) and
+`test-results/hdmirx-4k60/opi-4k60.md` (Orange Pi 5 Plus, same session window,
+`00fc0b26…` patches_commit). Full campaign also exercised the encode path (G3) and
+found it fails identically on both boards for reasons entirely outside this series —
+see the note after B7 below.
 
 **RUN-1: NONE OF B1–B7 WERE RUN — every one needs a 4K60-capable HDMI *source*
 attached to the board's HDMI-IN port, and no HDMI source of any kind was connected
 this session.** `v4l2-ctl -d /dev/hdmirx --get-dv-timings` reported the no-signal
 default (640×480, total 800×525), confirming no source was present. `v4l2-ctl` itself
 IS available in the production image, so these legs are unblocked by tooling — they
-are blocked purely on physical hardware. **`0002` therefore remains a
-non-retirement-candidate.**
+are blocked purely on physical hardware.
 
-- [ ] **B1 — 4K60 EDID is accepted and re-read.** Write an EDID advertising
+- [x] **B1 — 4K60 EDID is accepted and re-read.** Write an EDID advertising
       `SCDC_Present = 1`, `Max_TMDS_Char_Rate ≥ 594 MHz` and VIC 97 via
       `VIDIOC_S_EDID` (`v4l2-ctl --set-edid=file=...`), then confirm the *source*
       re-reads it and offers 2160p60.
       **RUN-1: NOT RUN — no HDMI source attached (needs a source that re-reads EDID).**
-- [ ] **B2 — the SCDC TMDS ratio flips to 1/40 and the receiver locks at
+      **RUN-5 (Rock 5B+, production `0027`, Sony FX3): PASS.** `ceralive-hdmirx-edid.service`
+      applies the committed 256-byte blob (sha256 `9e4a0f2273…bbdb71f9c`) at boot;
+      independent readback stayed byte-identical for the whole session, and the source's
+      own timings offer (`3840x2160`, `593416000 Hz`, 59.94p) confirms it re-read a
+      4K60-advertising EDID rather than falling back to a default mode.
+      **RUN-6 (Orange Pi 5 Plus, same patches_commit, same camera moved over):
+      PASS.** Same EDID blob, same service, six independent `--query-dv-timings` reads
+      over ~10 minutes all report `3840x2160`, `593396000 Hz` (59.94p) — byte-identical
+      across reads and re-confirmed after the B2 link-renegotiation below.
+- [x] **B2 — the SCDC TMDS ratio flips to 1/40 and the receiver locks at
       594 MHz.** Capture `signal lock ok, i:%d` with the driver at `debug=1` and
       **record the iteration count** — it is the input to B3 and B4.
       **RUN-1: NOT RUN — no HDMI source attached (needs a real 4K60 signal to lock).**
+      **RUN-5 (Rock 5B+): PASS, and via the `0027` forced path.** In a window armed
+      with `debug=3` *before* the boot's own HPD cycle, `HDMITX greater than 3.4Gbps`
+      (the 1:40 assertion) fired **62×**, 40 ms after `0027`'s
+      `SCDC carried no bit-clock ratio, retrying once forced to 1/40` line — the source
+      never wrote SCDC on its own this session (`scdc_regbank_st:0x0` throughout) — and
+      236 ms after the forced retry `hdmirx_wait_signal_lock: signal lock ok, i:32`
+      fired. Timings readback afterwards: `3840x2160@593416000 Hz`.
+      **RUN-6 (Orange Pi 5 Plus): PASS, via the COMPLIANT path — `0027`'s forced retry
+      was present but NOT reached.** In an equivalently rung-scoped window (armed by a
+      live `debug=3` write ahead of an EDID-service-triggered HPD cycle, no reboot
+      needed), the *same* FX3 wrote SCDC correctly this time
+      (`scdc_regbank_st:0x103`, bit 8 set) and `HDMITX greater than 3.4Gbps` fired
+      **63×** off real source data — `hdmirx_wait_signal_lock: SCDC carried no
+      bit-clock ratio, retrying once forced to 1/40` fired **0** times, and
+      `signal not lock` fired **0** times: the link locked cleanly on the first
+      attempt (`signal lock ok, i:31`). Read this precisely: it is **not** evidence
+      that `0027` is unneeded on Orange Pi — SCDC-silence is a **per-HPD-cycle**
+      property of the *source*, proven variable on the very same camera across the
+      two boards in the same session, not a fixed board trait. `0027`'s recovery
+      path is unreachable until the compliant path has provably deadlocked, and this
+      cycle simply never deadlocked. See `opi-4k60.md` §5.1 for the full argument.
 - [ ] **B3 — is the ~147 ms consecutive-stability window the right threshold at
       4K60?** Answer from B2's measured iteration counts, not from the source.
       **RUN-1: NOT RUN — depends on B2's measurements.**
+      **RUN-5/RUN-6: STILL NOT ANSWERED, though iteration counts now exist.** Both
+      boards locked with a low iteration count on their successful `wait_reg_bit_status`
+      poll (Rock: `i:1` then `i:37` inside the forced-retry's `wait_reg_bit_status`
+      instrumentation, `signal lock ok, i:32`; Orange Pi: `signal lock ok, i:31` on the
+      very first attempt, no forced retry at all) — both comfortably inside whatever the
+      147 ms window allows, so nothing this campaign observed calls the threshold into
+      question. But neither session captured the raw per-iteration timing needed to
+      state the window is *correctly sized* rather than merely *not yet observed to be
+      too tight* — that needs a source that stresses the boundary (e.g. one whose SCDC
+      write lands late but before the deadline), which neither FX3 session produced.
+      Leaving unticked rather than upgrading a non-observation into a pass.
 - [x] **B4 — is the ~4.2 s ceiling enough, and does the `i == 300` PHY re-init
       actually recover a PHY that latched the pre-flip ratio?** Force the case if
       it does not occur naturally.
@@ -1170,8 +1238,20 @@ non-retirement-candidate.**
       cold boot plus three `VIDIOC_S_EDID` HPD renegotiation cycles — including one
       caught live mid-session recovering a fresh SCDC drop. Every cycle's first
       failure line reads `forced:0`, proving `hdmirx_plugout()` clears the override
-      between connections. **Not answered here:** the regression leg against a
+      between connections.       **Not answered here:** the regression leg against a
       source that *does* write SCDC, and an FX3 cold power-cycle.
+      **RUN-5 (Rock 5B+, production `0027` artifact, 2026-08-14): CORROBORATED —
+      same mechanism, on the shipping build.** The `098dce0`-plus-draft-patch build
+      RUN-4 exercised was, by its own record, "built before `0027` was registered".
+      RUN-5 repeats the identical failure→recovery→lock sequence against the
+      properly-provenanced production artifact (sha256-verified build-host↔board,
+      `image-build-commit ff631ba` → `patches_commit 00fc0b26…`, the merged PR #8):
+      link starts SCDC-silent (`scdc_regbank_st:0x0`, `HDMITX less than 3.4Gbps`,
+      `forced:0`), `0027`'s forced-1/40 line fires once, `HDMITX greater than
+      3.4Gbps` follows 40 ms later (62 occurrences), and `signal lock ok` follows
+      236 ms after that. **RUN-6 (Orange Pi 5 Plus) provides no B4 evidence** — that
+      board's SCDC-silent path was never reached this session (see B2 above); its
+      §5.2 finding is a *different* one (the RK3588 H.265 encoder, not B4/HDMI-RX).
 - [ ] **B5 — with the 150 ms HPD hold already in the base (`7dd27810eea0`), is
       `0002`'s sequence still required for a 4K60 EDID to be re-read?** Run with
       and without `0002` and compare. **This is the `0002` retire trigger.**
@@ -1183,9 +1263,73 @@ non-retirement-candidate.**
       **RUN-1: NOT RUN — needs a 4K60 source, and is a two-board question (see R8);
       only a Rock 5B+ was available.** The pool itself was confirmed assigned at boot:
       `snps_hdmirx fdee0000.hdmi_receiver: assigned reserved memory node hdmi-receiver-cma`.
+      **RUN-6 (Orange Pi 5 Plus): STILL NOT RUN.** The dual-board campaign proved
+      600/600-frame capture at 4K59.94 on both boards (see the B1/B2 evidence above and
+      `opi-4k60.md` §3), which is a real vb2 queue-depth exercise, but neither session
+      instrumented the `hdmi_receiver_cma` pool's actual watermark under that load —
+      only that the pool is assigned and captures do not stall or drop frames. The
+      specific "is 160 MiB the right size" question is unanswered on both boards.
 - [ ] **B7 — is the `msleep(500)` after the DMA reset over-conservative at
       4K60?** Measure the actual settle time before changing anything.
       **RUN-1: NOT RUN — needs a 4K60 source to measure a real settle time.**
+      **RUN-5/RUN-6: STILL NOT RUN.** Neither session instrumented the DMA-reset
+      settle path; both sessions armed `debug` for the SCDC/link-setup diagnostics
+      only (B1/B2 above), not for this leg's own signature.
+
+**Campaign postscript — the encode path, and why the observed H.265 failure is
+NOT this campaign's evidence about `0022`.** The same dual-board sessions also
+ran the product's G3 gate (`cerastream` encoding the captured signal). The HDMI-RX
+receiver hands off clean 3840x2160@59.94 NV16 on both boards (proven by the
+600/600-frame G2 capture above), and everything from there is the RK3588
+MPP/VEPU580 **encode** path — a different driver than this series' receiver/PHY
+code, but one two other members of this series (`0016`, `0022`) also touch. Both
+boards hit the identical `MPP_IOC_CFG_V1 … errno 22` H.265 rejection at every 4K60
+geometry tried (SIGSEGV on the pre-`cerastream` PR #116 build, a typed
+`cerastream.params.invalid` refusal after it), and H.264 at 4K59.94 decodes clean
+on both — see `rock-4k60.md` §12.7 and `opi-4k60.md` §4.
+
+**This is the exact `0022` H.265 defect, and it is already fixed on `main` — the
+campaign's images simply predate the fix.** `0022`'s ioctl request-coverage check
+went through three iterations, each caught by a real hardware drill, not by its own
+fault-injection test suite (whose control encode was H.264-only, so it could not
+see this class of regression):
+
+- **v1** passed every fault case written for it and refused **every production
+  encode**, H.264 included.
+- **v2** fixed that and passed a cold-boot H.264 control encode — but MPP's HEVC
+  programme writes one ioctl request spanning the `SQI` and `SCL` register
+  classes across a genuine 24-byte hole in the class map (`0x2000+3228`: covers
+  3204 of that 3228-byte span, `SQI`+`SCL`, clipping neither), and v2's rule —
+  "the covered span must be one contiguous run" — rejects that shape outright:
+  `rkvenc_extract_task_msg:472: write request 00002000+3228 covers 3204 bytes,
+  not one run` → `alloc task failed: -22`. That is the identical `errno 22`
+  signature both `rock-4k60.md` and `opi-4k60.md` recorded.
+- **v3** (amended in place again, `rk3588-kernel-patches` PR #9, commit
+  `819e1de`) replaces the "one contiguous run" test with `req_spans_whole_classes()`:
+  a covered span may cross the map's own holes provided every class it touches is
+  either wholly outside the span or **wholly contained** in it — no class may be
+  left half-named. This admits the legitimate `SQI`+`SCL` H.265 write while
+  preserving `0022`'s original security property: `class-overrun` (a request that
+  starts one dword *inside* `BASE` and stops one dword *inside* `ST`, clipping
+  both ends) is still refused `-EINVAL`, unchanged, because it fails the
+  "wholly contained" test at both boundary classes. Host-replayed against 18
+  shapes (both check versions) and hardware-validated on a Rock 5B+ module
+  hot-swap: H.264 stayed byte-identical (`3,874,116 B` at 1080p60, unchanged), and
+  H.265 went from 0 bytes at every geometry to a decodable HEVC stream at
+  1920x1080 **and** at 3840x2160@60000/1001 (`ffprobe`: `codec_name=hevc`,
+  `profile=Main`, correct resolution and framerate; `ffmpeg -f null -` exits 0 —
+  a clean full decode, not merely a non-zero byte count). Full record:
+  `.omo/notepads/hdmirx-4k60-workspace-hygiene/h265-vepu580-regression-investigation.md`
+  (root cause) and `h265-0022-fix.md` (the v3 fix + hardware proof, including the
+  4K59.94-specific addendum).
+- **The campaign's images ran an older pin.** Both `rock-4k60.md` and
+  `opi-4k60.md` installed a `patches_commit` of `00fc0b26540e94d310098a32773e150dcd7bdc41`
+  — `0027` (PR #8) only. `0022` v3 (PR #9, `819e1de`) landed on `main` **after**
+  that pin was cut, so the campaign's G3 H.265 failures are the expected,
+  already-diagnosed v2 symptom on a pre-fix image, not a new or still-open defect.
+  `0022` v3 is merged to `main` but **not yet deployed to a production image pin** —
+  that is a separate, undone follow-up (re-cutting the `image-building-pipeline`
+  kernel pin and re-running G3 H.265 on both boards), tracked outside this repo.
 
 ---
 
