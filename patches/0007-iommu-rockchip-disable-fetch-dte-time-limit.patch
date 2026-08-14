@@ -1,7 +1,7 @@
 From 8d4346ecd4950ae08cc76a6de327c264e846758c Mon Sep 17 00:00:00 2001
 From: Simon Xue <xxm@rock-chips.com>
 Date: Tue, 28 Apr 2026 18:05:31 +0200
-Subject: [PATCH 7/26] iommu/rockchip: disable fetch dte time limit
+Subject: [PATCH 7/27] iommu/rockchip: disable fetch dte time limit
 
 commit 8d4346ecd4950ae08cc76a6de327c264e846758c upstream.
 
