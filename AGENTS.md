@@ -272,8 +272,9 @@ gated fault injection that contributes zero bytes to a production build; `0018`
 states an existing API's failure semantics truthfully rather than fixing a defect;
 `0014`–`0017` repair concrete defects in the code that runs when something goes
 wrong. `0019`–`0022`, `0026` and `0027` are different in kind: each was root-caused
-from a **real Rock 5B+ transcript**, not from reading — and `0027` went further,
-landing with its *fix* proven on the board rather than only its defect.
+from a **real Rock 5B+ transcript**, not from reading — and `0027` and `0022`'s
+current version went further, landing with their *fix* proven on the board rather
+than only their defect.
 Per-patch detail — what each fixes,
 what it deliberately does not, and what would retire it — lives in
 [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md), one row each; do not restate
@@ -289,6 +290,15 @@ Three things about this block are easy to get wrong:
   `0022` fixes three of four still-failing cases in `tests/expected-errno.tsv`
   that `0016` was supposed to have closed. Do not read a landed patch as a
   validated one — read its `UNVALIDATED` marker.
+- **`0022` is the sharpest instance of that, because it was broken by hardware
+  TWICE.** v1 passed every fault case written for it and refused every production
+  encode. v2 fixed that, passed a cold-boot control encode, and shipped a **total
+  H.265 outage** — MPP's HEVC programme is one write spanning `SQI` and `SCL`
+  across a genuine 24-byte map hole, and v2's rule was "one contiguous run". The
+  control encode that caught v1 ran H.264 only, so it could not catch v2. The
+  standing gate is therefore a cold-boot, no-fault control encode **per codec the
+  board can be asked for**, not one encode. Detail:
+  [`docs/UPSTREAM-STATUS.md` § `0022`](docs/UPSTREAM-STATUS.md#0022--what-it-fixes-what-it-does-not-and-the-one-case-still-red).
 - **`0021` is ONE patch covering FOUR defects, and that is deliberate.** It was
   carried as `0021`+`0023`+`0024`+`0025` while the defects were being discovered on
   a board — balance, then worker lifetime, then core lifetime, then service
