@@ -14,9 +14,8 @@ import subprocess
 import sys
 import unittest
 from dataclasses import replace
-from pathlib import Path
 
-from . import ROOT, load_script
+from tests import ROOT, load_script
 
 bs = load_script("build-series.py", "ceralive_build_series_provenance")
 
@@ -30,7 +29,7 @@ VALID_DIGESTS = ("a" * 64, "b" * 64, "c" * 64)
 # is chosen because it is always present in this lane.
 STAND_IN_MAIL = "backports/README.md"
 STAND_IN_MAIL_SHA256 = hashlib.sha256((ROOT / STAND_IN_MAIL).read_bytes()).hexdigest()
-MERGED_FIXTURE_SOURCE = "0007-iommu-rockchip-disable-fetch-dte-time-limit.patch"
+SOURCE_FIXTURE = "0010-phy-rockchip-naneng-combphy-force-rterm-det-rdy.patch"
 
 
 def pin() -> dict[str, str]:
@@ -43,10 +42,6 @@ def header_of(text: str) -> str:
 
 def lore_members() -> list:
     return [p for p in bs.SERIES if p.origin == bs.BACKPORTS and p.lore is not None]
-
-
-def merged_members() -> list:
-    return [p for p in bs.SERIES if p.origin == bs.BACKPORTS and p.backport is not None]
 
 
 def sample_lore(**overrides) -> bs.LorePosting:
@@ -81,10 +76,28 @@ def sample_patch(**overrides) -> bs.Patch:
     return bs.Patch(**fields)
 
 
+def sample_merged_patch(**overrides) -> bs.Patch:
+    fields = {
+        "filename": SOURCE_FIXTURE,
+        "ordinal": 10,
+        "subject": "subsystem: merged fix",
+        "provenance": "1" * 40,
+        "author": "Author <author@example.com>",
+        "date": "Mon, 1 Jun 2026 12:00:00 +0000",
+        "origin": bs.BACKPORTS,
+        "backport": bs.Backport(
+            upstream_subject="subsystem: merged fix",
+            lore_msgid="merged@example.com",
+        ),
+    }
+    fields.update(overrides)
+    return bs.Patch(**fields)
+
+
 class TestLoreHeadersClaimNoIdentity(unittest.TestCase):
     def test_a_rendered_lore_header_states_no_identity(self) -> None:
         rendered = bs.build_patch(
-            sample_patch(filename=MERGED_FIXTURE_SOURCE), [], pin()
+            sample_patch(filename=SOURCE_FIXTURE), [], pin()
         )
         header = header_of(rendered)
         self.assertIsNone(MERGED_MARKER_RE.search(header))
@@ -141,18 +154,15 @@ class TestLoreHeadersClaimNoIdentity(unittest.TestCase):
 
 class TestMergedOutputIsUnperturbed(unittest.TestCase):
     def test_merged_backport_still_claims_its_commit(self) -> None:
-        for patch in merged_members():
-            with self.subTest(patch=patch.filename):
-                header = header_of(
-                    (ROOT / "patches" / patch.filename).read_text(encoding="utf-8")
-                )
-                self.assertTrue(HEX40_DELIMITER_RE.match(header.splitlines()[0]))
-                self.assertIn(f"commit {patch.provenance} upstream.", header)
-                self.assertIn("ALREADY upstream", header)
-                self.assertNotIn("Backport of unmerged", header)
+        patch = sample_merged_patch()
+        header = header_of(bs.build_patch(patch, [], pin()))
+        self.assertTrue(HEX40_DELIMITER_RE.match(header.splitlines()[0]))
+        self.assertIn(f"commit {patch.provenance} upstream.", header)
+        self.assertIn("ALREADY upstream", header)
+        self.assertNotIn("Backport of unmerged", header)
 
     def test_adding_a_lore_sibling_does_not_change_merged_bytes(self) -> None:
-        merged = merged_members()[0]
+        merged = sample_merged_patch()
         before = bs.build_patch(merged, [], pin())
         original = bs.SERIES
         try:

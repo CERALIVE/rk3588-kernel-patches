@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from . import load_script
+from tests import load_script
 
 lore = load_script("import-lore-series.py", "ceralive_import_lore_series")
 
