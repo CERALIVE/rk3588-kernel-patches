@@ -11,12 +11,14 @@ imported at `e13a311` (2026-07-01) with full history and authorship preserved.
 | **Target kernel** | `v7.2` (`8d3ae59288f1e7d58d76558a6ee96d533bc5019f`) |
 | **Why that kernel** | Armbian rk3588 `bleedingedge` → `KERNEL_MAJOR_MINOR=7.2` — derived in [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md). Armbian itself still points that branch at `tag:v7.2-rc7`; we pin the **final** release deliberately. |
 | **Boards** | Radxa Rock 5B+, Orange Pi 5+ (both `BOARDFAMILY=rockchip-rk3588`) |
-| **Status** | **The base has just moved to `v7.2`; the series has not been re-applied against it yet, and no rebase ledger for this base exists.** Do not read the row above as an applies-cleanly claim. **Not run on hardware, not upstream-bound.** This repo builds nothing — the series was compiled into a real `linux-image-7.1.7-ceralive-rk3588` `.deb` downstream by `image-building-pipeline` against the *previous* `v7.1.7` base, which was a compile proof and *not* a hardware one. |
+| **Status** | **Re-anchored onto `v7.2` and applying: all 22 active members `git am` clean, every post-apply assertion passes, and the patched tree cross-compiles.** The ledger is [`docs/REBASE-v7.2.md`](docs/REBASE-v7.2.md). **Not run on hardware at this base, not upstream-bound.** Every board result this repo quotes was measured at the previous `v7.1.7` base and is historical here; `v7.2` board evidence is pending. |
 
 ## What's in the series
 
 Upstream's numbering is preserved verbatim, gap included. First-party and
-backported patches continue the same counter from `0006`:
+backported patches continue the same counter from `0006`. 22 members are active
+across 27 slots: `0004` was never published, and `0007`, `0023`, `0024` and
+`0025` are retired ordinals whose slots stay burned.
 
 | | Patch | Source | What it does |
 |---|---|---|---|
@@ -26,7 +28,7 @@ backported patches continue the same counter from `0006`:
 | *0004* | — | — | **Never published upstream.** The gap is intentional; do not renumber to close it. |
 | `0005` | hdmirx audio | `upstream/` | The driver half of HDMI-RX audio capture: registers an ASoC `hdmi-audio-codec` under `hdmi_receiver@fdee0000` and drives the receiver's audio FIFO, ACR-derived sample rate and recovered clock. Adds no device tree. |
 | `0006` | hdmirx audio sound card | `ceralive/` | The device-tree half. Without it `0005`'s codec is bound but ALSA never instantiates a card, so HDMI-IN audio cannot be captured at all. |
-| `0007` | iommu dte-limit fix | `backports/` | Backport of mainline `8d4346ecd495`. Sets `BIT(31)` of the IOMMU's `MMU_AUTO_GATING`, without which a DTE fetch racing a page-table update blocks the IOMMU — a black screen on the VOP, and sporadic RGA3 hangs. Merged for 7.2-rc1, absent from `v7.1.7`. |
+| *0007* | — | — | **Retired ordinal.** Was a `backports/` backport of mainline `8d4346ecd495`, the IOMMU `MMU_AUTO_GATING` fix. That commit is in the `v7.2` base, so carrying it twice is what the retirement avoids — the fix is still there, it just is not ours any more. Slot burned like `0004`'s: [`docs/UPSTREAM-STATUS.md` § retired ordinals](docs/UPSTREAM-STATUS.md#retired-ordinals-0007-0023-0024-0025); the archived file: [`retired/REGISTRY.md`](retired/REGISTRY.md). |
 | `0008` | rkvenc DMA max segment size | `ceralive/` | **`UNVALIDATED` on hardware.** Sets the encoder's DMA max segment size in `rkvenc_hw_probe()`, so an imported dma-buf's recorded length stops being truncated to the `SZ_64K` default. Fixes a bookkeeping defect in `0001`; the IOVA guardrail that catches the symptom is deliberately left alone. |
 | `0009` | `system-uncached` dma-heap | `ceralive/` | **`UNVALIDATED` on hardware.** Registers a second dma-heap named exactly `system-uncached` — the name Rockchip's MPP userspace hard-codes and mainline does not provide — with non-cacheable mappings, a one-time cache clean at allocation, and the CPU-sync steps skipped only for that heap. Without it `mpph264enc` does not register at all, and cached memory under an uncached name encodes non-deterministically. |
 | `0010` | naneng-combphy RTERM erratum | `backports/` | **Unmerged lore posting** (`PATCHv1`, Shawn Lin). Forces RX-termination detect ready in `PHYREG26` so a PCIe peer's termination is seen at critical temperatures. No commit id exists and none is claimed. |
@@ -42,7 +44,7 @@ backported patches continue the same counter from `0006`:
 | `0020` | rkvenc service survives a single core's unbind | `ceralive/` | **Root-caused on a REAL Rock 5B+**, by fault injection. `0014`'s own service state machine had no path back to `LIVE`, so one core's transient unbind left `/dev/mpp_service` returning `-ENODEV` for the rest of the boot — after the core had re-probed successfully. |
 | `0021` | rkvenc task, core and service lifecycle | `ceralive/` | **Root-caused on a REAL Rock 5B+**, over one continuous fault-injection and unbind session. Four defects in one lifecycle, in the order the board gave them up because each fix made the next reachable: `rkvenc_task_finish()` released unconditionally what `rkvenc_hw_run()` had already unwound (`bad unlock balance`, runtime-PM underflow); the worker then kept reading a task it had just freed (KASAN use-after-free); a secondary core stayed a dispatch target after a main-core rebind left its IOMMU domain NULL (Oops in `__iommu_attach_group()`); and a service-node unbind freed `srv` under an open descriptor, because its wait was skipped whenever a core had already claimed the quiesce. Carried as `0021`+`0023`+`0024`+`0025` while it was being discovered, folded into one patch afterwards — **byte-neutral**, proven by an identical `git am` tree object. |
 | `0022` | rkvenc ioctl request coverage and element bounds | `ceralive/` | **Root-caused on a REAL Rock 5B+, then broken by it TWICE and amended in place both times; the current version is hardware-verified.** From an ioctl drill that `0016` should have made green and did not: a register request naming bytes no class owns was clamped and accepted instead of refused; `INIT_TRANS_TABLE` bounded bytes but not alignment; an unreadable user buffer reported `-EIO`. Reading the same paths found two unbounded counts and a byte/element overrun no drill case covers. v1's coverage test then refused **every** encode, and v2's refused **every H.265** one — MPP's HEVC programme is a single write spanning `SQI` and `SCL` across a genuine 24-byte hole in the class map, which "one contiguous run" cannot accept. The rule is now *clipping*: a span may cross the map's own holes provided it leaves no class half-named, which is exactly what `class-overrun` does and still gets `-EINVAL` for. |
-| *0023*–*0025* | — | — | **Retired ordinals.** Carried while the `0021` lifecycle defects were being discovered one at a time, then folded into `0021`. The slots are burned like `0004`'s, not renumbered. What each one individually documented: [`docs/UPSTREAM-STATUS.md` § retired ordinals](docs/UPSTREAM-STATUS.md#retired-ordinals-0023-0024-0025); the archived files: [`retired/REGISTRY.md`](retired/REGISTRY.md). |
+| *0023*–*0025* | — | — | **Retired ordinals.** Carried while the `0021` lifecycle defects were being discovered one at a time, then folded into `0021`. The slots are burned like `0004`'s and `0007`'s, not renumbered. What each one individually documented: [`docs/UPSTREAM-STATUS.md` § retired ordinals](docs/UPSTREAM-STATUS.md#retired-ordinals-0007-0023-0024-0025); the archived files: [`retired/REGISTRY.md`](retired/REGISTRY.md). |
 | `0026` | hdmirx register lock hardirq context | `ceralive/` | **Root-caused AND re-verified on a REAL Rock 5B+**, the first time a physical HDMI source was attached to a lockdep boot. `rst_lock` is a `spinlock_t` taken from the CEC and HDMI hardirqs, which `CONFIG_PROVE_RAW_LOCK_NESTING` reports as an invalid wait context — and that report calls `debug_locks_off()`, silencing lockdep for the rest of the boot in *every* subsystem. Promoted to `raw_spinlock_t`; same scope, same leaf position, identical code on a non-RT build. |
 | `0027` | hdmirx SCDC bit-clock-ratio recovery | `ceralive/` | **Root-caused, fixed AND validated on a REAL Rock 5B+ in one session** — the first HDMI-RX patch here whose evidence is a working 4K60 capture. `hdmirx_tmds_clk_ratio_config()` cannot tell "the source declared 1/10" from "the source wrote no SCDC at all", so an empty `SCDC_REGBANK_STATUS1` was treated as authoritative and a 4K59.94p link was structurally unlockable — ~500+ consecutive failures — with `0002`'s PHY re-init unable to help, because it ends by re-deriving the ratio from that same empty register. Fixes the failure log too: it named `SCDC_REGBANK_STATUS3`, the wrong register, and never printed `cmu_st`. After a completed lock-loop failure the ratio is forced to 1/40 once and the wait re-entered; the flag clears on `hdmirx_plugout()`. **600/600 frames at 3840x2160, steady 59.94 fps, zero errors, 4/4 across HPD renegotiation cycles.** Answers `docs/EVAL-0002-EDID.md` B4 in the negative. |
 
@@ -222,9 +224,14 @@ as a patch.
 ```bash
 scripts/preflight.sh --head     # has Armbian moved the branch we pin?
 # edit KERNEL_TAG / KERNEL_TAG_OBJECT / KERNEL_COMMIT together
-cp rebase/v7.1.7.rules rebase/<new-tag>.rules   # seed, then re-decide every rule
+cp rebase/v7.2.rules rebase/<new-tag>.rules     # seed, then re-decide every rule
 scripts/apply.sh                # resolve conflicts per the rule below
+# then write docs/REBASE-<new-tag>.md — a verdict per ordinal, hunks for every revision
 ```
+
+A member whose fix the new base already carries is **retired**, not deleted: move
+it to [`retired/`](retired/REGISTRY.md), add its row, and leave the ordinal burned.
+That is what happened to `0007` at `v7.2`.
 
 **The rule for conflicts.** `rebase/*.rules` are context-only for ALL lanes. At a base bump, `ceralive/`-lane patches MAY be revised in place (payload changes) to preserve their documented intent on the new base; every such revision is recorded hunk-by-hunk in `docs/REBASE-<tag>.md` with an intent-preservation note, and is verified by the post-apply assertions and the bump's compile evidence. Payload drift in `upstream/` or `backports/` lanes remains behavioural: resolve ONLY by a new `ceralive/` fixup patch at a fresh ordinal (the 0008-fixes-0001 pattern) or STOP and report. `upstream/` bytes are never edited.
 
@@ -241,14 +248,17 @@ main reason this fork exists — `patches/` is generated from `upstream/` and
 `ceralive/` by `scripts/build-series.py`, which adds mailbox headers and drops the
 `.DS_Store` noise.
 
-**The series is re-anchored for `v7.1.7`.** Upstream targeted `v6.19-rc8`. Two
-context anchors drifted in between; both were re-anchored, and the five members
-that existed at the re-anchor are documented hunk by hunk in
-[`docs/REBASE-v7.1.7.md`](docs/REBASE-v7.1.7.md). `0007` was backported straight
-onto `v7.1.7` and `0008` and `0009` were authored against it, so none of the three
-needed re-anchoring and none has a ledger entry there. The earlier
-[`docs/REBASE-v7.1.5.md`](docs/REBASE-v7.1.5.md) is kept as the record of the
-previous base.
+**The series is re-anchored for `v7.2`.** Upstream targeted `v6.19-rc8`. Each base
+move gets its own ledger, and the current one is
+[`docs/REBASE-v7.2.md`](docs/REBASE-v7.2.md): a verdict per ordinal, the reverse/
+forward apply probes behind it, and every revised hunk with the intent it
+preserves. Two members needed work at this base — `0009` was adapted to `v7.2`'s
+modularised system heap, and `0018`'s added note re-cites the base's own
+no-unload statement — while `0007` was retired outright because `8d4346ecd495` is
+in the base. Everything else applies unchanged. The two earlier ledgers,
+[`docs/REBASE-v7.1.7.md`](docs/REBASE-v7.1.7.md) and
+[`docs/REBASE-v7.1.5.md`](docs/REBASE-v7.1.5.md), are kept as the record of the
+bases before this one.
 
 **Nothing the patches do was changed.** `scripts/verify-payload-parity.py` proves
 that the set of added and removed lines in `patches/` is byte-identical to the
@@ -348,8 +358,10 @@ mainline has no `dma_heap_get_dev()`, so the one-time cache clean uses
 three are kept in a separate `ceralive/` directory precisely so the credit line
 above stays true.
 
-`0007` is neither ours nor Ross Cawston's: it is a straight backport of a mainline
-commit by Simon Xue, carried in `backports/` with its own provenance header.
+`0007` was neither ours nor Ross Cawston's: it was a straight backport of a
+mainline commit by Simon Xue, carried in `backports/` with its own provenance
+header until the `v7.2` base absorbed the commit. It is archived in `retired/`,
+credit intact.
 
 `0010`, `0011` and `0012` are likewise other people's work — Shawn Lin
 (Rockchip), Simon Wright, and Detlev Casanova (Collabora) — but taken from
