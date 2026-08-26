@@ -226,11 +226,7 @@ cp rebase/v7.1.7.rules rebase/<new-tag>.rules   # seed, then re-decide every rul
 scripts/apply.sh                # resolve conflicts per the rule below
 ```
 
-**The rule for conflicts.** A conflict may be resolved with a `rebase/*.rules`
-entry **only** if the fix changes how a patch *applies*, never what it *does*.
-Anything else gets written up in a new `docs/REBASE-<tag>.md` and the series is
-reported as not applying. That boundary is machine-enforced, not a convention —
-see [`docs/REBASE-v7.1.7.md`](docs/REBASE-v7.1.7.md).
+**The rule for conflicts.** `rebase/*.rules` are context-only for ALL lanes. At a base bump, `ceralive/`-lane patches MAY be revised in place (payload changes) to preserve their documented intent on the new base; every such revision is recorded hunk-by-hunk in `docs/REBASE-<tag>.md` with an intent-preservation note, and is verified by the post-apply assertions and the bump's compile evidence. Payload drift in `upstream/` or `backports/` lanes remains behavioural: resolve ONLY by a new `ceralive/` fixup patch at a fresh ordinal (the 0008-fixes-0001 pattern) or STOP and report. `upstream/` bytes are never edited.
 
 ---
 

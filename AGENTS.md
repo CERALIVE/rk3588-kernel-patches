@@ -373,15 +373,7 @@ repo, [`CERALIVE/rk3588-vendor-kernel-patches`](https://github.com/CERALIVE/rk35
 pinned to `rk-6.1-rkr5.1` (the vendor branch the shipped image actually runs).
 Send anyone who lands here looking for it there, and do not duplicate it here.
 
-**The conflict rule is machine-enforced, not a convention.** A `rebase/*.rules`
-entry may only re-anchor **context** lines. `build-series.py` raises if a rule's
-anchor resolves to a `+`/`-` line or matches ambiguously, and
-`verify-payload-parity.py` independently proves the ordered set of added/removed
-lines in `patches/` is byte-identical to `upstream/`. If a conflict cannot be fixed
-that way it is **behavioural**: STOP, write it up in `docs/REBASE-<tag>.md`, and
-report the series as not applying. **Never invent a resolution** — this is
-especially true for `0001`, ~4,200 lines of ported vendor driver code whose real
-conflicts need someone who can test on RK3588 hardware.
+`rebase/*.rules` are context-only for ALL lanes. At a base bump, `ceralive/`-lane patches MAY be revised in place (payload changes) to preserve their documented intent on the new base; every such revision is recorded hunk-by-hunk in `docs/REBASE-<tag>.md` with an intent-preservation note, and is verified by the post-apply assertions and the bump's compile evidence. Payload drift in `upstream/` or `backports/` lanes remains behavioural: resolve ONLY by a new `ceralive/` fixup patch at a fresh ordinal (the 0008-fixes-0001 pattern) or STOP and report. `upstream/` bytes are never edited.
 
 **This repo pins a TAG; Armbian tracks a BRANCH.** Armbian's `edge` resolves to
 `KERNELBRANCH="branch:linux-7.1.y"`, a rolling stable branch. This repo pins
@@ -490,8 +482,8 @@ defconfig, and a 30-minute job to prove something the image pipeline proves bett
 - Don't restate a pinned coordinate in a workflow — read it from `kernel-pin.env`
 - Don't strip quotes off a `kernel-pin.env` value by hand; `read_pin()` parses it
   the way bash does, inline `#` comments included
-- Don't put a behavioural fix in `rebase/*.rules` — that is what the stop ledger is for
-- Don't add a `+`/`-` line anywhere in this repo's patch pipeline; payload parity must hold
+- Don't put a behavioural fix in `rebase/*.rules`; revise a `ceralive/` source patch in place with a hunk-by-hunk intent-preservation note, add a fresh-ordinal `ceralive/` fixup for `upstream/` or `backports/` drift, or STOP and report
+- Don't let a `rebase/*.rules` entry touch a `+`/`-` line; rules are context-only for every lane
 - Don't follow `linux-7.1.y` downstream — pin `KERNEL_TAG`
 - Don't bump `KERNEL_TAG` without `scripts/preflight.sh --head` and a new `docs/REBASE-<tag>.md`
 - Don't add this repo to `REPOS` or `versions.yaml` — it ships no artifact
