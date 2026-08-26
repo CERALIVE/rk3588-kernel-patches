@@ -7,7 +7,7 @@ diff --git a/drivers/dma-buf/heaps/Kconfig b/drivers/dma-buf/heaps/Kconfig
  
 +config DMABUF_HEAPS_SYSTEM_UNCACHED
 +	bool "DMA-BUF System Uncached Heap"
-+	depends on DMABUF_HEAPS_SYSTEM
++	depends on DMABUF_HEAPS_SYSTEM=y
 +	depends on ARCH_HAS_DMA_PREP_COHERENT
 +	help
 +	  Choose this option to additionally export the system heap's pages
@@ -30,9 +30,9 @@ diff --git a/drivers/dma-buf/heaps/Kconfig b/drivers/dma-buf/heaps/Kconfig
 +	  non-cacheable and that no dirty lines survive allocation. If in
 +	  doubt, say N.
 +
- config DMABUF_HEAPS_CMA
- 	bool "DMA-BUF CMA Heap"
- 	depends on DMABUF_HEAPS && DMA_CMA
+ config DMABUF_HEAPS_SYSTEM_CC_SHARED
+ 	bool "DMA-BUF System Heap for decrypted CoCo VMs"
+ 	depends on DMABUF_HEAPS && ARCH_HAS_MEM_ENCRYPT && DMABUF_HEAPS_SYSTEM=y
 diff --git a/drivers/dma-buf/heaps/system_heap.c b/drivers/dma-buf/heaps/system_heap.c
 --- a/drivers/dma-buf/heaps/system_heap.c
 +++ b/drivers/dma-buf/heaps/system_heap.c
@@ -67,7 +67,7 @@ diff --git a/drivers/dma-buf/heaps/system_heap.c b/drivers/dma-buf/heaps/system_
 +	bool uncached;
  };
  
- #define LOW_ORDER_GFP (GFP_HIGHUSER | __GFP_ZERO)
+ #define cc_shared_buffer(b) (IS_ENABLED(CONFIG_DMABUF_HEAPS_SYSTEM_CC_SHARED) && \
 @@ -129,6 +133,7 @@
  	INIT_LIST_HEAD(&a->list);
  	a->mapped = false;
@@ -79,7 +79,7 @@ diff --git a/drivers/dma-buf/heaps/system_heap.c b/drivers/dma-buf/heaps/system_
 @@ -162,6 +167,13 @@
  	int ret;
  
- 	attrs = a->cc_shared ? DMA_ATTR_CC_SHARED : 0;
+ 	attrs = cc_shared_buffer(a) ? DMA_ATTR_CC_SHARED : 0;
 +	/*
 +	 * An uncached buffer's pages were cleaned to the point of coherency
 +	 * at allocation and are never written through a cacheable mapping
@@ -147,7 +147,7 @@ diff --git a/drivers/dma-buf/heaps/system_heap.c b/drivers/dma-buf/heaps/system_
  
 @@ -235,6 +261,8 @@
  	prot = vma->vm_page_prot;
- 	if (buffer->cc_shared)
+ 	if (cc_shared_buffer(buffer))
  		prot = pgprot_decrypted(prot);
 +	if (buffer->uncached)
 +		prot = pgprot_writecombine(prot);
@@ -156,7 +156,7 @@ diff --git a/drivers/dma-buf/heaps/system_heap.c b/drivers/dma-buf/heaps/system_
  		unsigned long n = sg->length >> PAGE_SHIFT;
 @@ -284,6 +312,8 @@
  	prot = PAGE_KERNEL;
- 	if (buffer->cc_shared)
+ 	if (cc_shared_buffer(buffer))
  		prot = pgprot_decrypted(prot);
 +	if (buffer->uncached)
 +		prot = pgprot_writecombine(prot);
@@ -179,7 +179,7 @@ diff --git a/drivers/dma-buf/heaps/system_heap.c b/drivers/dma-buf/heaps/system_
  
  	INIT_LIST_HEAD(&pages);
  	i = 0;
-@@ -464,6 +496,32 @@
+@@ -467,6 +499,33 @@
  		}
  	}
  
@@ -193,8 +193,9 @@ diff --git a/drivers/dma-buf/heaps/system_heap.c b/drivers/dma-buf/heaps/system_
 +	 *
 +	 * arch_dma_prep_coherent() is the same primitive dma_direct_alloc()
 +	 * uses to hand out coherent memory, so this introduces no new cache
-+	 * maintenance policy. DMABUF_HEAPS_SYSTEM is bool, so this file is
-+	 * built in and needs no exported symbol for it.
++	 * maintenance policy. DMABUF_HEAPS_SYSTEM_UNCACHED depends on
++	 * DMABUF_HEAPS_SYSTEM=y, so this file is built in whenever this path
++	 * is enabled and needs no exported symbol for it.
 +	 *
 +	 * Allocation failure needs no new handling and gets none: the error
 +	 * paths below are reached with the pages in their ordinary state,
@@ -223,7 +224,7 @@ diff --git a/drivers/dma-buf/heaps/system_heap.c b/drivers/dma-buf/heaps/system_
  static int __init system_heap_create(void)
  {
  	struct dma_heap_export_info exp_info;
-@@ -524,6 +586,29 @@
+@@ -527,7 +590,30 @@
  	if (IS_ERR(sys_heap))
  		return PTR_ERR(sys_heap);
  
@@ -251,5 +252,6 @@ diff --git a/drivers/dma-buf/heaps/system_heap.c b/drivers/dma-buf/heaps/system_
 +	}
 +
  	if (IS_ENABLED(CONFIG_HIGHMEM) ||
+ 	    !IS_ENABLED(CONFIG_DMABUF_HEAPS_SYSTEM_CC_SHARED) ||
  	    !cc_platform_has(CC_ATTR_MEM_ENCRYPT))
  		return 0;

@@ -3,12 +3,18 @@
 ## ROLE IN THE GROUP
 
 Holds the **mainline-track RK3588 kernel patch series** for CeraLive: VEPU580
-hardware encoder plus three HDMI-RX fixes imported from upstream, one backported
-IOMMU fix, three backported **unmerged lore postings** (a combphy erratum and
-two dw-hdmi-qp audio fixes), and first-party patches for HDMI-RX audio DT,
-encoder DMA/dma-heap fixes, and rkvenc/HDMI-RX quality hardening (including the
-4K60 SCDC bit-clock-ratio recovery, `0027`) — converted to a `git am` mailbox
-series and pinned to an exact kernel tag.
+hardware encoder plus three HDMI-RX fixes imported from upstream, three
+backported **unmerged lore postings** (a combphy erratum and two dw-hdmi-qp audio
+fixes), and first-party patches for HDMI-RX audio DT, encoder DMA/dma-heap fixes,
+and rkvenc/HDMI-RX quality hardening (including the 4K60 SCDC bit-clock-ratio
+recovery, `0027`) — converted to a `git am` mailbox series and pinned to an exact
+kernel tag.
+
+The base is **`v7.2`**; the series is re-anchored onto it and applies clean. **22
+members are active across 27 slots** — `0004` was never published, and `0007`,
+`0023`, `0024` and `0025` are retired ordinals whose slots stay burned. Board
+evidence quoted anywhere in this repo was measured at the previous `v7.1.7` base
+and is historical here.
 
 Produces **patch text only** — no `.deb`, no kernel, no image artifact. It is
 therefore **NOT in the device image `REPOS` array** and has **no `versions.yaml`
@@ -55,9 +61,10 @@ rk3588-kernel-patches/
 │   ├── EVAL-0002-EDID.md      # verdict: keep 0002; the 7.2-rc1 fix is already in the base
 │   ├── EVAL-0005-AUDIO.md     # verdict: keep 0005+0006; the lore v4 series drops Rock 5B+
 │   ├── PROVENANCE.md          # licence/provenance audit incl. the MIT-claim caveat
-│   ├── PREFLIGHT.md           # how the Armbian edge -> 7.1 mapping was derived
-│   ├── REBASE-v7.1.7.md       # hunk-by-hunk rebase ledger — CURRENT base; the 5 re-anchored members (0007/0008/0009 needed none)
-│   └── REBASE-v7.1.5.md       # ledger for the previous base, kept for the record
+│   ├── PREFLIGHT.md           # how the Armbian bleedingedge -> 7.2 mapping was derived
+│   ├── REBASE-v7.2.md         # hunk-by-hunk rebase ledger — CURRENT base; a verdict per ordinal, 0009 + 0018 revised, 0007 retired
+│   ├── REBASE-v7.1.7.md       # ledger for the previous base, kept for the record
+│   └── REBASE-v7.1.5.md       # ledger for the base before that, likewise
 └── .github/workflows/patch-apply.yml
 ```
 
@@ -79,9 +86,11 @@ rk3588-kernel-patches/
 | Why HDMI-RX audio needs a DT patch at all | [`docs/PROVENANCE.md`](docs/PROVENANCE.md) §8 and `patches/0006-*`'s own mail header |
 | Why the rkvenc DMA segment-size fix exists, and why the IOVA guardrail is left alone | [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) § `0008` and `patches/0008-*`'s own mail header |
 | Check whether Armbian moved `edge` | `scripts/preflight.sh --head` |
-| Understand the 7.1 derivation | [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md) |
+| Understand the `bleedingedge` → 7.2 derivation | [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md) |
 | Apply the series | `scripts/apply.sh` — see [`README.md`](README.md) |
-| Why a hunk was re-anchored | [`docs/REBASE-v7.1.7.md`](docs/REBASE-v7.1.7.md) |
+| Why a hunk was re-anchored, or a member revised, at the current base | [`docs/REBASE-v7.2.md`](docs/REBASE-v7.2.md) |
+| What an earlier base needed | [`docs/REBASE-v7.1.7.md`](docs/REBASE-v7.1.7.md), [`docs/REBASE-v7.1.5.md`](docs/REBASE-v7.1.5.md) |
+| Why an ordinal is retired, and where its file went | [`retired/REGISTRY.md`](retired/REGISTRY.md) + [`docs/UPSTREAM-STATUS.md` § retired ordinals](docs/UPSTREAM-STATUS.md#retired-ordinals-0007-0023-0024-0025) |
 | Licence / redistribution facts | [`docs/PROVENANCE.md`](docs/PROVENANCE.md) |
 | Why not the `sfqr0414` fork | [`README.md`](README.md) → "Why not the `sfqr0414` fork" |
 
@@ -150,25 +159,33 @@ fixed the same thing, and only a content check says so. Second, **the trigger is
 precondition, not a licence to delete**: when it fires the patch still goes through
 [`retired/REGISTRY.md`](retired/REGISTRY.md). Every lore reference in that file uses
 `https://lore.kernel.org/r/<message-id>`, which resolves regardless of list; do not
-record list-scoped URLs. Its Collabora source table sits behind an Anubis
-proof-of-work gate, so re-capturing it needs a real browser, not `curl`.
+record list-scoped URLs. Its Collabora source table is re-captured through the
+GitLab **REST API** route, which was **ungated when last checked (2026-08-26)** —
+plain `curl` got the file with no challenge. The gate has been up before and can
+return, so the real-browser fallback stays documented rather than deleted; check
+which one you are getting before concluding anything from a short response.
 
 **`0002` has exactly ONE upstream answer, we already ship it, and it is not a
 replacement.** `7dd27810eea0` ("hdmirx: Fix HPD lane hold time", in the base since
 `v7.1.6`) **is** the 7.2-rc1 "HDMI-RX EDID fix" — the stable backport of mainline
 `d1162a5adbb5`. The table names the symptom, the patch names the mechanism; it
-applies to `v7.1.7` as a **no-op** and shares no mechanism with `0002`'s IRQ
-masking, lock-loop rework and DMA reset, so there is nothing to adopt and
-nothing to retire. Whether `0002` is still *needed* on top of it is a
+applied to `v7.1.7` as a **no-op**, it is in the `v7.2` base as mainline, and it
+shares no mechanism with `0002`'s IRQ masking, lock-loop rework and DMA reset — so
+there is nothing to adopt and nothing to retire. `0002`'s own three symbols are
+still absent from the base. Whether `0002` is still *needed* on top of it is a
 behavioural judgement needing an RK3588 board and an HDMI source — do not
 resolve that from source alone. Verdict: [`docs/EVAL-0002-EDID.md`](docs/EVAL-0002-EDID.md); see also
 [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) § `0002` and
 [`docs/REBASE-v7.1.7.md`](docs/REBASE-v7.1.7.md) § Stable overlap.
 
-**Resolving a lore Message-ID does not need a browser — but try both routes.**
-`lore.kernel.org`'s HTML views and its `/raw` endpoint are Anubis-gated (`curl`
-gets 403 or a proof-of-work page). Two ways through, and neither covers every
-posting on its own:
+**Resolving a lore Message-ID does not need a browser — but try both routes, and
+never spoof a browser User-Agent.** `lore.kernel.org`'s HTML views and its `/raw`
+endpoint are Anubis-gated (`curl` gets 403 or a proof-of-work page). Anubis keys
+on the **UA**, and it does so in the direction that surprises people: sending
+`Mozilla/5.0` to the canonical `t.mbox.gz` returns **HTTP 200 wrapping a challenge
+page**, so a status-code-only check reads as success and yields no mbox, while
+`curl`'s own default UA gets the real gzip. Two ways through, and neither covers
+every posting on its own:
 
 1. `patchwork.kernel.org` — `…/api/patches/?msgid=<msgid>` returns the real
    subject, submitter and project as JSON, and `…/patch/<msgid>/mbox/` returns
@@ -185,8 +202,9 @@ posting on its own:
    (`^>(>*From )` → `\1`) before feeding anything to `git apply`. This is how the
    `0005` verdict read its counterpart.
 
-The Anubis-vs-browser note above still applies to the Collabora **table**, which
-has no API of either kind.
+The Collabora **table** is a third case and neither of these routes reaches it. It
+is re-captured through the GitLab REST API, ungated as of 2026-08-26 — see the
+retire-trigger fact above for the caveat.
 
 **Membership is exactly-once, both directions, and the build enforces it.**
 `build-series.py` used to walk a hard-coded `SERIES` table and never look at the
@@ -210,14 +228,17 @@ verbatim by CI, so it cannot rot the same way.
 There is no `0004` upstream. **Do NOT renumber to close the gap** — the 1:1 filename
 correspondence with upstream is what makes the import auditable. First-party and
 backported patches continue the same counter (`0006`, `0008`, `0009` and
-`0013`–`0022`, `0026` and `0027` = `ceralive/`; `0007`, `0010`, `0011` and `0012` =
+`0013`–`0022`, `0026` and `0027` = `ceralive/`; `0010`, `0011` and `0012` =
 `backports/`), so the ordinals read `1/27`, `2/27`, `3/27`, `5/27` … `27/27` — the
-gap at 4 stays visible, which is the whole point. **`0023`, `0024` and `0025` are
-three more gaps**, retired rather than never-published: they were folded into
-`0021` and their slots are burned, exactly like `0004`'s. `SERIES_TOTAL` in
-`build-series.py` is the **slot** count including every gap, not the member count;
-the build refuses an ordinal above it because the `N/SERIES_TOTAL` subject would
-otherwise lie.
+gap at 4 stays visible, which is the whole point. **`0007`, `0023`, `0024` and
+`0025` are four more gaps**, retired rather than never-published: `0007` because
+the `v7.2` base absorbed the mainline commit it backported, and the other three
+because they were folded into `0021`. All four slots are burned, exactly like
+`0004`'s. That leaves **22 active members across 27 slots**, and the two numbers
+are not interchangeable: `SERIES_TOTAL` in `build-series.py` is the **slot** count
+including every gap, not the member count, and the build refuses an ordinal above
+it because the `N/SERIES_TOTAL` subject would otherwise lie. A retirement does not
+shrink it.
 
 **`0005` is driver-only; `0006` is what makes HDMI-RX audio reachable.** Upstream's
 `0005` registers an ASoC `hdmi-audio-codec` child under `hdmi_receiver@fdee0000`
@@ -248,7 +269,7 @@ length from the FIRST mapped segment only, and `0001` never set a max segment
 size, so every import over 64 KiB was recorded as exactly `0x10000` bytes.
 `0008` sets the cap in `rkvenc_hw_probe()` and **reads it back**, failing the
 probe with `-EINVAL` if it did not take — `dma_set_max_seg_size()` returns
-`void` at `v7.1.7`, so checking the effect is the only check available.
+`void` at the pinned base, so checking the effect is the only check available.
 
 Two things about it are easy to get wrong:
 
@@ -307,7 +328,7 @@ Three things about this block are easy to get wrong:
   proven **byte-neutral** (identical `git am` tree object) before it landed, so
   every hardware result recorded against the old ordinals still stands. Do not
   re-split it, and do not treat a `git blame` hit on `0023`/`0024`/`0025` as a
-  missing patch: [`docs/UPSTREAM-STATUS.md` § retired ordinals](docs/UPSTREAM-STATUS.md#retired-ordinals-0023-0024-0025)
+  missing patch: [`docs/UPSTREAM-STATUS.md` § retired ordinals](docs/UPSTREAM-STATUS.md#retired-ordinals-0007-0023-0024-0025)
   is the map. One comment in `rkvenc_drv.c` still names `0024`; that is correct
   history, and rewording it would have broken the byte-neutrality proof.
 - **A green `rkvenc-invalid-ioctl --all-malformed` is NOT the acceptance criterion
@@ -365,7 +386,7 @@ transcript.
 `armbian/linux-rockchip` commit zeroes `capture.channels_min/max` for every
 `hdmi-audio-codec` instance with no TX/RX discrimination, which breaks HDMI-RX
 capture on the **vendor** BSP (`rk-6.1-rkr6.1`). Mainline — including the pinned
-`v7.1.7` — already carries the upstream `no_i2s_playback` / `no_i2s_capture` /
+`v7.2` — already carries the upstream `no_i2s_playback` / `no_i2s_capture` /
 `no_spdif_*` pdata flags and only clears a direction when the registering driver
 asks. There is nothing to fix here, and a backport of that vendor-side fix would
 not even apply. Do not add one — the vendor-side fix lives in its own sibling
@@ -373,30 +394,31 @@ repo, [`CERALIVE/rk3588-vendor-kernel-patches`](https://github.com/CERALIVE/rk35
 pinned to `rk-6.1-rkr5.1` (the vendor branch the shipped image actually runs).
 Send anyone who lands here looking for it there, and do not duplicate it here.
 
-**The conflict rule is machine-enforced, not a convention.** A `rebase/*.rules`
-entry may only re-anchor **context** lines. `build-series.py` raises if a rule's
-anchor resolves to a `+`/`-` line or matches ambiguously, and
-`verify-payload-parity.py` independently proves the ordered set of added/removed
-lines in `patches/` is byte-identical to `upstream/`. If a conflict cannot be fixed
-that way it is **behavioural**: STOP, write it up in `docs/REBASE-<tag>.md`, and
-report the series as not applying. **Never invent a resolution** — this is
-especially true for `0001`, ~4,200 lines of ported vendor driver code whose real
-conflicts need someone who can test on RK3588 hardware.
+`rebase/*.rules` are context-only for ALL lanes. At a base bump, `ceralive/`-lane patches MAY be revised in place (payload changes) to preserve their documented intent on the new base; every such revision is recorded hunk-by-hunk in `docs/REBASE-<tag>.md` with an intent-preservation note, and is verified by the post-apply assertions and the bump's compile evidence. Payload drift in `upstream/` or `backports/` lanes remains behavioural: resolve ONLY by a new `ceralive/` fixup patch at a fresh ordinal (the 0008-fixes-0001 pattern) or STOP and report. `upstream/` bytes are never edited.
 
-**This repo pins a TAG; Armbian tracks a BRANCH.** Armbian's `edge` resolves to
-`KERNELBRANCH="branch:linux-7.1.y"`, a rolling stable branch. This repo pins
-`v7.1.7` = `c7ba9d6de43e9d9bd755b1f3c19501a38898c6b6`, the tip of that branch when
-the pin was last taken. `apply.sh` refuses to run if the tag in the tree does not
-resolve to the pinned commit *and* the pinned tag object, so a moved or re-created
-tag fails loudly instead of going green against the wrong source. **Downstream
-consumers must pin the same tag**, not follow `linux-7.1.y`.
+**This repo pins a FINAL TAG; Armbian's `bleedingedge` arm still names a release
+candidate.** The branch this repo derives its mapping from is `bleedingedge`, and
+`config/sources/mainline-kernel.conf.sh` pins it to `tag:v7.2-rc7` because
+Armbian's roll-over-once-7.2-ships TODO has not been actioned. `v7.2` final was
+tagged one day *before* the recorded framework revision, so the rc is simply
+stale, and gating this series on a kernel nobody will run would be the wrong
+trade. This repo therefore pins `v7.2` = `8d3ae59288f1e7d58d76558a6ee96d533bc5019f`,
+tag object `237a1c39e8dfd3e1c6f1f023eea37a48ec04cc63`. The `MAJOR.MINOR` — and so
+the config and patch-directory names — is identical either way, which is what
+makes the substitution safe. `apply.sh` refuses to run if the tag in the tree does
+not resolve to the pinned commit *and* the pinned tag object, so a moved or
+re-created tag fails loudly instead of going green against the wrong source.
+**Downstream consumers must pin the same tag.**
 
-**The `edge` mapping was verified fresh, and the family config is a trap.**
+**The `bleedingedge` mapping was verified fresh, and the family config is a trap.**
 `config/sources/families/rockchip-rk3588.conf` handles only `legacy` and `vendor`
-in its own `case $BRANCH`, which alone suggests `edge` is unsupported — but it
-sources `rockchip64_common.inc`, whose `edge)` arm sets `KERNEL_MAJOR_MINOR=7.1`.
-`preflight.sh` asserts the absence of an `edge)` case in the family config so a
-future Armbian change there cannot silently invalidate the derivation.
+in its own `case $BRANCH`, which alone suggests `bleedingedge` is unsupported — but
+it sources `rockchip64_common.inc`, whose `bleedingedge)` arm sets
+`KERNEL_MAJOR_MINOR=7.2`. `preflight.sh` asserts the absence of a
+`bleedingedge)` case in the family config so a future Armbian change there cannot
+silently invalidate the derivation, and it asserts Armbian's explicit `7.2` arm and
+its keyed source override too. The same trap caught the previous `edge` → `7.1`
+derivation; the shape of the mistake outlived the branch name.
 
 **This does NOT change the shipped image's kernel.** The shipped image is locked to
 the Armbian **vendor** BSP (`rk-6.1-rkr5.1`, `linux-image-vendor-rk35xx`) — image
@@ -479,8 +501,11 @@ defconfig, and a 30-minute job to prove something the image pipeline proves bett
   screened, and here is why" is a result, and an absent row reads as an oversight
 - Don't add, import or retire a patch without updating its `docs/UPSTREAM-STATUS.md`
   row — including the **Last checked** date; a status change with a stale date is not a check
-- Don't record a list-scoped lore URL, and don't re-capture the Collabora status
-  table with `curl` — it is Anubis-gated and needs a real browser
+- Don't record a list-scoped lore URL, and don't spoof a browser User-Agent on a
+  lore fetch — Anubis answers `Mozilla/5.0` with an HTTP 200 challenge page, so
+  the spoof is what breaks it, not what gets you through
+- Don't renumber to close a retired ordinal's slot, and don't read `SERIES_TOTAL`
+  as a member count — it is 27 slots holding 22 members
 - Don't rename, alias, symlink or `mknod` the `system-uncached` heap — the name is
   a userspace ABI and an alias is a corruption trap, not a workaround
 - Don't tick anything in `docs/BOARD-QUALIFICATION.md` without a pasted transcript,
@@ -490,9 +515,9 @@ defconfig, and a 30-minute job to prove something the image pipeline proves bett
 - Don't restate a pinned coordinate in a workflow — read it from `kernel-pin.env`
 - Don't strip quotes off a `kernel-pin.env` value by hand; `read_pin()` parses it
   the way bash does, inline `#` comments included
-- Don't put a behavioural fix in `rebase/*.rules` — that is what the stop ledger is for
-- Don't add a `+`/`-` line anywhere in this repo's patch pipeline; payload parity must hold
-- Don't follow `linux-7.1.y` downstream — pin `KERNEL_TAG`
+- Don't put a behavioural fix in `rebase/*.rules`; revise a `ceralive/` source patch in place with a hunk-by-hunk intent-preservation note, add a fresh-ordinal `ceralive/` fixup for `upstream/` or `backports/` drift, or STOP and report
+- Don't let a `rebase/*.rules` entry touch a `+`/`-` line; rules are context-only for every lane
+- Don't follow Armbian's branch downstream, and don't pin its release candidate — pin `KERNEL_TAG`
 - Don't bump `KERNEL_TAG` without `scripts/preflight.sh --head` and a new `docs/REBASE-<tag>.md`
 - Don't add this repo to `REPOS` or `versions.yaml` — it ships no artifact
 - Don't let `gh pr create` pick the base branch (see PR TARGETING)

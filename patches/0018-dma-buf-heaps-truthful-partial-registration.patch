@@ -10,6 +10,9 @@ dma_heap_add() has no counterpart at this base (no removal, no
 unregister, no atomic multi-add). The function returned the error
 and said nothing about the partial state, so nothing claims the
 pair is atomic in a comment nobody can check.
+v7.2 commit fd55edff8a0a modularizes the system heap but explicitly
+states that it cannot unload because the required infrastructure is
+still missing; modularization therefore does not provide rollback.
 
 BEHAVIOUR. States the behaviour instead of hiding it: the error
 message now names the partial state explicitly (first heap REMAINS
@@ -35,7 +38,7 @@ injection seam is actually used; nothing real is registered by the
 suite. tests/check-kunit-heap.sh re-asserts the boot's actual heaps
 from userspace with an anchored TAP match.
 
-First-party: authored by CeraLive against v7.1.7, with no upstream
+First-party: authored by CeraLive against v7.2, with no upstream
 counterpart in rockchip-rk3588-mainline-patches. The source of record is
 ceralive/0018-dma-buf-heaps-truthful-partial-registration.patch; patches/ is generated from it by
 scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the
@@ -49,7 +52,7 @@ is added, because a DCO assertion belongs to whoever actually submits it.
 diff --git a/drivers/dma-buf/heaps/system_heap.c b/drivers/dma-buf/heaps/system_heap.c
 --- a/drivers/dma-buf/heaps/system_heap.c
 +++ b/drivers/dma-buf/heaps/system_heap.c
-@@ -573,7 +573,34 @@ static struct system_heap_priv system_heap_uncached_priv = {
+@@ -573,7 +573,38 @@ static struct system_heap_priv system_heap_uncached_priv = {
  	.uncached = true,
  };
  
@@ -62,7 +65,11 @@ diff --git a/drivers/dma-buf/heaps/system_heap.c b/drivers/dma-buf/heaps/system_
 + * unregister, and no way to add two heaps atomically. So when the system heap
 + * registers and the system-uncached heap that follows it FAILS, the first heap
 + * stays registered -- permanently, for that boot. That is not a bug to be
-+ * papered over with a fake rollback; a rollback here would have to invent an
++ * papered over by v7.2's system-heap modularization: fd55edff8a0a explicitly
++ * says the module cannot unload because the required infrastructure is still
++ * missing. Loading it as a module changes when registration runs, not whether
++ * a successful first registration can be withdrawn after the second fails.
++ * A fake rollback would have to invent an
 + * API that does not exist, and a "cleanup" that silently leaves the heap
 + * present while reporting that it removed it is worse than no cleanup at all.
 + *

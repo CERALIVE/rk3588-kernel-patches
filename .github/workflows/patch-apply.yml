@@ -47,8 +47,8 @@ jobs:
       - name: the candidate reconciliation matrix is complete
         run: |
           python3 scripts/validate-candidate-matrix.py docs/UPSTREAM-STATUS.md \
-            --aliases M1,M2,M3,M4,M5,M6,M7,M8,U1,U2,U3,U4,U5,U6,U7 \
-            --source-sha256 729b87afb5a4fb097713b79e264a3688e25f3f971a8b9fcbc6c73d49340dccb9
+            --aliases M1,M2,M3,M4,M5,M6,M7,M8,U1,U2,U3,U4,U5,U6,U7,N1,N2,N3,N4,N5,N6,N7,N8,N9,N10,N11,N12,N13 \
+            --source-sha256 dd1b0d9c740bd26b8a3ea593f0e1226eab5d21f8e612f09c387e65a58aa74753
 
       - name: provenance and lore-import fixtures
         run: python3 -m unittest tests.test_lore_import tests.test_build_series_provenance

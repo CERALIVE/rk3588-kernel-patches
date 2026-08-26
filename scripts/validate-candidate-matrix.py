@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from datetime import date
 from pathlib import Path
 
 BEGIN = "<!-- candidate-matrix: begin -->"
@@ -28,6 +29,11 @@ END = "<!-- candidate-matrix: end -->"
 ALIAS_RE = re.compile(r"^####\s+(?P<alias>[A-Z][0-9]+)\b")
 FIELD_RE = re.compile(r"^-\s+(?P<key>[A-Za-z][A-Za-z0-9 /()-]*):\s*(?P<value>.+?)\s*$")
 SNAPSHOT_RE = re.compile(r"^Discovery snapshot sha256:\s*(?P<digest>[0-9a-f]{64})\s*$")
+DEFERRED_NOTES_RE = re.compile(
+    r"^failed route:\s*(?P<route>\S(?:.*\S)?);\s*"
+    r"attempt date:\s*(?P<attempt_date>\d{4}-\d{2}-\d{2})$",
+    re.IGNORECASE,
+)
 
 REQUIRED_FIELDS = (
     "Capture revision",
@@ -50,7 +56,11 @@ DISPOSITIONS = (
     "OUT",
     "ALREADY-IN-BASE / NO IMPORT",
     "ALREADY CARRIED",
+    "RETIRED",
+    "DEFERRED",
 )
+
+PARSED_FIELDS = frozenset((*REQUIRED_FIELDS, "Notes"))
 
 
 def extract_block(text: str) -> list[str]:
@@ -86,7 +96,7 @@ def parse(lines: list[str]) -> tuple[str | None, dict[str, dict[str, str]], list
         if not field or current is None:
             continue
         key, value = field.group("key").strip(), field.group("value").strip()
-        if key not in REQUIRED_FIELDS:
+        if key not in PARSED_FIELDS:
             continue
         if key in entries[current]:
             problems.append(f"line {lineno}: {current} repeats field {key!r}")
@@ -134,6 +144,21 @@ def main() -> int:
             problems.append(
                 f"{alias}: disposition {disposition!r} is not one of {DISPOSITIONS}"
             )
+        if disposition == "DEFERRED":
+            notes = entries[alias].get("Notes", "")
+            match = DEFERRED_NOTES_RE.fullmatch(notes)
+            if match is None:
+                problems.append(
+                    f"{alias}: DEFERRED Notes must name 'failed route' and "
+                    "'attempt date' (YYYY-MM-DD)"
+                )
+            else:
+                try:
+                    date.fromisoformat(match.group("attempt_date"))
+                except ValueError:
+                    problems.append(
+                        f"{alias}: DEFERRED Notes attempt date is not a valid date"
+                    )
 
     for alias in sorted(set(entries) - set(wanted)):
         problems.append(f"{alias}: row present but not in --aliases")

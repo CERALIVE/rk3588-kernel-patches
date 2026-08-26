@@ -83,6 +83,7 @@ upstream, superseded, or scoped out.
 
 | Patch | Lane | Ordinal | Retired | Kernel tag | Reason |
 |-------|------|---------|---------|------------|--------|
+| `0007-iommu-rockchip-disable-fetch-dte-time-limit.patch` | `backports` | 7 | 2026-08-26 | `v7.2` | Landed upstream — 8d4346ecd495 in v7.2 |
 | `0023-rkvenc-worker-task-lifetime.patch` | `ceralive` | 23 | 2026-08-12 | `v7.1.7` | Folded into `0021` — the worker use-after-free half. See `docs/UPSTREAM-STATUS.md` § retired ordinals |
 | `0024-rkvenc-secondary-core-iommu-domain-lifetime.patch` | `ceralive` | 24 | 2026-08-12 | `v7.1.7` | Folded into `0021` — the secondary-core NULL-domain half. See `docs/UPSTREAM-STATUS.md` § retired ordinals |
 | `0025-rkvenc-service-node-teardown-lifetime.patch` | `ceralive` | 25 | 2026-08-12 | `v7.1.7` | Folded into `0021` — the service-node teardown half. See `docs/UPSTREAM-STATUS.md` § retired ordinals |

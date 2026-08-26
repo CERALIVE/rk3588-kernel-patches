@@ -42,7 +42,7 @@ from: https://lore.kernel.org/all/1774423383-36599-1-git-send-email-shawn.lin@ro
   canonical_patch_sha256   b2ef18765558fb27ddbb00c14ed3fc40e93bbc200a45e337e864326973df249b
     (this posting's canonical mail, archived at backports/lore/U3/01.mbox)
 
-Backported into the CeraLive series for v7.1.7. The source of record is
+Backported into the CeraLive series for v7.2. The source of record is
 backports/0010-phy-rockchip-naneng-combphy-force-rterm-det-rdy.patch; patches/ is generated from it by
 scripts/build-series.py, and scripts/verify-payload-parity.py holds it to
 the same added/removed-line parity every other lane gets.

@@ -36,7 +36,7 @@ from: https://lore.kernel.org/all/86fcf349-0a7a-4618-9001-612371b0f71b@symple.nz
   canonical_patch_sha256   c20e395c4c8a67b3aff0a18bd28fbffedba8f91f42eb99fda2bc7ad2e83c1108
     (this posting's canonical mail, archived at backports/lore/U5/01.mbox)
 
-Backported into the CeraLive series for v7.1.7. The source of record is
+Backported into the CeraLive series for v7.2. The source of record is
 backports/0011-dw-hdmi-qp-acr-n-cts-helper.patch; patches/ is generated from it by
 scripts/build-series.py, and scripts/verify-payload-parity.py holds it to
 the same added/removed-line parity every other lane gets.
