@@ -8,10 +8,10 @@ imported at `e13a311` (2026-07-01) with full history and authorship preserved.
 
 | | |
 |---|---|
-| **Target kernel** | `v7.1.7` (`c7ba9d6de43e9d9bd755b1f3c19501a38898c6b6`) |
-| **Why that kernel** | Armbian rk3588 `edge` → `KERNEL_MAJOR_MINOR=7.1` — derived in [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md) |
+| **Target kernel** | `v7.2` (`8d3ae59288f1e7d58d76558a6ee96d533bc5019f`) |
+| **Why that kernel** | Armbian rk3588 `bleedingedge` → `KERNEL_MAJOR_MINOR=7.2` — derived in [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md). Armbian itself still points that branch at `tag:v7.2-rc7`; we pin the **final** release deliberately. |
 | **Boards** | Radxa Rock 5B+, Orange Pi 5+ (both `BOARDFAMILY=rockchip-rk3588`) |
-| **Status** | Applies cleanly. **Not run on hardware, not upstream-bound.** This repo builds nothing — the series has been compiled into a real `linux-image-7.1.7-ceralive-rk3588` `.deb` downstream by `image-building-pipeline`, which is a compile proof and *not* a hardware one. |
+| **Status** | **The base has just moved to `v7.2`; the series has not been re-applied against it yet, and no rebase ledger for this base exists.** Do not read the row above as an applies-cleanly claim. **Not run on hardware, not upstream-bound.** This repo builds nothing — the series was compiled into a real `linux-image-7.1.7-ceralive-rk3588` `.deb` downstream by `image-building-pipeline` against the *previous* `v7.1.7` base, which was a compile proof and *not* a hardware one. |
 
 ## What's in the series
 
@@ -186,20 +186,30 @@ gates patch application only.
 ## Use with `armbian-build`
 
 Armbian applies user patches from `userpatches/`, in lexical order, per kernel
-family. For `edge` on rk3588 the family directory is `rockchip64-7.1`:
+family. For `bleedingedge` on rk3588 the family directory is `rockchip64-7.2`:
 
 ```bash
 git clone --depth 1 https://github.com/armbian/build
-mkdir -p build/userpatches/kernel/archive/rockchip64-7.1/
-cp patches/*.patch build/userpatches/kernel/archive/rockchip64-7.1/
-cd build && ./compile.sh BOARD=rock-5b-plus BRANCH=edge
+mkdir -p build/userpatches/kernel/archive/rockchip64-7.2/
+cp patches/*.patch build/userpatches/kernel/archive/rockchip64-7.2/
+cd build && ./compile.sh BOARD=rock-5b-plus BRANCH=bleedingedge
 ```
 
 Do not copy `patches/series` into that directory — Armbian would try to apply it
 as a patch.
 
+> **That last line may not run as written, and that is expected.** Neither
+> CeraLive board lists `bleedingedge` in its `KERNEL_TARGET` menu
+> (`rock-5b-plus` = `vendor,current,edge`, `orangepi5-plus` =
+> `current,edge,vendor`), so `compile.sh` may refuse the branch. That costs this
+> repository nothing: the family directory above is what the series needs, and
+> CeraLive builds `KERNEL_TAG` from source through `image-building-pipeline`
+> rather than through Armbian's board menu. `scripts/preflight.sh` prints those
+> two values and deliberately does not fail on them — see
+> [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md).
+
 > The family directory is derived, not guessed. It comes from
-> `KERNEL_MAJOR_MINOR=7.1` + `LINUXFAMILY=rockchip64`; see
+> `KERNEL_MAJOR_MINOR=7.2` + `LINUXFAMILY=rockchip64`; see
 > [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md). Upstream's README says
 > `rockchip64-6.19`, which was right for the kernel *they* targeted.
 
@@ -210,7 +220,7 @@ as a patch.
 `kernel-pin.env` is the single source of truth. Bumping it is a deliberate act:
 
 ```bash
-scripts/preflight.sh --head     # has Armbian moved edge?
+scripts/preflight.sh --head     # has Armbian moved the branch we pin?
 # edit KERNEL_TAG / KERNEL_TAG_OBJECT / KERNEL_COMMIT together
 cp rebase/v7.1.7.rules rebase/<new-tag>.rules   # seed, then re-decide every rule
 scripts/apply.sh                # resolve conflicts per the rule below
