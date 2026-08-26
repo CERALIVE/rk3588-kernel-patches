@@ -192,5 +192,15 @@ record is in the v72-rebase disposition evidence.
 
 Compile evidence: see the v72-rebase evidence bundle.
 
-This ledger does not itself claim v7.2 board validation. The compile proof is the
-next plan step, and board evidence recorded against v7.1.7 remains historical.
+The patched tree also builds. A cross `aarch64-linux-gnu-` toolchain produced
+`Image`, the module set and the device-tree blobs from arm64 `defconfig` merged
+with the downstream CeraLive edge Kconfig fragment, at zero compiler errors; the
+bundle carries the toolchain identity, the whole build log, the resolved
+`.config` and the artifact digests. That resolve needed one added fragment line
+for v7.2, because upstream introduced a new arm64 platform prompt that
+`defconfig` also enables — the bundle's fragment verdict has the reasoning, and
+applying it belongs to `image-building-pipeline`, not to this repository.
+
+This ledger does not itself claim v7.2 board validation. A tree that compiles is
+not a board that works, and board evidence recorded against v7.1.7 remains
+historical.
