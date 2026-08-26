@@ -1191,13 +1191,13 @@ a disposition outside `IN` / `OUT` / `ALREADY-IN-BASE / NO IMPORT` /
 
 ```bash
 python3 scripts/validate-candidate-matrix.py docs/UPSTREAM-STATUS.md \
-  --aliases M1,M2,M3,M4,M5,M6,M7,M8,U1,U2,U3,U4,U5,U6,U7 \
-  --source-sha256 729b87afb5a4fb097713b79e264a3688e25f3f971a8b9fcbc6c73d49340dccb9
+  --aliases M1,M2,M3,M4,M5,M6,M7,M8,U1,U2,U3,U4,U5,U6,U7,N1,N2,N3,N4,N5,N6,N7,N8,N9,N10,N11,N12,N13 \
+  --source-sha256 dd1b0d9c740bd26b8a3ea593f0e1226eab5d21f8e612f09c387e65a58aa74753
 ```
 
 <!-- candidate-matrix: begin -->
 
-Discovery snapshot sha256: 729b87afb5a4fb097713b79e264a3688e25f3f971a8b9fcbc6c73d49340dccb9
+Discovery snapshot sha256: dd1b0d9c740bd26b8a3ea593f0e1226eab5d21f8e612f09c387e65a58aa74753
 
 #### M1
 
@@ -1438,6 +1438,224 @@ Discovery snapshot sha256: 729b87afb5a4fb097713b79e264a3688e25f3f971a8b9fcbc6c73
 - Regression state: not assessed — the candidate fails on apply
 - Retire trigger: not applicable — nothing carried. Re-open only if the series is reposted against a 7.x tree
 - Disposition: OUT
+
+#### N1
+
+- Capture revision: Collabora main `607a267502837967ed4a9a58bd9cdaed842a9509`, captured 2026-08-26; canonical `PATCHv1` thread fetched HTTP 200
+- Subject: drm/rockchip: vop2: fix layer-configuration timeout in multi-output setups (five patches)
+- Identity: lore `20260504-vop2-layer-cfg-tmout-v1-0-730226a7331e@collabora.com`; merged-object identifiers are recorded only in Notes
+- Thread review: Andy Yan reviewed all five payloads; no unresolved maintainer objection or reported board regression was found
+- Prerequisite graph: one direct prerequisite (`3e89a8c68354`, the multi-output layer/port-select update); within the posting, patches 1 and 2 are the fixes and patches 3 through 5 are ordered cleanup
+- Follow-up sweep: all five payloads are present in the 7.3-bound DRM history; no corrective reroll or regression follow-up was found
+- Apply base-only: patch 1 passes `git apply --check` on the fully applied v7.2 tree
+- Apply stacked: patch 2 passes after patch 1, but canonical patch 3 is rejected by `git apply --check` as `corrupt patch ...:79`; the required depth-at-most-two stack proof therefore FAILS and patches 4/5 cannot rescue the candidate
+- Overlap: one file only, `drivers/gpu/drm/rockchip/rockchip_vop2_reg.c`; no current CeraLive member edits it
+- Build result: not run — the all-required benefit test failed at the stacked apply criterion, so the candidate is matrix-only
+- Regression state: benefit test findings — defect-fix on the RK3588 VOP2 device display path PASS; depth at most two by stacked apply FAIL; no unresolved maintainer objection PASS; no known board-regression report PASS
+- Retire trigger: not applicable — nothing imported. Re-screen only from a canonical posting whose five payloads pass the required stack check
+- Disposition: OUT
+- Notes: DRM history objects `9f5670802df0`, `d1ad644e572c`, `6a2f7339191b`, `bc5ffd6fc30c`, `dc3de97433db`; findings only, never unmerged-posting header identities
+
+#### N2
+
+- Capture revision: Collabora main captured 2026-08-26; `PATCHv2` merged for the 7.3 cycle
+- Subject: drm/rockchip: vop2: add YUV support to background color
+- Identity: lore `20260601-vop2-bg-yuv-v2-0-e5aef1d16fec@collabora.com`; merged-object identifiers are recorded only in Notes
+- Thread review: merged with maintainer acknowledgement; no open review issue changes its feature classification
+- Prerequisite graph: two-patch feature set implementing userspace background-color YUV conversion
+- Follow-up sweep: both payloads are in current mainline history
+- Apply base-only: not attempted — excluded as a feature before import screening
+- Apply stacked: not attempted — excluded as a feature
+- Overlap: VOP2 display code, but no current series member touches the background-color path
+- Build result: not run — nothing imported
+- Regression state: no regression assessed; this adds a feature rather than repairing a CeraLive-required defect
+- Retire trigger: not applicable — nothing carried. Re-open only if YUV background color becomes a device requirement
+- Disposition: OUT
+- Notes: mainline objects `28e670a0885c`, `09dfa47fc557`; findings only
+
+#### N3
+
+- Capture revision: Collabora main captured 2026-08-26; selected four-commit subset of the merged `PATCHv17` color-format series
+- Subject: DRM color-format output infrastructure subset
+- Identity: lore `20260609-color-format-v17-0-35739b5782cc@collabora.com`; merged-object identifiers are recorded only in Notes
+- Thread review: reviewed and merged; no open review issue changes the out-of-scope classification
+- Prerequisite graph: the four selected commits are part of a larger output-format feature chain rather than a standalone device defect fix
+- Follow-up sweep: selected payloads are in current mainline history
+- Apply base-only: not attempted — excluded on feature scope
+- Apply stacked: not attempted — excluded on feature scope
+- Overlap: DRM Rockchip and dw-hdmi-qp output paths; `0011`/`0012` also touch dw-hdmi-qp but for audio only
+- Build result: not run — nothing imported
+- Regression state: no regression assessed; importing a subset of a larger feature chain would increase integration risk
+- Retire trigger: not applicable — nothing carried. Re-open only with a concrete required output-format feature
+- Disposition: OUT
+- Notes: DRM history objects `f424f307de42`, `c1bfe8dac0a7`, `6937769f047a`, `ae4a4e69389d`; findings only
+
+#### N4
+
+- Capture revision: current mainline history checked 2026-08-26
+- Subject: drm/bridge: dw-hdmi-qp: switch to atomic_create_state
+- Identity: merged context-drift tracker for the `0011`/`0012` apply surface; object identifier is recorded only in Notes
+- Thread review: reviewed, tested, and merged; tracked solely to explain future context movement
+- Prerequisite graph: none relevant to the carried audio fixes
+- Follow-up sweep: no payload replacement for `0011` or `0012` was found
+- Apply base-only: not attempted — tracker only, not an import candidate
+- Apply stacked: not attempted — tracker only
+- Overlap: same `dw-hdmi-qp.c` file as `0011`/`0012`, different bridge-state mechanism
+- Build result: not run — nothing imported
+- Regression state: no CeraLive regression; possible future hunk-context drift only
+- Retire trigger: not applicable — nothing carried. Keep as context when rebasing `0011`/`0012`
+- Disposition: OUT
+- Notes: mainline object `050febb6aedf`; findings only
+
+#### N5
+
+- Capture revision: current mainline history checked 2026-08-26
+- Subject: drm/bridge: dw-hdmi-qp: use common HDMI output bus formats helper
+- Identity: merged context-drift tracker for the `0011`/`0012` apply surface; object identifier is recorded only in Notes
+- Thread review: reviewed and merged; tracked solely to explain future context movement
+- Prerequisite graph: part of the merged color-format infrastructure, not a prerequisite for the carried audio fixes
+- Follow-up sweep: no payload replacement for `0011` or `0012` was found
+- Apply base-only: not attempted — tracker only, not an import candidate
+- Apply stacked: not attempted — tracker only
+- Overlap: same `dw-hdmi-qp.c` file as `0011`/`0012`, different output-format mechanism
+- Build result: not run — nothing imported
+- Regression state: no CeraLive regression; possible future hunk-context drift only
+- Retire trigger: not applicable — nothing carried. Keep as context when rebasing `0011`/`0012`
+- Disposition: OUT
+- Notes: DRM history object `433d8ad4eb5d`; findings only
+
+#### N6
+
+- Capture revision: live canonical `PATCHv6` thread fetched HTTP 200 on 2026-08-26; ten patches posted 2026-08-11
+- Subject: phy: rockchip: samsung-hdptx: clock fixes and API transition cleanups
+- Identity: lore `20260811-hdptx-clk-fixes-v6-0-75bca0ee5753@collabora.com`; queue object identifiers are recorded only in Notes
+- Thread review: Vinod Koul replied `Applied, thanks!` for all ten on 2026-08-11; this resolves the v5 review uncertainty rather than confirming the plan's expected OUT reason
+- Prerequisite graph: ten internally ordered patches, far beyond the capped N1-only import and the two-prerequisite screening ceiling
+- Follow-up sweep: live `linux-phy` `next` still resolves to `ba8376e8c76c`; the ten accepted objects were not ancestors of that published tip at the check time
+- Apply base-only: not attempted — accepted ten-patch queue set is outside the capped import inventory
+- Apply stacked: not attempted — same scope reason
+- Overlap: samsung-hdptx HDMI output PHY; no current series member edits the driver
+- Build result: not run — nothing imported
+- Regression state: the v6 acceptance resolves prior behavior-change objections, but no CeraLive board run exists and the set remains out of scope
+- Retire trigger: not applicable — nothing carried. Observe the accepted queue rather than backporting it here
+- Disposition: OUT
+- Notes: accepted queue objects `f0c2c9c58a48`, `c4fe5a9f3790`, `229788526ff2`, `9ac3daadb906`, `aec3e4ce25da`, `c2dd42e3ebd7`, `e49e4bc9f90e`, `1bb1b4769e43`, `859fd8ae691e`, `f3a8aba9c36f`; findings only
+
+#### N7
+
+- Capture revision: live `PATCHv10` posting dated 2026-07-31
+- Subject: add HDMI 2.0 support to DW HDMI QP TX
+- Identity: lore `20260731-dw-hdmi-qp-scramb-v10-0-294364b2cf15@collabora.com`
+- Thread review: tracked posting with review and tested tags, including Rock 5B; still a 69-patch cross-subsystem feature series
+- Prerequisite graph: 69 patches spanning DRM connector infrastructure, dw-hdmi-qp, Rockchip glue, HPD, SCDC and board enablement
+- Follow-up sweep: no smaller merged defect-only subset was selected by this closed screening round
+- Apply base-only: not attempted — tracked-only feature series
+- Apply stacked: not attempted — tracked-only feature series
+- Overlap: broad dw-hdmi-qp output changes share a file with audio-only `0011`/`0012`
+- Build result: not run — nothing imported
+- Regression state: no defect-only board regression finding justifies importing a 69-patch feature stack
+- Retire trigger: not applicable — nothing carried. Track until mainline absorbs the feature
+- Disposition: OUT
+
+#### N8
+
+- Capture revision: live canonical `PATCHv3` thread fetched HTTP 200 on 2026-08-26; fourteen patches posted 2026-07-09
+- Subject: support 10-bit YUV422 and 8/10-bit YUV420 color format on DW HDMI QP
+- Identity: lore `20260709-dw-hdmi-qp-yuv-v3-0-a4a982a9f2e7@collabora.com`
+- Thread review: thread contains automated findings and an author/Igor Paunovic follow-up in August; no compact defect-only reroll was identified
+- Prerequisite graph: fourteen patches across VOP2, dw-hdmi-qp, bindings and RK3588 device tree
+- Follow-up sweep: still listed as pending in the fresh Collabora capture
+- Apply base-only: not attempted — tracked-only output-format feature
+- Apply stacked: not attempted — tracked-only output-format feature
+- Overlap: broad VOP2/dw-hdmi-qp output path; `0011`/`0012` overlap the bridge file only for audio
+- Build result: not run — nothing imported
+- Regression state: no CeraLive requirement or board regression justifies the full feature chain
+- Retire trigger: not applicable — nothing carried. Track until merged or needed by a device requirement
+- Disposition: OUT
+
+#### N9
+
+- Capture revision: HDMI-RX audio `PATCHv4` live thread re-checked 2026-08-26; latest repost `20260805154039.10161-1-royalnet026@gmail.com`
+- Subject: RK3588 HDMI-RX audio capture support
+- Identity: lore `20260721064115.64809-1-royalnet026@gmail.com` with the 2026-08-05 v4 repost
+- Thread review: reviewed but still unmerged; the 2026-08-11 maintainer reply says landing may take significant time
+- Prerequisite graph: four-patch driver plus device-tree series; its DT half enables Orange Pi 5 Plus only
+- Follow-up sweep: v7.2 has no `rk3588-rock-5b-plus.dts`, and the v4 posting still provides no Rock 5B+ sound-card wiring
+- Apply base-only: not re-attempted — board coverage remains the decisive exclusion
+- Apply stacked: not re-attempted — board coverage remains the decisive exclusion
+- Overlap: replaces the same HDMI-RX audio driver/DT mechanisms as `0005`/`0006` with incompatible sound-DAI arity
+- Build result: not run — nothing imported
+- Regression state: importing it would leave Rock 5B+ in the bound-codec/no-card failure state and drop behavior already carried by `0005`/`0006`
+- Retire trigger: not applicable — nothing carried. Re-open only after merge and Rock 5B+ DT coverage
+- Disposition: OUT
+
+#### N10
+
+- Capture revision: Linux v7.2 history checked 2026-08-26
+- Subject: clk: rockchip: fix RK3588 I2S MCLK output gates being disabled as unused
+- Identity: merged base fix; object identifier is recorded only in Notes
+- Thread review: merged fix marks all four RK3588 I2S MCLK output gates `CLK_IGNORE_UNUSED`
+- Prerequisite graph: already resolved in the pinned base
+- Follow-up sweep: no import required; the fix is an ancestor of v7.2
+- Apply base-only: not attempted — post-image is already in the base
+- Apply stacked: not attempted — already in the base
+- Overlap: clock path used by HDMI-RX audio, but no carried patch needs to duplicate the fix
+- Build result: not applicable — nothing imported
+- Regression state: the historical MCLK veto is resolved by the base
+- Retire trigger: not applicable — nothing carried
+- Disposition: ALREADY-IN-BASE / NO IMPORT
+- Notes: mainline object `946352b2f88fd`; findings only
+
+#### N11
+
+- Capture revision: Linux v7.2 history checked 2026-08-26
+- Subject: phy: rockchip: naneng-combphy: consolidate SSC configuration and always configure spread direction
+- Identity: merged two-commit base pair; object identifiers are recorded only in Notes
+- Thread review: both commits are merged; the second corrects the direction-write regression introduced by the first
+- Prerequisite graph: the correction directly follows its consolidation prerequisite, and both are already in v7.2
+- Follow-up sweep: final v7.2 source contains the shared helper and corrected unconditional spread-direction programming
+- Apply base-only: not attempted — both post-images are already in the base
+- Apply stacked: not attempted — already in the base
+- Overlap: same naneng-combphy driver as `0010`, but the carried RTERM erratum is a separate mechanism
+- Build result: not applicable — nothing imported
+- Regression state: no duplicate fix needed; importing only one half would recreate the regression
+- Retire trigger: not applicable — nothing carried by this candidate
+- Disposition: ALREADY-IN-BASE / NO IMPORT
+- Notes: mainline objects `0b31f297557f`, `be2b5b17b705`; findings only
+
+#### N12
+
+- Capture revision: live queue probe attempted 2026-08-26
+- Subject: media-tree HDMI-RX queue reachability
+- Identity: `git ls-remote https://git.linuxtv.org/media_tree.git`
+- Thread review: not reachable through the required direct queue route; it returned HTTP 504
+- Prerequisite graph: deferred until the authoritative direct queue can be inspected
+- Follow-up sweep: `media-committers.git` was reachable at `next`, but it does not turn the failed required route into a successful direct media-tree check
+- Apply base-only: not attempted — queue inspection deferred
+- Apply stacked: not attempted — queue inspection deferred
+- Overlap: not assessed while the direct queue is unavailable
+- Build result: not run — nothing imported
+- Regression state: unknown; no source conclusion is inferred from an unreachable route
+- Retire trigger: retry the same direct route in the next screening round
+- Disposition: DEFERRED
+- Notes: failed route: https://git.linuxtv.org/media_tree.git; attempt date: 2026-08-26
+
+#### N13
+
+- Capture revision: live queue probe completed 2026-08-26
+- Subject: clk/rockchip queue reachability
+- Identity: `git ls-remote https://git.kernel.org/pub/scm/linux/kernel/git/mmind/linux-rockchip.git refs/heads/v7.3-clk/next`
+- Thread review: route reachable; no queue-access uncertainty remains
+- Prerequisite graph: not applicable — this row closes the reachability question rather than proposing another import
+- Follow-up sweep: `v7.3-clk/next` resolved successfully; the closed inventory contains no additional clock payload to import
+- Apply base-only: not attempted — no import candidate resulted from the reachable queue
+- Apply stacked: not attempted — no import candidate resulted from the reachable queue
+- Overlap: no additional payload selected
+- Build result: not run — nothing imported
+- Regression state: none identified from the reachable queue
+- Retire trigger: not applicable — nothing carried. Re-probe only when a named clock defect enters the inventory
+- Disposition: OUT
+- Notes: reachable queue tip `586ff159ec02533c17dd928641529cb0b52e9c62`; finding only
 
 <!-- candidate-matrix: end -->
 
