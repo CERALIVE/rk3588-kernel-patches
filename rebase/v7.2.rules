@@ -1,0 +1,32 @@
+# rebase/v7.2.rules — context re-anchors for KERNEL_TAG=v7.2
+#
+# Rules are context-only for every source lane. `replace` and `insert-before`
+# refuse to match a '+' or '-' line, build-series.py recomputes hunk counts, and
+# verify-payload-parity.py independently checks the generated payload against its
+# source lane. Behavioural changes do not belong here: ceralive/ patches may be
+# revised in place under the lane law, while upstream/ or backports/ drift needs a
+# fresh-ordinal ceralive/ fixup or a stop.
+#
+# FORMAT
+#   <patch-file>|<op>|<anchor-line>|<payload-line>
+#
+#   op=replace         replace one existing context line; counts do not change.
+#   op=insert-before   insert one new context line before the unique anchor;
+#                      old/new counts each increase by one.
+#
+# Literal '\t' in a field is a TAB. Every anchor must match exactly once.
+
+# --- R1 -------------------------------------------------------------------
+# 0001 inserts the mpp-service and rkvenc nodes between vdec1_mmu and av1d. The
+# neighbouring vdec1_mmu power-domain anchor changed from the shared VDPU domain
+# to its dedicated RKVDEC1 domain before v7.1.7 and remains so at v7.2. The v7.2
+# DT churn changes nodes around this location, not this relationship or any line
+# added by 0001. This rule preserves the current neighbouring node byte-for-byte.
+0001-rockchip-rk3588-vepu580-encoder-support-v3.patch|replace|\t\tpower-domains = <&power RK3588_PD_VDPU>;|\t\tpower-domains = <&power RK3588_PD_RKVDEC1>;
+
+# --- R2 -------------------------------------------------------------------
+# 0005 adds private audio members after `cec`. Mainline's `phy_rw_lock`, inserted
+# between `cec` and `stream_lock`, remains present at v7.2. Reintroducing it as
+# context keeps the patch's members at their authored location; this private,
+# unpacked structure is accessed by member name, so the placement is neutral.
+0005-rockchip-rk3588-hdmirx-audio.patch|insert-before|\tstruct mutex stream_lock; /* to lock video stream capture */|\tstruct mutex phy_rw_lock; /* to protect phy r/w configuration */

@@ -14,6 +14,11 @@ Dropped 8 payload-free "Binary files .../.DS_Store ... differ"
 stanza(s) that macOS left in the original `diff -ruN` output. They carry
 no data, and git apply refuses a binary stanza with no index line.
 
+Re-anchored for v7.2 (upstream developed this against v6.19-rc8):
+  - replaced context line `power-domains = <&power RK3588_PD_VDPU>;`
+Context lines only -- see rebase/v7.2.rules and docs/REBASE-v7.2.md for the
+hunk-by-hunk ledger.
+
 NOT upstream-bound: this is a CeraLive-maintained adaptation, not a submission
 to rockchip-rk3588-mainline-patches. No Signed-off-by is added, because none
 was given upstream and inventing one would misattribute a DCO assertion.
@@ -33,7 +38,7 @@ diff -ruN aa/arch/arm64/boot/dts/rockchip/rk3588-base.dtsi bb/arch/arm64/boot/dt
  	cpus {
 @@ -1351,6 +1353,92 @@
  		clock-names = "aclk", "iface";
- 		power-domains = <&power RK3588_PD_VDPU>;
+ 		power-domains = <&power RK3588_PD_RKVDEC1>;
  		#iommu-cells = <0>;
 +	};
 +
