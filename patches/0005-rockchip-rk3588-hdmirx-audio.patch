@@ -10,11 +10,6 @@ Authored by Ross Cawston. This CeraLive copy re-packages the file as a git
 mailbox so it can be applied with `git am`. Every added and removed line is
 byte-identical to upstream's; scripts/verify-payload-parity.py enforces that.
 
-Re-anchored for v7.1.7 (upstream developed this against v6.19-rc8):
-  - restored context line `struct mutex stream_lock; /* to lock video stream capture */`
-Context lines only -- see rebase/v7.1.7.rules and docs/REBASE-v7.1.7.md for the
-hunk-by-hunk ledger.
-
 NOT upstream-bound: this is a CeraLive-maintained adaptation, not a submission
 to rockchip-rk3588-mainline-patches. No Signed-off-by is added, because none
 was given upstream and inventing one would misattribute a DCO assertion.
@@ -62,7 +57,7 @@ diff -ruN aa/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c bb/drivers/med
  static int debug;
  module_param(debug, int, 0644);
  MODULE_PARM_DESC(debug, "debug level (0-3)");
-@@ -135,8 +148,14 @@
+@@ -135,7 +148,13 @@
  	struct gpio_desc *detect_5v_gpio;
  	struct delayed_work delayed_work_hotplug;
  	struct delayed_work delayed_work_res_change;
@@ -73,7 +68,6 @@ diff -ruN aa/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c bb/drivers/med
 +	hdmi_codec_plugged_cb plugged_cb;
 +	struct clk *aud_clk;
 +	int audio_present;
- 	struct mutex phy_rw_lock; /* to protect phy r/w configuration */
  	struct mutex stream_lock; /* to lock video stream capture */
  	struct mutex work_lock; /* to lock the critical section of hotplug event */
  	struct reset_control_bulk_data resets[HDMIRX_NUM_RST];

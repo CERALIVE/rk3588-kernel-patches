@@ -41,7 +41,7 @@ from: https://lore.kernel.org/all/20260519-fix-hdmi-audio-warnings-v1-1-9608966c
   canonical_patch_sha256   ba499367da7479e4d68ca9473d23b479b741140e4656496701549c002e87b2d7
     (this posting's canonical mail, archived at backports/lore/U6/01.mbox)
 
-Backported into the CeraLive series for v7.1.7. The source of record is
+Backported into the CeraLive series for v7.2. The source of record is
 backports/0012-dw-hdmi-qp-audio-eopnotsupp.patch; patches/ is generated from it by
 scripts/build-series.py, and scripts/verify-payload-parity.py holds it to
 the same added/removed-line parity every other lane gets.

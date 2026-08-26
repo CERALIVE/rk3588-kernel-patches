@@ -2,9 +2,10 @@
 # Upstream numbering is preserved verbatim -- 0004 was never published,
 # so the gap is intentional. Do not renumber to close it.
 # First-party (ceralive/): 0006, 0008, 0009, 0013, 0014, 0015, 0016, 0017, 0018, 0019, 0020, 0021, 0022, 0026, 0027.
-# Backports (backports/): 0007, 0010, 0011, 0012 -- 0007 is a merged commit, the rest are unmerged lore postings.
+# Backports (backports/): 0010, 0011, 0012 -- 0007 is a merged commit, the rest are unmerged lore postings.
 # All of them continue the same counter.
-# Target kernel: v7.1.7 (c7ba9d6de43e9d9bd755b1f3c19501a38898c6b6)
+# Target kernel: v7.2 (8d3ae59288f1e7d58d76558a6ee96d533bc5019f)
+# Retired slot 7: 0007-iommu-rockchip-disable-fetch-dte-time-limit.patch -- see retired/REGISTRY.md
 # Retired slot 23: 0023-rkvenc-worker-task-lifetime.patch -- see retired/REGISTRY.md
 # Retired slot 24: 0024-rkvenc-secondary-core-iommu-domain-lifetime.patch -- see retired/REGISTRY.md
 # Retired slot 25: 0025-rkvenc-service-node-teardown-lifetime.patch -- see retired/REGISTRY.md
@@ -13,7 +14,6 @@
 0003-rockchip-rk3588-hdmirx-plugout-fix-v1.patch
 0005-rockchip-rk3588-hdmirx-audio.patch
 0006-rk3588-hdmirx-audio-sound-card.patch
-0007-iommu-rockchip-disable-fetch-dte-time-limit.patch
 0008-rkvenc-set-dma-max-segment-size.patch
 0009-dma-buf-heaps-add-system-uncached-dma-heap.patch
 0010-phy-rockchip-naneng-combphy-force-rterm-det-rdy.patch

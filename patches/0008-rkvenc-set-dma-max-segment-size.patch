@@ -61,7 +61,7 @@ other two, both of which are userspace/heap problems: librockchip-mpp asks for
 a `system-uncached` dma-heap that mainline does not register, and mainline has
 no uncached heap for it to fall back to.
 
-First-party: authored by CeraLive against v7.1.7, with no upstream
+First-party: authored by CeraLive against v7.2, with no upstream
 counterpart in rockchip-rk3588-mainline-patches. The source of record is
 ceralive/0008-rkvenc-set-dma-max-segment-size.patch; patches/ is generated from it by
 scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the

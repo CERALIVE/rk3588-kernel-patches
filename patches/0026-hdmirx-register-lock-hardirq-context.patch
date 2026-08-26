@@ -77,7 +77,7 @@ completes with the CEC interrupt confirmed to have fired, and
 HDMI-RX audio plus rkvenc encode unchanged. See
 docs/UPSTREAM-STATUS.md and docs/BOARD-QUALIFICATION.md.
 
-First-party: authored by CeraLive against v7.1.7, with no upstream
+First-party: authored by CeraLive against v7.2, with no upstream
 counterpart in rockchip-rk3588-mainline-patches. The source of record is
 ceralive/0026-hdmirx-register-lock-hardirq-context.patch; patches/ is generated from it by
 scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the

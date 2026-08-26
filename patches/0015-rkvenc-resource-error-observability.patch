@@ -34,7 +34,7 @@ validation pending. Forced by 0013's fail_clock_enable_once and
 exercised by tests/rkvenc-fault-qa.sh --case fail-clock-enable. See
 docs/BOARD-QUALIFICATION.md.
 
-First-party: authored by CeraLive against v7.1.7, with no upstream
+First-party: authored by CeraLive against v7.2, with no upstream
 counterpart in rockchip-rk3588-mainline-patches. The source of record is
 ceralive/0015-rkvenc-resource-error-observability.patch; patches/ is generated from it by
 scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the

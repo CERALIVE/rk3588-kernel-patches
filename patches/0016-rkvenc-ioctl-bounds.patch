@@ -37,7 +37,7 @@ expectations as reviewed data. build-rkvenc-harness.sh requires a
 verified --kernel-tree (pinned SHA, applied log matches
 patches/series) before compiling.
 
-First-party: authored by CeraLive against v7.1.7, with no upstream
+First-party: authored by CeraLive against v7.2, with no upstream
 counterpart in rockchip-rk3588-mainline-patches. The source of record is
 ceralive/0016-rkvenc-ioctl-bounds.patch; patches/ is generated from it by
 scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the
