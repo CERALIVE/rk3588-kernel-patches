@@ -99,7 +99,7 @@ REVISION_RE = re.compile(r"^v[0-9]+$")
 # gap so our files line up 1:1 with theirs. Every later ordinal continues the same
 # counter regardless of lane: 0007 and 0010-0012 into backports/, everything else
 # into ceralive/.
-SERIES_TOTAL = 29
+SERIES_TOTAL = 30
 
 DS_STORE_RE = re.compile(r"^Binary files .*\.DS_Store .* differ$")
 HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
@@ -1760,6 +1760,56 @@ SERIES: tuple[Patch, ...] = (
             "separate, not-yet-run multi-cycle hardware test determines whether",
             "the preference is reliable; this change proves only that the intended",
             "one-line DTS amendment applies cleanly to the pinned edge tree.",
+        ),
+    ),
+    Patch(
+        filename="0030-rk3588-orangepi-5-plus-typec-dual-role-power.patch",
+        ordinal=30,
+        subject=(
+            "arm64: dts: rockchip: orange pi 5 plus: advertise dual-role power "
+            "in the Type-C PDOs"
+        ),
+        provenance=NULL_OID,
+        author="Andres Cera <andres.cera@hotmail.com>",
+        date="Thu, 27 Aug 2026 16:00:00 +0000",
+        origin=CERALIVE,
+        rationale=(
+            "MOTIVATION. A live readback on an Orange Pi 5 Plus on 2026-08-27",
+            "found dual_role_power=0 on both source-capabilities and",
+            "sink-capabilities below the FUSB302 port's usb_power_delivery/pd0",
+            "directory at i2c-6/6-0022. The operator independently recalled the",
+            "same connection-capability issue occurring on this board before.",
+            "The Rock 5B+ showed the same gap at i2c-4/4-0022 before 0028.",
+            "Both boards use the identical fusb302 / fcs,fusb302 controller at",
+            "address 0x22, so the live result identifies capability parity as",
+            "missing on the Orange Pi rather than a different controller policy.",
+            "",
+            "Ground truth was independently re-read from the exact pinned v7.2",
+            "commit before writing this patch. The Orange Pi's own board file,",
+            "rk3588-orangepi-5-plus.dts, defines usb-typec@22 under i2c6 and its",
+            "connector inline. Its fixed source PDO is 5000 mV / 1400 mA and its",
+            "fixed sink PDO is 5000 mV / 10 mA; both carry only",
+            "PDO_FIXED_USB_COMM. Neither declaration has PDO_FIXED_DUAL_ROLE.",
+            "",
+            "BEHAVIOUR. OR PDO_FIXED_DUAL_ROLE into both existing fixed-supply",
+            "PDOs for the Orange Pi 5 Plus Type-C connector. This advertises the",
+            "same dual-role-power capability while the board is a source and while",
+            "it is a sink. The board's own voltage and current values are preserved.",
+            "",
+            "SCOPE. This is the owner-directed edge-track-only exception recorded",
+            "by todo 32 and the 2026-08-27 amendment to the",
+            "uvc-quirk-generalization plan. It applies only to the mainline v7.2",
+            "series and rk3588-orangepi-5-plus.dts. Patch 0028 and every Rock",
+            "5B/5B+/5T file remain byte-unchanged; the vendor 6.1 track is outside",
+            "this amendment.",
+            "",
+            "NON-GOALS. This patch does not claim PR_SWAP now works on the Orange",
+            "Pi. Todo 21's adaptive policy never attempts PR_SWAP on any board:",
+            "that path is gated behind TYPEC_PRSWAP: ACCEPTED, which has never been",
+            "recorded for either board. This is a capability-parity fix with no",
+            "immediately exercised behaviour change. Do not change try-power-role,",
+            "power-role, data-role, connector or FUSB302 status, voltage/current",
+            "values, or any other PDO flag on the Orange Pi.",
         ),
     ),
 )

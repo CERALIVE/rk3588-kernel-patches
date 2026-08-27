@@ -7,11 +7,12 @@ hardware encoder plus three HDMI-RX fixes imported from upstream, three
 backported **unmerged lore postings** (a combphy erratum and two dw-hdmi-qp audio
 fixes), and first-party patches for HDMI-RX audio DT, encoder DMA/dma-heap fixes,
 and rkvenc/HDMI-RX quality hardening, plus the Rock 5B+ Type-C dual-role-power PDO
-declaration (`0028`) and board-target Try.SRC preference (`0029`) — converted to a
+declaration (`0028`), board-target Try.SRC preference (`0029`), and Orange Pi 5
+Plus dual-role-power PDO declaration (`0030`) — converted to a
 `git am` mailbox series and pinned to an exact kernel tag.
 
-The base is **`v7.2`**; the series is re-anchored onto it and applies clean. **24
-members are active across 29 slots** — `0004` was never published, and `0007`,
+The base is **`v7.2`**; the series is re-anchored onto it and applies clean. **25
+members are active across 30 slots** — `0004` was never published, and `0007`,
 `0023`, `0024` and `0025` are retired ordinals whose slots stay burned. Board
 evidence quoted anywhere in this repo was measured at the previous `v7.1.7` base
 and is historical here.
@@ -228,13 +229,13 @@ verbatim by CI, so it cannot rot the same way.
 There is no `0004` upstream. **Do NOT renumber to close the gap** — the 1:1 filename
 correspondence with upstream is what makes the import auditable. First-party and
 backported patches continue the same counter (`0006`, `0008`, `0009` and
-`0013`–`0022`, `0026`–`0029` = `ceralive/`; `0010`, `0011` and `0012` =
-`backports/`), so the ordinals read `1/29`, `2/29`, `3/29`, `5/29` … `29/29` — the
+`0013`–`0022`, `0026`–`0030` = `ceralive/`; `0010`, `0011` and `0012` =
+`backports/`), so the ordinals read `1/30`, `2/30`, `3/30`, `5/30` … `30/30` — the
 gap at 4 stays visible, which is the whole point. **`0007`, `0023`, `0024` and
 `0025` are four more gaps**, retired rather than never-published: `0007` because
 the `v7.2` base absorbed the mainline commit it backported, and the other three
 because they were folded into `0021`. All four slots are burned, exactly like
-`0004`'s. That leaves **24 active members across 29 slots**, and the two numbers
+`0004`'s. That leaves **25 active members across 30 slots**, and the two numbers
 are not interchangeable: `SERIES_TOTAL` in `build-series.py` is the **slot** count
 including every gap, not the member count, and the build refuses an ordinal above
 it because the `N/SERIES_TOTAL` subject would otherwise lie. A retirement does not

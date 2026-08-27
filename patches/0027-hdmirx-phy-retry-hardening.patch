@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Andres Cera <andres.cera@hotmail.com>
 Date: Thu, 13 Aug 2026 23:30:00 -0500
-Subject: [PATCH 27/29] media: synopsys: hdmirx: stop trusting an SCDC bank the source never wrote
+Subject: [PATCH 27/30] media: synopsys: hdmirx: stop trusting an SCDC bank the source never wrote
 
 MOTIVATION. A Rock 5B+ will not lock a Sony FX3 sending
 3840x2160@59.94p over HDMI 2.0. tx_5v_power_present() reads 1
