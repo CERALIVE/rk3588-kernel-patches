@@ -1,0 +1,70 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Andres Cera <andres.cera@hotmail.com>
+Date: Thu, 27 Aug 2026 04:00:00 +0000
+Subject: [PATCH 28/28] arm64: dts: rockchip: rock 5b: advertise dual-role power in the Type-C PDOs
+
+MOTIVATION. A live USB-PD diagnosis on a Rock 5B+ on 2026-08-27
+found that a requested power-role swap was rejected locally before
+the TCPM driver put any PR_SWAP traffic on the wire. Both of the
+Rock's fixed-supply capability records exposed
+dual_role_power=0 under usb_power_delivery/pd0, and that sysfs
+attribute is read-only. The board device tree advertises
+PDO_FIXED_USB_COMM on its fixed sink and source PDOs but omits
+PDO_FIXED_DUAL_ROLE, so no runtime policy can make the local TCPM
+port attempt the swap.
+
+The peer is not the missing-capability side: the Osmo Pocket 3's
+source capabilities were captured in the same live TCPM trace as
+[RUD]. tcpm_log_source_caps() decodes R as
+PDO_FIXED_DUAL_ROLE, U as PDO_FIXED_USB_COMM and D as
+PDO_FIXED_DATA_SWAP. The camera therefore already advertises the
+dual-role-power capability that the Rock's local fixed PDOs lack.
+
+BEHAVIOUR. OR PDO_FIXED_DUAL_ROLE into both fixed-supply PDOs for
+the Rock 5B+/5T Type-C connector. This declares the same
+power-role-swap capability while the board is a sink and while it
+is a source, allowing TCPM to send a PR_SWAP request instead of
+refusing it at the local capability gate. The variable sink PDO is
+unchanged.
+
+SCOPE. This is the narrow, owner-directed edge-track-only exception
+recorded at 2026-08-27T03:55Z and in the AMENDED 2026-08-27 Scope
+paragraph of the uvc-quirk-generalization plan. It applies only to
+the mainline v7.2 series and only to
+rk3588-rock-5b-5bp-5t.dtsi. The Orange Pi 5 Plus
+and the vendor 6.1 kernel track are explicitly outside this
+exception.
+
+NON-GOALS. Do not change power-role, try-power-role, data-role,
+connector status, the FUSB302 node status, voltage/current values,
+PDO_FIXED_DATA_SWAP or any other PDO flag. This declaration only
+permits a swap attempt; whether the camera accepts that request is a
+separate hardware result and is not claimed here.
+
+First-party: authored by CeraLive against v7.2, with no upstream
+counterpart in rockchip-rk3588-mainline-patches. The source of record is
+ceralive/0028-rk3588-rock-5b-typec-dual-role-power.patch; patches/ is generated from it by
+scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the
+same added/removed-line parity the upstream lane gets.
+
+NOT upstream-bound: this targets the CeraLive device tree only and is not a
+submission to linux-media, linux-rockchip or the fork parent. No Signed-off-by
+is added, because a DCO assertion belongs to whoever actually submits it.
+
+---
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588-rock-5b-5bp-5t.dtsi b/arch/arm64/boot/dts/rockchip/rk3588-rock-5b-5bp-5t.dtsi
+--- a/arch/arm64/boot/dts/rockchip/rk3588-rock-5b-5bp-5t.dtsi
++++ b/arch/arm64/boot/dts/rockchip/rk3588-rock-5b-5bp-5t.dtsi
+@@ -339,10 +339,10 @@
+ 			pd-revision = /bits/ 8 <0x2 0x0 0x1 0x2>;
+ 			op-sink-microwatt = <1000000>;
+ 			sink-pdos =
+-				<PDO_FIXED(5000, 3000, PDO_FIXED_USB_COMM)>,
++				<PDO_FIXED(5000, 3000, PDO_FIXED_USB_COMM | PDO_FIXED_DUAL_ROLE)>,
+ 				<PDO_VAR(5000, 20000, 5000)>;
+ 			source-pdos =
+-				<PDO_FIXED(5000, 3000, PDO_FIXED_USB_COMM)>;
++				<PDO_FIXED(5000, 3000, PDO_FIXED_USB_COMM | PDO_FIXED_DUAL_ROLE)>;
+ 
+ 			altmodes {
+ 				displayport {

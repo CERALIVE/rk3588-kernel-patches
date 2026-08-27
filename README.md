@@ -11,13 +11,13 @@ imported at `e13a311` (2026-07-01) with full history and authorship preserved.
 | **Target kernel** | `v7.2` (`8d3ae59288f1e7d58d76558a6ee96d533bc5019f`) |
 | **Why that kernel** | Armbian rk3588 `bleedingedge` → `KERNEL_MAJOR_MINOR=7.2` — derived in [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md). Armbian itself still points that branch at `tag:v7.2-rc7`; we pin the **final** release deliberately. |
 | **Boards** | Radxa Rock 5B+, Orange Pi 5+ (both `BOARDFAMILY=rockchip-rk3588`) |
-| **Status** | **Re-anchored onto `v7.2` and applying: all 22 active members `git am` clean, every post-apply assertion passes, and the patched tree cross-compiles.** The ledger is [`docs/REBASE-v7.2.md`](docs/REBASE-v7.2.md). **Not run on hardware at this base, not upstream-bound.** Every board result this repo quotes was measured at the previous `v7.1.7` base and is historical here; `v7.2` board evidence is pending. |
+| **Status** | **Re-anchored onto `v7.2`; all 23 active members `git am` clean and every post-apply assertion passes.** The first 22 members cross-compiled before `0028` was added; `0028`'s build and board validation are pending. The rebase ledger is [`docs/REBASE-v7.2.md`](docs/REBASE-v7.2.md). **Not upstream-bound.** Every completed board result this repo quotes was measured at the previous `v7.1.7` base and is historical here. |
 
 ## What's in the series
 
 Upstream's numbering is preserved verbatim, gap included. First-party and
-backported patches continue the same counter from `0006`. 22 members are active
-across 27 slots: `0004` was never published, and `0007`, `0023`, `0024` and
+backported patches continue the same counter from `0006`. 23 members are active
+across 28 slots: `0004` was never published, and `0007`, `0023`, `0024` and
 `0025` are retired ordinals whose slots stay burned.
 
 | | Patch | Source | What it does |
@@ -47,6 +47,7 @@ across 27 slots: `0004` was never published, and `0007`, `0023`, `0024` and
 | *0023*–*0025* | — | — | **Retired ordinals.** Carried while the `0021` lifecycle defects were being discovered one at a time, then folded into `0021`. The slots are burned like `0004`'s and `0007`'s, not renumbered. What each one individually documented: [`docs/UPSTREAM-STATUS.md` § retired ordinals](docs/UPSTREAM-STATUS.md#retired-ordinals-0007-0023-0024-0025); the archived files: [`retired/REGISTRY.md`](retired/REGISTRY.md). |
 | `0026` | hdmirx register lock hardirq context | `ceralive/` | **Root-caused AND re-verified on a REAL Rock 5B+**, the first time a physical HDMI source was attached to a lockdep boot. `rst_lock` is a `spinlock_t` taken from the CEC and HDMI hardirqs, which `CONFIG_PROVE_RAW_LOCK_NESTING` reports as an invalid wait context — and that report calls `debug_locks_off()`, silencing lockdep for the rest of the boot in *every* subsystem. Promoted to `raw_spinlock_t`; same scope, same leaf position, identical code on a non-RT build. |
 | `0027` | hdmirx SCDC bit-clock-ratio recovery | `ceralive/` | **Root-caused, fixed AND validated on a REAL Rock 5B+ in one session** — the first HDMI-RX patch here whose evidence is a working 4K60 capture. `hdmirx_tmds_clk_ratio_config()` cannot tell "the source declared 1/10" from "the source wrote no SCDC at all", so an empty `SCDC_REGBANK_STATUS1` was treated as authoritative and a 4K59.94p link was structurally unlockable — ~500+ consecutive failures — with `0002`'s PHY re-init unable to help, because it ends by re-deriving the ratio from that same empty register. Fixes the failure log too: it named `SCDC_REGBANK_STATUS3`, the wrong register, and never printed `cmu_st`. After a completed lock-loop failure the ratio is forced to 1/40 once and the wait re-entered; the flag clears on `hdmirx_plugout()`. **600/600 frames at 3840x2160, steady 59.94 fps, zero errors, 4/4 across HPD renegotiation cycles.** Answers `docs/EVAL-0002-EDID.md` B4 in the negative. |
+| `0028` | Rock 5B+ Type-C dual-role-power PDOs | `ceralive/` | **Live root cause captured; patched-v7.2 hardware result pending.** Adds `PDO_FIXED_DUAL_ROLE` to the fixed sink and source PDOs in the Rock 5B+/5T connector so TCPM may put a PR_SWAP request on the wire. The peer Osmo already advertised the capability as `[RUD]`; the Rock exposed read-only `dual_role_power=0` and rejected locally with zero PD traffic. Edge-track and Rock-only: Orange Pi, vendor 6.1, every non-PDO property and every other PDO flag remain untouched. |
 
 Plus [`overlays/rockchip-rk3588-rkvenc-mpp.dts`](overlays/rockchip-rk3588-rkvenc-mpp.dts),
 the device-tree overlay the encoder needs, carried verbatim.

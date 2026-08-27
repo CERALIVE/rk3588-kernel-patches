@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Andres Cera <andres.cera@hotmail.com>
 Date: Mon, 10 Aug 2026 18:00:00 -0500
-Subject: [PATCH 19/27] media: rockchip: rkvenc: fix the worker's lock context and the dma-buf import API
+Subject: [PATCH 19/28] media: rockchip: rkvenc: fix the worker's lock context and the dma-buf import API
 
 MOTIVATION. A plain, unfaulted 1080p encode on a Rock 5B+ running
 a KASAN+LOCKDEP kernel produced three reports, all from 0001's

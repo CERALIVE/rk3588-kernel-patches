@@ -6,12 +6,12 @@ Holds the **mainline-track RK3588 kernel patch series** for CeraLive: VEPU580
 hardware encoder plus three HDMI-RX fixes imported from upstream, three
 backported **unmerged lore postings** (a combphy erratum and two dw-hdmi-qp audio
 fixes), and first-party patches for HDMI-RX audio DT, encoder DMA/dma-heap fixes,
-and rkvenc/HDMI-RX quality hardening (including the 4K60 SCDC bit-clock-ratio
-recovery, `0027`) — converted to a `git am` mailbox series and pinned to an exact
+and rkvenc/HDMI-RX quality hardening, plus the Rock 5B+ Type-C dual-role-power PDO
+declaration (`0028`) — converted to a `git am` mailbox series and pinned to an exact
 kernel tag.
 
-The base is **`v7.2`**; the series is re-anchored onto it and applies clean. **22
-members are active across 27 slots** — `0004` was never published, and `0007`,
+The base is **`v7.2`**; the series is re-anchored onto it and applies clean. **23
+members are active across 28 slots** — `0004` was never published, and `0007`,
 `0023`, `0024` and `0025` are retired ordinals whose slots stay burned. Board
 evidence quoted anywhere in this repo was measured at the previous `v7.1.7` base
 and is historical here.
@@ -228,13 +228,13 @@ verbatim by CI, so it cannot rot the same way.
 There is no `0004` upstream. **Do NOT renumber to close the gap** — the 1:1 filename
 correspondence with upstream is what makes the import auditable. First-party and
 backported patches continue the same counter (`0006`, `0008`, `0009` and
-`0013`–`0022`, `0026` and `0027` = `ceralive/`; `0010`, `0011` and `0012` =
-`backports/`), so the ordinals read `1/27`, `2/27`, `3/27`, `5/27` … `27/27` — the
+`0013`–`0022`, `0026`–`0028` = `ceralive/`; `0010`, `0011` and `0012` =
+`backports/`), so the ordinals read `1/28`, `2/28`, `3/28`, `5/28` … `28/28` — the
 gap at 4 stays visible, which is the whole point. **`0007`, `0023`, `0024` and
 `0025` are four more gaps**, retired rather than never-published: `0007` because
 the `v7.2` base absorbed the mainline commit it backported, and the other three
 because they were folded into `0021`. All four slots are burned, exactly like
-`0004`'s. That leaves **22 active members across 27 slots**, and the two numbers
+`0004`'s. That leaves **23 active members across 28 slots**, and the two numbers
 are not interchangeable: `SERIES_TOTAL` in `build-series.py` is the **slot** count
 including every gap, not the member count, and the build refuses an ordinal above
 it because the `N/SERIES_TOTAL` subject would otherwise lie. A retirement does not
@@ -505,7 +505,7 @@ defconfig, and a 30-minute job to prove something the image pipeline proves bett
   lore fetch — Anubis answers `Mozilla/5.0` with an HTTP 200 challenge page, so
   the spoof is what breaks it, not what gets you through
 - Don't renumber to close a retired ordinal's slot, and don't read `SERIES_TOTAL`
-  as a member count — it is 27 slots holding 22 members
+  as a member count — it is 28 slots holding 23 members
 - Don't rename, alias, symlink or `mknod` the `system-uncached` heap — the name is
   a userspace ABI and an alias is a corruption trap, not a workaround
 - Don't tick anything in `docs/BOARD-QUALIFICATION.md` without a pasted transcript,

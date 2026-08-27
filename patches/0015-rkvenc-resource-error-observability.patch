@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Andres Cera <andres.cera@hotmail.com>
 Date: Sun, 10 Aug 2026 11:00:00 -0500
-Subject: [PATCH 15/27] media: rockchip: rkvenc: fail on a missing required resource and stop swallowing runtime errors
+Subject: [PATCH 15/28] media: rockchip: rkvenc: fail on a missing required resource and stop swallowing runtime errors
 
 MOTIVATION. The driver treated almost every resource the 0001
 binding actually REQUIRES (reg, interrupts, three clocks, three

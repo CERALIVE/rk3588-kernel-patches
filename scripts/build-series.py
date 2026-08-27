@@ -99,7 +99,7 @@ REVISION_RE = re.compile(r"^v[0-9]+$")
 # gap so our files line up 1:1 with theirs. Every later ordinal continues the same
 # counter regardless of lane: 0007 and 0010-0012 into backports/, everything else
 # into ceralive/.
-SERIES_TOTAL = 27
+SERIES_TOTAL = 28
 
 DS_STORE_RE = re.compile(r"^Binary files .*\.DS_Store .* differ$")
 HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
@@ -1653,6 +1653,57 @@ SERIES: tuple[Patch, ...] = (
             "own recovery message. NOT yet measured: a regression run",
             "against a source that DOES write SCDC. See",
             "docs/UPSTREAM-STATUS.md and docs/BOARD-QUALIFICATION.md.",
+        ),
+    ),
+    Patch(
+        filename="0028-rk3588-rock-5b-typec-dual-role-power.patch",
+        ordinal=28,
+        subject=(
+            "arm64: dts: rockchip: rock 5b: advertise dual-role power in "
+            "the Type-C PDOs"
+        ),
+        provenance=NULL_OID,
+        author="Andres Cera <andres.cera@hotmail.com>",
+        date="Thu, 27 Aug 2026 04:00:00 +0000",
+        origin=CERALIVE,
+        rationale=(
+            "MOTIVATION. A live USB-PD diagnosis on a Rock 5B+ on 2026-08-27",
+            "found that a requested power-role swap was rejected locally before",
+            "the TCPM driver put any PR_SWAP traffic on the wire. Both of the",
+            "Rock's fixed-supply capability records exposed",
+            "dual_role_power=0 under usb_power_delivery/pd0, and that sysfs",
+            "attribute is read-only. The board device tree advertises",
+            "PDO_FIXED_USB_COMM on its fixed sink and source PDOs but omits",
+            "PDO_FIXED_DUAL_ROLE, so no runtime policy can make the local TCPM",
+            "port attempt the swap.",
+            "",
+            "The peer is not the missing-capability side: the Osmo Pocket 3's",
+            "source capabilities were captured in the same live TCPM trace as",
+            "[RUD]. tcpm_log_source_caps() decodes R as",
+            "PDO_FIXED_DUAL_ROLE, U as PDO_FIXED_USB_COMM and D as",
+            "PDO_FIXED_DATA_SWAP. The camera therefore already advertises the",
+            "dual-role-power capability that the Rock's local fixed PDOs lack.",
+            "",
+            "BEHAVIOUR. OR PDO_FIXED_DUAL_ROLE into both fixed-supply PDOs for",
+            "the Rock 5B+/5T Type-C connector. This declares the same",
+            "power-role-swap capability while the board is a sink and while it",
+            "is a source, allowing TCPM to send a PR_SWAP request instead of",
+            "refusing it at the local capability gate. The variable sink PDO is",
+            "unchanged.",
+            "",
+            "SCOPE. This is the narrow, owner-directed edge-track-only exception",
+            "recorded at 2026-08-27T03:55Z and in the AMENDED 2026-08-27 Scope",
+            "paragraph of the uvc-quirk-generalization plan. It applies only to",
+            "the mainline v7.2 series and only to",
+            "rk3588-rock-5b-5bp-5t.dtsi. The Orange Pi 5 Plus",
+            "and the vendor 6.1 kernel track are explicitly outside this",
+            "exception.",
+            "",
+            "NON-GOALS. Do not change power-role, try-power-role, data-role,",
+            "connector status, the FUSB302 node status, voltage/current values,",
+            "PDO_FIXED_DATA_SWAP or any other PDO flag. This declaration only",
+            "permits a swap attempt; whether the camera accepts that request is a",
+            "separate hardware result and is not claimed here.",
         ),
     ),
 )
