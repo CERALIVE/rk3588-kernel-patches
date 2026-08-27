@@ -3,7 +3,7 @@
 **Base pin at last check:** `v7.2` — see [`kernel-pin.env`](../kernel-pin.env).
 **Last full sweep:** 2026-08-26, at the `v7.2` base. **Rows added since:** `0028`
 (2026-08-27), the Rock 5B+ Type-C dual-role-power PDO declaration; `0029`
-(2026-08-27), the Rock 5B+ board-target Try.SRC preference; and `0030`
+2026-08-27), the Orange Pi 5 Plus dual-role-power PDO declaration.
 (2026-08-27), the Orange Pi 5 Plus dual-role-power PDO declaration.
 **Previous full sweep:** 2026-08-08, at the `v7.1.7` base.
 **Row-consistency re-check:** 2026-08-09 — every import and every evaluation from
