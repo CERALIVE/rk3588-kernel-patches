@@ -99,7 +99,7 @@ REVISION_RE = re.compile(r"^v[0-9]+$")
 # gap so our files line up 1:1 with theirs. Every later ordinal continues the same
 # counter regardless of lane: 0007 and 0010-0012 into backports/, everything else
 # into ceralive/.
-SERIES_TOTAL = 28
+SERIES_TOTAL = 29
 
 DS_STORE_RE = re.compile(r"^Binary files .*\.DS_Store .* differ$")
 HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
@@ -1704,6 +1704,62 @@ SERIES: tuple[Patch, ...] = (
             "PDO_FIXED_DATA_SWAP or any other PDO flag. This declaration only",
             "permits a swap attempt; whether the camera accepts that request is a",
             "separate hardware result and is not claimed here.",
+        ),
+    ),
+    Patch(
+        filename="0029-rk3588-rock-5b-try-power-role-source.patch",
+        ordinal=29,
+        subject=(
+            "arm64: dts: rockchip: rock 5b+: prefer the source power role "
+            "on Type-C"
+        ),
+        provenance=NULL_OID,
+        author="Andres Cera <andres.cera@hotmail.com>",
+        date="Thu, 27 Aug 2026 15:00:00 +0000",
+        origin=CERALIVE,
+        rationale=(
+            "MOTIVATION. A direct same-camera, same-policy A/B comparison on",
+            "2026-08-27 isolated the remaining charging delta to the boards'",
+            "Type-C preferred power role. The Rock 5B+ used its board-target",
+            "try-power-role=\"sink\" override and showed MIXED, mostly absent",
+            "charging, with repeated SNK_WAIT_CAPABILITIES_TIMEOUT while waiting",
+            "for source capabilities. The Orange Pi 5 Plus used its own existing",
+            "source preference and charged immediately and reliably on first",
+            "attach; its policy journal recorded \"settled as power_role=source",
+            "data_role=host -- no data-role swap needed\".",
+            "",
+            "Ground truth was re-read from the pinned v7.2 tree before writing",
+            "this patch. The shared rk3588-rock-5b-5bp-5t.dtsi defines usb_con",
+            "and its PDOs, but the Rock 5B+ target file",
+            "rk3588-rock-5b-plus.dts overrides that labelled connector with",
+            "power-role=\"dual\" and try-power-role=\"sink\". This patch changes",
+            "the existing board-target override; it does not add a new property",
+            "to the shared connector node.",
+            "",
+            "BEHAVIOUR. Change only the Rock 5B+ connector's try-power-role value",
+            "from sink to source. The port remains dual-role, but TCPM starts its",
+            "normal dual-role toggling with a Try.SRC preference so a compatible",
+            "attach can naturally settle as source/host and supply the camera.",
+            "",
+            "SCOPE. This is the narrow, owner-directed edge-track-only exception",
+            "recorded by todo 29 and the 2026-08-27 amendment to the Scope section",
+            "of the uvc-quirk-generalization plan. It applies only to the mainline",
+            "v7.2 series and the Rock 5B+ board-target override in",
+            "rk3588-rock-5b-plus.dts. The Rock 5B, Rock 5T, Orange Pi 5 Plus and",
+            "vendor 6.1 kernel track are outside this amendment.",
+            "",
+            "NON-GOALS. try-power-role is a soft USB Type-C preference: Try.SRC",
+            "still completes the normal CC-toggle detection handshake and leaves",
+            "the port capable of either power role. It is not FORCE_SOURCE, the",
+            "hard port_type=source pin that skips that handshake and was already",
+            "proven to break camera attachment in 3/3 physical replicates. Do not",
+            "change port_type, power-role, data-role, connector or FUSB302 status,",
+            "the PDO declarations added by 0028, or any Orange Pi property.",
+            "",
+            "This patch does not claim charging reliability is fixed. Todo 30's",
+            "separate, not-yet-run multi-cycle hardware test determines whether",
+            "the preference is reliable; this change proves only that the intended",
+            "one-line DTS amendment applies cleanly to the pinned edge tree.",
         ),
     ),
 )

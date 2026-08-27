@@ -1,7 +1,7 @@
 # git-am order for the CeraLive RK3588 series.
 # Upstream numbering is preserved verbatim -- 0004 was never published,
 # so the gap is intentional. Do not renumber to close it.
-# First-party (ceralive/): 0006, 0008, 0009, 0013, 0014, 0015, 0016, 0017, 0018, 0019, 0020, 0021, 0022, 0026, 0027, 0028.
+# First-party (ceralive/): 0006, 0008, 0009, 0013, 0014, 0015, 0016, 0017, 0018, 0019, 0020, 0021, 0022, 0026, 0027, 0028, 0029.
 # Backports (backports/): 0010, 0011, 0012 -- 0007 is a merged commit, the rest are unmerged lore postings.
 # All of them continue the same counter.
 # Target kernel: v7.2 (8d3ae59288f1e7d58d76558a6ee96d533bc5019f)
@@ -32,3 +32,4 @@
 0026-hdmirx-register-lock-hardirq-context.patch
 0027-hdmirx-phy-retry-hardening.patch
 0028-rk3588-rock-5b-typec-dual-role-power.patch
+0029-rk3588-rock-5b-try-power-role-source.patch
