@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Andres Cera <andres.cera@hotmail.com>
 Date: Sun, 10 Aug 2026 10:00:00 -0500
-Subject: [PATCH 14/27] media: rockchip: rkvenc: fix session teardown and unwind probe stages in reverse
+Subject: [PATCH 14/30] media: rockchip: rkvenc: fix session teardown and unwind probe stages in reverse
 
 MOTIVATION. Six defects in 0001's teardown path, all in code that
 runs only when something goes away: a session freed while a task is

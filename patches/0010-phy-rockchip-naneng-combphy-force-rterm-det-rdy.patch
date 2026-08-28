@@ -1,7 +1,7 @@
 From lore-posting Mon Sep 17 00:00:00 2001
 From: Shawn Lin <shawn.lin@rock-chips.com>
 Date: Wed, 25 Mar 2026 15:23:03 +0800
-Subject: [PATCH 10/27] phy: rockchip: naneng-combphy: force RX-termination detect ready for the TX-detect erratum
+Subject: [PATCH 10/30] phy: rockchip: naneng-combphy: force RX-termination detect ready for the TX-detect erratum
 
 Backport of unmerged v1 posting.
 
