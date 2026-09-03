@@ -1,0 +1,149 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: CeraLive <dev@ceralive.tv>
+Date: Wed, 2 Sep 2026 00:00:00 +0000
+Subject: [PATCH 4/7] iommu: expose media IOVA allocation helpers
+
+Manifest-selected integration hunks replayed from the pinned 6.18 series.
+They are re-anchored to the pinned v7.2 tree in the CeraLive port commits.
+
+Origin: yisding/rock-5b-ysp@ca3da04280c48c004e522c15f31862bf88a2d1b9:kernel-drivers/patches/forward-port-rk3588/rk3588-fwport-0015-media-rockchip-rga3-map-scattered-userptr-through-IO.patch
+Origin: yisding/rock-5b-ysp@ca3da04280c48c004e522c15f31862bf88a2d1b9:kernel-drivers/patches/forward-port-rk3588/rk3588-fwport-0089-video-rockchip-harden-IEP2-lifetimes-and-DMA-bounds.patch
+
+Patches a file mainline already carries. The payload below is carried byte-for-byte from integration/0003-iommu-dma-expose-iova-domain.patch; scripts/build-series.py adds the mail header and nothing else, and scripts/verify-series-parity.py proves that independently.
+
+---
+diff --git a/drivers/iommu/dma-iommu.c b/drivers/iommu/dma-iommu.c
+index 9abaec0703efb4a58d2e50fad70328205d9eee7f..d64ee65d1eaf15ce1f00b28a4ae8fcaee90a710a 100644
+--- a/drivers/iommu/dma-iommu.c
++++ b/drivers/iommu/dma-iommu.c
+@@ -383,6 +383,20 @@ int iommu_get_dma_cookie(struct iommu_domain *domain)
+ 	return 0;
+ }
+ 
++/**
++ * iommu_dma_get_iova_domain - Return the DMA-API IOVA allocator for a domain
++ * @domain: IOMMU domain prepared for DMA-API usage
++ */
++struct iova_domain *iommu_dma_get_iova_domain(struct iommu_domain *domain)
++{
++	if (!domain || domain->cookie_type != IOMMU_COOKIE_DMA_IOVA ||
++	    !domain->iova_cookie)
++		return NULL;
++
++	return &domain->iova_cookie->iovad;
++}
++EXPORT_SYMBOL_GPL(iommu_dma_get_iova_domain);
++
+ /**
+  * iommu_get_msi_cookie - Acquire just MSI remapping resources
+  * @domain: IOMMU domain to prepare
+diff --git a/drivers/iommu/iova.c b/drivers/iommu/iova.c
+index 021daf6528de18a26d73ab2b8d21ad7e493f29c3..d4d731e2f4de274af8920867655cc7b972e2cb95 100644
+--- a/drivers/iommu/iova.c
++++ b/drivers/iommu/iova.c
+@@ -549,6 +549,43 @@ reserve_iova(struct iova_domain *iovad,
+ }
+ EXPORT_SYMBOL_GPL(reserve_iova);
+ 
++/**
++ * reserve_iova_exclusive - reserve an IOVA range only when wholly unused
++ * @iovad: IOVA domain
++ * @pfn_lo: first page frame
++ * @pfn_hi: last page frame
++ *
++ * Unlike reserve_iova(), this helper never treats an existing overlapping
++ * node as success. Callers that later free the returned reservation therefore
++ * own the allocator node they remove.
++ */
++struct iova *reserve_iova_exclusive(struct iova_domain *iovad,
++				    unsigned long pfn_lo,
++				    unsigned long pfn_hi)
++{
++	struct rb_node *node;
++	struct iova *iova = NULL;
++	unsigned long flags;
++
++	if (WARN_ON((pfn_hi | pfn_lo) >
++		    (ULLONG_MAX >> iova_shift(iovad))))
++		return NULL;
++
++	spin_lock_irqsave(&iovad->iova_rbtree_lock, flags);
++	for (node = rb_first(&iovad->rbroot); node; node = rb_next(node)) {
++		if (__is_range_overlap(node, pfn_lo, pfn_hi))
++			goto out_unlock;
++	}
++
++	iova = __insert_new_range(iovad, pfn_lo, pfn_hi);
++
++out_unlock:
++	spin_unlock_irqrestore(&iovad->iova_rbtree_lock, flags);
++
++	return iova;
++}
++EXPORT_SYMBOL_GPL(reserve_iova_exclusive);
++
+ /*
+  * Magazine caches for IOVA ranges.  For an introduction to magazines,
+  * see the USENIX 2001 paper "Magazines and Vmem: Extending the Slab
+diff --git a/include/linux/iommu.h b/include/linux/iommu.h
+index ac43b8b93f14aa4853e794eec5e6ca39d1eac0f1..71dad0d211c79031f017ecf3698a9fbdea22c0b5 100644
+--- a/include/linux/iommu.h
++++ b/include/linux/iommu.h
+@@ -43,6 +43,7 @@ struct notifier_block;
+ struct iommu_sva;
+ struct iommu_dma_cookie;
+ struct iommu_dma_msi_cookie;
++struct iova_domain;
+ struct iommu_fault_param;
+ struct iommufd_ctx;
+ struct iommufd_viommu;
+@@ -1605,11 +1606,19 @@ static inline void iommu_debugfs_setup(void) {}
+ 
+ #ifdef CONFIG_IOMMU_DMA
+ int iommu_get_msi_cookie(struct iommu_domain *domain, dma_addr_t base);
++struct iova_domain *
++iommu_dma_get_iova_domain(struct iommu_domain *domain);
+ #else /* CONFIG_IOMMU_DMA */
+ static inline int iommu_get_msi_cookie(struct iommu_domain *domain, dma_addr_t base)
+ {
+ 	return -ENODEV;
+ }
++
++static inline struct iova_domain *
++iommu_dma_get_iova_domain(struct iommu_domain *domain)
++{
++	return NULL;
++}
+ #endif	/* CONFIG_IOMMU_DMA */
+ 
+ /*
+diff --git a/include/linux/iova.h b/include/linux/iova.h
+index d2c4fd923efabcb61f6a8d6e190cbea6b8dda37a..5a0de266bbf38ab6e886155bf86d7edf8850afb0 100644
+--- a/include/linux/iova.h
++++ b/include/linux/iova.h
+@@ -97,6 +97,9 @@ unsigned long alloc_iova_fast(struct iova_domain *iovad, unsigned long size,
+ 			      unsigned long limit_pfn, bool flush_rcache);
+ struct iova *reserve_iova(struct iova_domain *iovad, unsigned long pfn_lo,
+ 	unsigned long pfn_hi);
++struct iova *reserve_iova_exclusive(struct iova_domain *iovad,
++				    unsigned long pfn_lo,
++				    unsigned long pfn_hi);
+ void init_iova_domain(struct iova_domain *iovad, unsigned long granule,
+ 	unsigned long start_pfn);
+ int iova_domain_init_rcaches(struct iova_domain *iovad);
+@@ -149,6 +152,13 @@ static inline struct iova *reserve_iova(struct iova_domain *iovad,
+ 	return NULL;
+ }
+ 
++static inline struct iova *reserve_iova_exclusive(struct iova_domain *iovad,
++						  unsigned long pfn_lo,
++						  unsigned long pfn_hi)
++{
++	return NULL;
++}
++
+ static inline void init_iova_domain(struct iova_domain *iovad,
+ 				    unsigned long granule,
+ 				    unsigned long start_pfn)
+-- 
+2.51.0

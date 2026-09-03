@@ -64,6 +64,9 @@ python3 "${HERE}/build-series.py" --check
 log "Verifying the series changes nothing its source lanes did not already change"
 python3 "${HERE}/verify-payload-parity.py"
 
+log "Verifying island/ against the published rk3588-media-island release"
+python3 "${HERE}/verify-island-provenance.py"
+
 # ---------------------------------------------------------------------------
 # 2. Kernel tree at the pinned tag.
 # ---------------------------------------------------------------------------
@@ -159,16 +162,18 @@ echo
 git diff --stat "${KERNEL_TAG}..HEAD"
 
 # ---------------------------------------------------------------------------
-# 4. Post-conditions worth asserting: the encoder driver and its UAPI header
-#    actually landed, the DT overlay's node labels exist to bind against, and
-#    the HDMI-RX audio card is wired on every board that enables the receiver.
+# 4. Post-conditions worth asserting: the island modules, clients and in-tree DT
+#    ownership landed, and the HDMI-RX audio card remains wired on both boards.
 # ---------------------------------------------------------------------------
 log "Post-apply checks"
 fail=0
 for path in \
-	drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c \
-	drivers/media/platform/rockchip/rkvenc/rkvenc_service.c \
-	include/uapi/linux/rkvenc.h; do
+	drivers/video/rockchip/mpp/mpp_service.c \
+	drivers/video/rockchip/mpp/mpp_rkvenc2.c \
+	drivers/video/rockchip/mpp/mpp_rkvdec2.c \
+	drivers/video/rockchip/mpp/mpp_jpgdec.c \
+	drivers/video/rockchip/rga3/rga_drv.c \
+	include/uapi/linux/rk-mpp.h; do
 	if [[ -f "${path}" ]]; then
 		echo "  ok      ${path}"
 	else
@@ -177,20 +182,57 @@ for path in \
 	fi
 done
 
-for label in mpp_srv rkvenc_ccu rkvenc0 rkvenc1; do
+if grep -q 'obj-$(CONFIG_ROCKCHIP_MPP_SERVICE) += rk_vcodec.o' \
+	drivers/video/rockchip/mpp/Makefile; then
+	echo "  ok      CONFIG_ROCKCHIP_MPP_SERVICE builds rk_vcodec.ko"
+else
+	echo "  MISSING rk_vcodec.ko module mapping" >&2
+	fail=1
+fi
+
+if grep -q 'obj-$(CONFIG_ROCKCHIP_MULTI_RGA).*+= rga3.o' \
+	drivers/video/rockchip/rga3/Makefile; then
+	echo "  ok      CONFIG_ROCKCHIP_MULTI_RGA builds rga3.ko"
+else
+	echo "  MISSING rga3.ko module mapping" >&2
+	fail=1
+fi
+
+for symbol in \
+	ROCKCHIP_MPP_SERVICE \
+	ROCKCHIP_MPP_RKVENC2 \
+	ROCKCHIP_MPP_RKVDEC2 \
+	ROCKCHIP_MPP_JPGDEC; do
+	if grep -q "^config ${symbol}$" drivers/video/rockchip/mpp/Kconfig; then
+		echo "  ok      CONFIG_${symbol} is selectable"
+	else
+		echo "  MISSING CONFIG_${symbol} in mpp/Kconfig" >&2
+		fail=1
+	fi
+done
+
+if grep -q '^menuconfig ROCKCHIP_MULTI_RGA$' drivers/video/rockchip/rga3/Kconfig; then
+	echo "  ok      CONFIG_ROCKCHIP_MULTI_RGA is selectable"
+else
+	echo "  MISSING CONFIG_ROCKCHIP_MULTI_RGA in rga3/Kconfig" >&2
+	fail=1
+fi
+
+for label in mpp_srv rkvenc_ccu rkvdec_ccu jpegd; do
 	if grep -q "^\s*${label}: " arch/arm64/boot/dts/rockchip/rk3588-base.dtsi; then
-		echo "  ok      dts node ${label}"
+		echo "  ok      shared RK3588 dts node ${label}"
 	else
 		echo "  MISSING dts node ${label}" >&2
 		fail=1
 	fi
 done
 
-if grep -q "${RKVENC_CONFIG_SYMBOL#CONFIG_}" \
-	drivers/media/platform/rockchip/rkvenc/Kconfig; then
-	echo "  ok      ${RKVENC_CONFIG_SYMBOL} is selectable"
+vdec0_block="$(awk '/^\tvdec0: /,/^\t};/' arch/arm64/boot/dts/rockchip/rk3588-base.dtsi)"
+if [[ "$(grep -c '^\s*compatible = ' <<<"${vdec0_block}")" == 1 ]] && \
+	grep -q '^\s*compatible = "rockchip,rkv-decoder-v2";$' <<<"${vdec0_block}"; then
+	echo "  ok      vdec0 has the sole compatible rockchip,rkv-decoder-v2"
 else
-	echo "  MISSING ${RKVENC_CONFIG_SYMBOL} in rkvenc/Kconfig" >&2
+	echo "  MISSING sole rockchip,rkv-decoder-v2 compatible on vdec0" >&2
 	fail=1
 fi
 

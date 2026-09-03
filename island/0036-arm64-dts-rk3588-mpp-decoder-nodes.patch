@@ -1,0 +1,152 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: CeraLive <dev@ceralive.tv>
+Date: Wed, 2 Sep 2026 00:00:00 +0000
+Subject: [PATCH 6/7] arm64: dts: rockchip: hand RK3588 decoders to MPP
+
+Use the sole decoder compatible matched by the imported mpp_rkvdec2 driver and
+add the vendor CCU/task metadata.  Linux v7.2's physical decoder addresses are
+retained, including its corrected vdec1 fdc40000 window instead of the vendor
+fdc48000 spelling.
+
+The common MPP probe maps resource 0 as the decoder register base, while
+mpp_rkvdec2_link.c requests the resource named "link" separately.  Therefore
+the v7.2 function and cache windows are combined into the first "regs" resource
+and the link window becomes the second resource.  Keeping mainline's original
+link-first layout would map every decoder register from the wrong base.
+
+Reference: armbian/linux-rockchip@fd9f82366e235b8afbdf516765210e97d24dce93:arch/arm64/boot/dts/rockchip/rk3588s.dtsi
+
+Patches a file mainline already carries. The payload below is carried byte-for-byte from integration/0011-arm64-dts-rk3588-mpp-decoder-nodes.patch; scripts/build-series.py adds the mail header and nothing else, and scripts/verify-series-parity.py proves that independently.
+
+---
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588-base.dtsi b/arch/arm64/boot/dts/rockchip/rk3588-base.dtsi
+--- a/arch/arm64/boot/dts/rockchip/rk3588-base.dtsi
++++ b/arch/arm64/boot/dts/rockchip/rk3588-base.dtsi
+@@ -50,6 +50,8 @@
+ 		spi2 = &spi2;
+ 		spi3 = &spi3;
+ 		spi4 = &spi4;
++		rkvdec0 = &vdec0;
++		rkvdec1 = &vdec1;
+ 		rkvenc0 = &rkvenc0;
+ 		rkvenc1 = &rkvenc1;
+ 	};
+@@ -1397,26 +1399,56 @@
+ 		#iommu-cells = <0>;
+ 	};
+ 
++	rkvdec_ccu: rkvdec-ccu@fdc30000 {
++		compatible = "rockchip,rkv-decoder-v2-ccu";
++		reg = <0x0 0xfdc30000 0x0 0x100>;
++		reg-names = "ccu";
++		clocks = <&cru ACLK_RKVDEC_CCU>;
++		clock-names = "aclk_ccu";
++		assigned-clocks = <&cru ACLK_RKVDEC_CCU>;
++		assigned-clock-rates = <600000000>;
++		resets = <&cru SRST_A_RKVDEC_CCU>;
++		reset-names = "video_ccu";
++		rockchip,skip-pmu-idle-request;
++		rockchip,ccu-mode = <1>;
++		power-domains = <&power RK3588_PD_RKVDEC0>;
++		status = "okay";
++	};
++
+ 	vdec0: video-codec@fdc38000 {
+-		compatible = "rockchip,rk3588-vdec";
+-		reg = <0x0 0xfdc38000 0x0 0x100>,
+-		      <0x0 0xfdc38100 0x0 0x500>,
+-		      <0x0 0xfdc38600 0x0 0x100>;
+-		reg-names = "link", "function", "cache";
++		compatible = "rockchip,rkv-decoder-v2";
++		reg = <0x0 0xfdc38100 0x0 0x600>,
++		      <0x0 0xfdc38000 0x0 0x100>;
++		reg-names = "regs", "link";
+ 		interrupts = <GIC_SPI 95 IRQ_TYPE_LEVEL_HIGH 0>;
+ 		clocks = <&cru ACLK_RKVDEC0>, <&cru HCLK_RKVDEC0>, <&cru CLK_RKVDEC0_CA>,
+ 			 <&cru CLK_RKVDEC0_CORE>, <&cru CLK_RKVDEC0_HEVC_CA>;
+-		clock-names = "axi", "ahb", "cabac", "core", "hevc_cabac";
++		clock-names = "aclk_vcodec", "hclk_vcodec", "clk_cabac",
++			      "clk_core", "clk_hevc_cabac";
+ 		assigned-clocks = <&cru ACLK_RKVDEC0>, <&cru CLK_RKVDEC0_CORE>,
+ 				  <&cru CLK_RKVDEC0_CA>, <&cru CLK_RKVDEC0_HEVC_CA>;
+ 		assigned-clock-rates = <800000000>, <600000000>,
+ 				       <600000000>, <1000000000>;
+ 		iommus = <&vdec0_mmu>;
+ 		power-domains = <&power RK3588_PD_RKVDEC0>;
+-		resets = <&cru SRST_A_RKVDEC0>, <&cru SRST_H_RKVDEC0>, <&cru SRST_RKVDEC0_CA>,
+-			 <&cru SRST_RKVDEC0_CORE>, <&cru SRST_RKVDEC0_HEVC_CA>;
+-		reset-names = "axi", "ahb", "cabac", "core", "hevc_cabac";
+-		sram = <&vdec0_sram>;
++		resets = <&cru SRST_A_RKVDEC0>, <&cru SRST_H_RKVDEC0>,
++			 <&cru SRST_RKVDEC0_CORE>, <&cru SRST_RKVDEC0_CA>,
++			 <&cru SRST_RKVDEC0_HEVC_CA>;
++		reset-names = "video_a", "video_h", "video_core",
++			      "video_cabac", "video_hevc_cabac";
++		rockchip,skip-pmu-idle-request;
++		rockchip,srv = <&mpp_srv>;
++		rockchip,ccu = <&rkvdec_ccu>;
++		rockchip,core-mask = <0x00010001>;
++		rockchip,task-capacity = <16>;
++		rockchip,taskqueue-node = <9>;
++		rockchip,sram = <&vdec0_sram>;
++		rockchip,rcb-iova = <0xFFF00000 0x100000>;
++		rockchip,rcb-info = <136 24576>, <137 49152>, <141 90112>,
++				    <140 49152>, <139 180224>, <133 49152>,
++				    <134 8192>, <135 4352>, <138 13056>,
++				    <142 291584>;
++		rockchip,rcb-min-width = <512>;
+ 	};
+ 
+ 	vdec0_mmu: iommu@fdc38700 {
+@@ -1430,25 +1460,39 @@
+ 	};
+ 
+ 	vdec1: video-codec@fdc40000 {
+-		compatible = "rockchip,rk3588-vdec";
+-		reg = <0x0 0xfdc40000 0x0 0x100>,
+-		      <0x0 0xfdc40100 0x0 0x500>,
+-		      <0x0 0xfdc40600 0x0 0x100>;
+-		reg-names = "link", "function", "cache";
++		compatible = "rockchip,rkv-decoder-v2";
++		reg = <0x0 0xfdc40100 0x0 0x600>,
++		      <0x0 0xfdc40000 0x0 0x100>;
++		reg-names = "regs", "link";
+ 		interrupts = <GIC_SPI 97 IRQ_TYPE_LEVEL_HIGH 0>;
+ 		clocks = <&cru ACLK_RKVDEC1>, <&cru HCLK_RKVDEC1>, <&cru CLK_RKVDEC1_CA>,
+ 			 <&cru CLK_RKVDEC1_CORE>, <&cru CLK_RKVDEC1_HEVC_CA>;
+-		clock-names = "axi", "ahb", "cabac", "core", "hevc_cabac";
++		clock-names = "aclk_vcodec", "hclk_vcodec", "clk_cabac",
++			      "clk_core", "clk_hevc_cabac";
+ 		assigned-clocks = <&cru ACLK_RKVDEC1>, <&cru CLK_RKVDEC1_CORE>,
+ 				  <&cru CLK_RKVDEC1_CA>, <&cru CLK_RKVDEC1_HEVC_CA>;
+ 		assigned-clock-rates = <800000000>, <600000000>,
+ 				       <600000000>, <1000000000>;
+ 		iommus = <&vdec1_mmu>;
+ 		power-domains = <&power RK3588_PD_RKVDEC1>;
+-		resets = <&cru SRST_A_RKVDEC1>, <&cru SRST_H_RKVDEC1>, <&cru SRST_RKVDEC1_CA>,
+-			 <&cru SRST_RKVDEC1_CORE>, <&cru SRST_RKVDEC1_HEVC_CA>;
+-		reset-names = "axi", "ahb", "cabac", "core", "hevc_cabac";
+-		sram = <&vdec1_sram>;
++		resets = <&cru SRST_A_RKVDEC1>, <&cru SRST_H_RKVDEC1>,
++			 <&cru SRST_RKVDEC1_CORE>, <&cru SRST_RKVDEC1_CA>,
++			 <&cru SRST_RKVDEC1_HEVC_CA>;
++		reset-names = "video_a", "video_h", "video_core",
++			      "video_cabac", "video_hevc_cabac";
++		rockchip,skip-pmu-idle-request;
++		rockchip,srv = <&mpp_srv>;
++		rockchip,ccu = <&rkvdec_ccu>;
++		rockchip,core-mask = <0x00020002>;
++		rockchip,task-capacity = <16>;
++		rockchip,taskqueue-node = <9>;
++		rockchip,sram = <&vdec1_sram>;
++		rockchip,rcb-iova = <0xFFE00000 0x100000>;
++		rockchip,rcb-info = <136 24576>, <137 49152>, <141 90112>,
++				    <140 49152>, <139 180224>, <133 49152>,
++				    <134 8192>, <135 4352>, <138 13056>,
++				    <142 291584>;
++		rockchip,rcb-min-width = <512>;
+ 	};
+ 
+ 	vdec1_mmu: iommu@fdc40700 {
+-- 
+2.51.0

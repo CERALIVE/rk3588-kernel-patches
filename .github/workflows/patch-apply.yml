@@ -38,6 +38,9 @@ jobs:
       - name: patches/ payload is byte-identical to its source lane
         run: python3 scripts/verify-payload-parity.py
 
+      - name: island/ is byte-identical to the published release asset
+        run: python3 scripts/verify-island-provenance.py
+
       - name: series, generated patches and the status ledger tell one story
         run: |
           scripts/check-series-ledger.py --self-test
@@ -51,7 +54,12 @@ jobs:
             --source-sha256 dd1b0d9c740bd26b8a3ea593f0e1226eab5d21f8e612f09c387e65a58aa74753
 
       - name: provenance and lore-import fixtures
-        run: python3 -m unittest tests.test_lore_import tests.test_build_series_provenance
+        run: >-
+          python3 -m unittest
+          tests.test_lore_import
+          tests.test_build_series_provenance
+          tests.test_island_lane
+          tests.test_verify_island_provenance
 
       - name: upstream/ is unmodified since import
         run: |

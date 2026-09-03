@@ -1,0 +1,153 @@
+From island-release Mon Sep 17 00:00:00 2001
+From: CeraLive <dev@ceralive.tv>
+Date: Wed, 2 Sep 2026 00:00:00 +0000
+Subject: [PATCH 35/37] arm64: dts: rockchip: add RK3588 MPP encoder nodes
+
+Re-express the VEPU580 device-tree hunk carried by
+CERALIVE/rk3588-kernel-patches 0001 against the pinned Linux v7.2
+rk3588-base.dtsi.  The client nodes use the compatible strings matched by the
+island's imported mpp_rkvenc2 driver and explicitly skip the unavailable BSP
+PMU idle-request path.
+
+Origin: CERALIVE/rk3588-kernel-patches:patches/0001-rockchip-rk3588-vepu580-encoder-support-v3.patch
+Reference: armbian/linux-rockchip@fd9f82366e235b8afbdf516765210e97d24dce93:arch/arm64/boot/dts/rockchip/rk3588s.dtsi
+
+Patches a file mainline already carries. The payload below is carried byte-for-byte from integration/0010-arm64-dts-rk3588-mpp-encoder-nodes.patch; scripts/build-series.py adds the mail header and nothing else, and scripts/verify-series-parity.py proves that independently.
+
+
+Generated from CeraLive rk3588-media-island v2026.9.0 (dcda1a2218d9e52db2db2a0a809263d7d7e8831f).
+
+Release asset rk3588-media-island-v2026.9.0.mbox.tar
+  asset_sha256  bea66ab56a71e5869d5e9ac6d66bb5f4e5151190dd387abe345fc88dc9f5eec2
+  member        0005-arm64-dts-rk3588-mpp-encoder-nodes.patch
+  member_sha256 6671fe143afa168b8ddb561c7e36a48f921af43212c6bf0c9abb9394d0b5a6ca
+
+island/0035-arm64-dts-rk3588-mpp-encoder-nodes.patch is that member byte-for-byte -- the mail
+header above is this repository's own, so the N/37 ordinal is ours and
+the message is the release's. scripts/verify-island-provenance.py
+re-fetches the asset, checks asset_sha256 and byte-compares every
+member, independently of scripts/build-series.py.
+
+NOT upstream-bound: the island is a CeraLive-maintained out-of-tree driver
+collection, not a submission. No commit id is claimed here. The island
+release names a tag and a commit in its OWN repository, which is not the
+kernel history this mailbox's delimiter field is for, so the delimiter
+carries a sentinel rather than a 40-hex value that would read as one.
+
+This lane is GENERATED UPSTREAM and byte-preserved here: never hand-edited,
+never re-anchored. A base bump is an island release first. Retire this when
+the island stops carrying the component -- trigger and last-checked date:
+docs/UPSTREAM-STATUS.md.
+
+---
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588-base.dtsi b/arch/arm64/boot/dts/rockchip/rk3588-base.dtsi
+--- a/arch/arm64/boot/dts/rockchip/rk3588-base.dtsi
++++ b/arch/arm64/boot/dts/rockchip/rk3588-base.dtsi
+@@ -50,6 +50,8 @@
+ 		spi2 = &spi2;
+ 		spi3 = &spi3;
+ 		spi4 = &spi4;
++		rkvenc0 = &rkvenc0;
++		rkvenc1 = &rkvenc1;
+ 	};
+ 
+ 	cpus {
+@@ -1460,6 +1462,96 @@
+ 		power-domains = <&power RK3588_PD_RKVDEC1>;
+ 		#iommu-cells = <0>;
+ 	};
++
++	mpp_srv: mpp-srv {
++		compatible = "rockchip,mpp-service";
++		rockchip,taskqueue-count = <12>;
++		rockchip,resetgroup-count = <1>;
++		status = "okay";
++	};
++
++	rkvenc_ccu: rkvenc-ccu {
++		compatible = "rockchip,rkv-encoder-v2-ccu";
++		status = "okay";
++	};
++
++	rkvenc0: rkvenc-core@fdbd0000 {
++		compatible = "rockchip,rkv-encoder-v2-core";
++		reg = <0x0 0xfdbd0000 0x0 0x6000>;
++		interrupts = <GIC_SPI 101 IRQ_TYPE_LEVEL_HIGH 0>;
++		interrupt-names = "irq_rkvenc0";
++		clocks = <&cru ACLK_RKVENC0>, <&cru HCLK_RKVENC0>,
++			 <&cru CLK_RKVENC0_CORE>;
++		clock-names = "aclk_vcodec", "hclk_vcodec", "clk_core";
++		rockchip,normal-rates = <500000000>, <0>, <800000000>;
++		assigned-clocks = <&cru ACLK_RKVENC0>, <&cru CLK_RKVENC0_CORE>;
++		assigned-clock-rates = <500000000>, <800000000>;
++		resets = <&cru SRST_A_RKVENC0>, <&cru SRST_H_RKVENC0>,
++			 <&cru SRST_RKVENC0_CORE>;
++		reset-names = "video_a", "video_h", "video_core";
++		rockchip,skip-pmu-idle-request;
++		iommus = <&rkvenc0_mmu>;
++		rockchip,srv = <&mpp_srv>;
++		rockchip,ccu = <&rkvenc_ccu>;
++		rockchip,taskqueue-node = <7>;
++		rockchip,resetgroup-node = <0>;
++		rockchip,task-capacity = <8>;
++		power-domains = <&power RK3588_PD_VENC0>;
++		status = "okay";
++	};
++
++	rkvenc0_mmu: iommu@fdbdf000 {
++		compatible = "rockchip,rk3588-iommu", "rockchip,rk3568-iommu";
++		reg = <0x0 0xfdbdf000 0x0 0x40>, <0x0 0xfdbdf040 0x0 0x40>;
++		interrupts = <GIC_SPI 99 IRQ_TYPE_LEVEL_HIGH 0>,
++			     <GIC_SPI 100 IRQ_TYPE_LEVEL_HIGH 0>;
++		interrupt-names = "irq_rkvenc0_mmu0", "irq_rkvenc0_mmu1";
++		clocks = <&cru ACLK_RKVENC0>, <&cru HCLK_RKVENC0>;
++		clock-names = "aclk", "iface";
++		rockchip,disable-mmu-reset;
++		#iommu-cells = <0>;
++		power-domains = <&power RK3588_PD_VENC0>;
++		status = "okay";
++	};
++
++	rkvenc1: rkvenc-core@fdbe0000 {
++		compatible = "rockchip,rkv-encoder-v2-core";
++		reg = <0x0 0xfdbe0000 0x0 0x6000>;
++		interrupts = <GIC_SPI 104 IRQ_TYPE_LEVEL_HIGH 0>;
++		interrupt-names = "irq_rkvenc1";
++		clocks = <&cru ACLK_RKVENC1>, <&cru HCLK_RKVENC1>,
++			 <&cru CLK_RKVENC1_CORE>;
++		clock-names = "aclk_vcodec", "hclk_vcodec", "clk_core";
++		rockchip,normal-rates = <500000000>, <0>, <800000000>;
++		assigned-clocks = <&cru ACLK_RKVENC1>, <&cru CLK_RKVENC1_CORE>;
++		assigned-clock-rates = <500000000>, <800000000>;
++		resets = <&cru SRST_A_RKVENC1>, <&cru SRST_H_RKVENC1>,
++			 <&cru SRST_RKVENC1_CORE>;
++		reset-names = "video_a", "video_h", "video_core";
++		rockchip,skip-pmu-idle-request;
++		iommus = <&rkvenc1_mmu>;
++		rockchip,srv = <&mpp_srv>;
++		rockchip,ccu = <&rkvenc_ccu>;
++		rockchip,taskqueue-node = <7>;
++		rockchip,resetgroup-node = <0>;
++		rockchip,task-capacity = <8>;
++		power-domains = <&power RK3588_PD_VENC1>;
++		status = "okay";
++	};
++
++	rkvenc1_mmu: iommu@fdbef000 {
++		compatible = "rockchip,rk3588-iommu", "rockchip,rk3568-iommu";
++		reg = <0x0 0xfdbef000 0x0 0x40>, <0x0 0xfdbef040 0x0 0x40>;
++		interrupts = <GIC_SPI 102 IRQ_TYPE_LEVEL_HIGH 0>,
++			     <GIC_SPI 103 IRQ_TYPE_LEVEL_HIGH 0>;
++		interrupt-names = "irq_rkvenc1_mmu0", "irq_rkvenc1_mmu1";
++		clocks = <&cru ACLK_RKVENC1>, <&cru HCLK_RKVENC1>;
++		clock-names = "aclk", "iface";
++		rockchip,disable-mmu-reset;
++		#iommu-cells = <0>;
++		power-domains = <&power RK3588_PD_VENC1>;
++		status = "okay";
++	};
+ 
+ 	av1d: video-codec@fdc70000 {
+ 		compatible = "rockchip,rk3588-av1-vpu";
+-- 
+2.51.0

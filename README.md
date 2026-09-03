@@ -11,48 +11,46 @@ imported at `e13a311` (2026-07-01) with full history and authorship preserved.
 | **Target kernel** | `v7.2` (`8d3ae59288f1e7d58d76558a6ee96d533bc5019f`) |
 | **Why that kernel** | Armbian rk3588 `bleedingedge` → `KERNEL_MAJOR_MINOR=7.2` — derived in [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md). Armbian itself still points that branch at `tag:v7.2-rc7`; we pin the **final** release deliberately. |
 | **Boards** | Radxa Rock 5B+, Orange Pi 5+ (both `BOARDFAMILY=rockchip-rk3588`) |
-| **Status** | **Re-anchored onto `v7.2`; all 25 active members `git am` clean and every post-apply assertion passes.** The first 22 members cross-compiled before `0028` was added; `0028` has since been built into a real v7.2 kernel and live-tested on a Rock 5B+, with a `MIXED` PR_SWAP result recorded in its row below. `0029` has since been built and booted on the same board, and every observed attach cycle landed the port as source. `0030` applies the same PDO capability declaration to the Orange Pi 5 Plus, and has since been built, deployed and booted on a real Orange Pi 5 Plus where the capability flip and normal camera operation were both cleanly confirmed after a physical detach/reattach. The rebase ledger is [`docs/REBASE-v7.2.md`](docs/REBASE-v7.2.md). **Not upstream-bound.** Every completed board result this repo quotes was measured at the previous `v7.1.7` base and is historical here. |
+| **Status** | **All 22 active members across 37 slots `git am` clean and every post-apply assertion passes on `v7.2`.** The published `rk3588-media-island v2026.9.0` release supplies the MPP encoder/decoder/JPEG driver source and in-tree DT integration through seven byte-verified members. The image pipeline uses this series for the shipped, permanent mainline 7.2 production kernel. Board results quoted here from the previous `v7.1.7` base are historical. |
 
 ## What's in the series
 
-Upstream's numbering is preserved verbatim, gap included. First-party and
-backported patches continue the same counter from `0006`. 25 members are active
-across 30 slots: `0004` was never published, and `0007`, `0023`, `0024` and
-`0025` are retired ordinals whose slots stay burned.
+Upstream's numbering is preserved verbatim, gap included. First-party,
+backported, and island patches continue the same counter. 22 members are active
+across 37 slots: `0004` was never published, and fourteen retired ordinals stay
+burned.
 
 | | Patch | Source | What it does |
 |---|---|---|---|
-| `0001` | vepu580 encoder (v3) | `upstream/` | VEPU580 / RKVENC v2 H.265 · H.264 · JPEG hardware encoder, ported from the Rockchip BSP MPP driver. ~4,200 lines, 9 new files. |
+| *0001* | retired vepu580 encoder (v3) | `retired/` | Historical standalone-rkvenc import; superseded by `rk3588-media-island v2026.9.0` and archived byte-unchanged. |
 | `0002` | hdmirx EDID fix (v1) | `upstream/` | Makes a written EDID actually visible to the HDMI source. |
 | `0003` | hdmirx plugout fix (v1) | `upstream/` | Fixes a buffer overflow on repeated HDMI-RX replug. |
 | *0004* | — | — | **Never published upstream.** The gap is intentional; do not renumber to close it. |
 | `0005` | hdmirx audio | `upstream/` | The driver half of HDMI-RX audio capture: registers an ASoC `hdmi-audio-codec` under `hdmi_receiver@fdee0000` and drives the receiver's audio FIFO, ACR-derived sample rate and recovered clock. Adds no device tree. |
 | `0006` | hdmirx audio sound card | `ceralive/` | The device-tree half. Without it `0005`'s codec is bound but ALSA never instantiates a card, so HDMI-IN audio cannot be captured at all. |
 | *0007* | — | — | **Retired ordinal.** Was a `backports/` backport of mainline `8d4346ecd495`, the IOMMU `MMU_AUTO_GATING` fix. That commit is in the `v7.2` base, so carrying it twice is what the retirement avoids — the fix is still there, it just is not ours any more. Slot burned like `0004`'s: [`docs/UPSTREAM-STATUS.md` § retired ordinals](docs/UPSTREAM-STATUS.md#retired-ordinals-0007-0023-0024-0025); the archived file: [`retired/REGISTRY.md`](retired/REGISTRY.md). |
-| `0008` | rkvenc DMA max segment size | `ceralive/` | **`UNVALIDATED` on hardware.** Sets the encoder's DMA max segment size in `rkvenc_hw_probe()`, so an imported dma-buf's recorded length stops being truncated to the `SZ_64K` default. Fixes a bookkeeping defect in `0001`; the IOVA guardrail that catches the symptom is deliberately left alone. |
-| `0009` | `system-uncached` dma-heap | `ceralive/` | **`UNVALIDATED` on hardware.** Registers a second dma-heap named exactly `system-uncached` — the name Rockchip's MPP userspace hard-codes and mainline does not provide — with non-cacheable mappings, a one-time cache clean at allocation, and the CPU-sync steps skipped only for that heap. Without it `mpph264enc` does not register at all, and cached memory under an uncached name encodes non-deterministically. |
+| *0008* | retired rkvenc DMA max segment size | `retired/` | Historical standalone-rkvenc fix; intent is re-expressed and tested in the island. |
+| `0009` | `system-uncached` dma-heap | `ceralive/` | Registers the exact heap name Rockchip MPP userspace requires. Its v7.1.7 board validation is historical at this v7.2 base. |
 | `0010` | naneng-combphy RTERM erratum | `backports/` | **Unmerged lore posting** (`PATCHv1`, Shawn Lin). Forces RX-termination detect ready in `PHYREG26` so a PCIe peer's termination is seen at critical temperatures. No commit id exists and none is claimed. |
 | `0011` | dw-hdmi-qp N/CTS helper | `backports/` | **Unmerged lore posting** (standalone `PATCHv3`, Simon Wright, `Reviewed-by`+`Tested-by`). Drops dw-hdmi-qp's private audio N/CTS table, which disagrees with the shared helper at several TMDS rates, for `drm_hdmi_acr_get_n_cts()`. |
 | `0012` | dw-hdmi-qp audio `-EOPNOTSUPP` | `backports/` | **Unmerged lore posting** (`PATCHv1`, Detlev Casanova, two independent `Tested-by`). Stops the audio hooks returning `-ENODEV` with no mode set, which ASoC logs as a fault — hundreds of lines on an idle board, in the same dmesg buffer `0005`/`0006` are diagnosed from. |
-| `0013` | rkvenc gated fault injection | `ceralive/` | **Test instrumentation, absent from production.** Three Kconfig symbols and six one-shot debugfs controls under `/sys/kernel/debug/rkvenc-test/`, each with a read-only `*_consumed` counter so a harness can tell a fault that fired from a knob the driver ignored. |
-| `0014` | rkvenc teardown and unwind | `ceralive/` | Six defects in `0001`'s teardown: a session freed on the release drain's timeout path while the worker still uses it, that drain sleeping under the lock its own completion needs, a dangling CCU list entry into freed memory, `remove()` clearing almost nothing it published, a devm service torn down under open FDs, and a devm IRQ live across `remove()`. |
-| `0015` | rkvenc resource errors | `ceralive/` | Six discarded return values in `0001`: clock, IOMMU and reset acquisition failures were logged and swallowed — turning a `-EPROBE_DEFER` into a permanently bound device with no clock — and `clk_prepare_enable()`, `pm_runtime_get_sync()`, `rkvenc_hw_finish()` and `rkvenc_hw_reset()` returns were thrown away. |
-| `0016` | rkvenc ioctl bounds | `ceralive/` | Six UAPI bounds defects, the worst an **information disclosure**: `rkvenc_result()` located a read request's class by its start offset only, then copied the caller's own claimed size, reading past a `kmalloc`'d buffer into the kernel heap and handing it to userspace. Also wrap/underflow/alignment, a byte/element mismatch, and every failure collapsed to `-ENOMEM`. |
+| *0013–0016* | retired rkvenc instrumentation and hardening | `retired/` | Historical standalone-rkvenc intents, re-expressed as island source plus permanent fault and boundary tests. |
 | `0017` | HDMI-RX audio lifecycle | `ceralive/` | Four defects in `0005`'s audio path: an ineffective `cancel_delayed_work()` against a self-rescheduling worker, an ASoC-card/`work_lock`/DAPM lock cycle, discarded `clk_set_rate()` returns, and a 768 kHz rate CEA-861 cannot produce. |
 | `0018` | truthful dma-heap partial registration | `ceralive/` | Not a defect fix. `dma_heap_add()` has no removal counterpart at this base, so a failed second registration leaves the first heap live for the boot. This says so instead of hiding it, and adds an injection seam so the failure is reachable from KUnit. **No atomicity is claimed.** |
-| `0019` | rkvenc worker lock context + dma-buf API | `ceralive/` | **Root-caused on a REAL Rock 5B+**, from a plain unfaulted encode under KASAN+LOCKDEP. A `struct mutex` taken inside `spin_lock_irqsave()`, and the *locked* dma-buf entry points called by a static importer that holds no `resv`. |
-| `0020` | rkvenc service survives a single core's unbind | `ceralive/` | **Root-caused on a REAL Rock 5B+**, by fault injection. `0014`'s own service state machine had no path back to `LIVE`, so one core's transient unbind left `/dev/mpp_service` returning `-ENODEV` for the rest of the boot — after the core had re-probed successfully. |
-| `0021` | rkvenc task, core and service lifecycle | `ceralive/` | **Root-caused on a REAL Rock 5B+**, over one continuous fault-injection and unbind session. Four defects in one lifecycle, in the order the board gave them up because each fix made the next reachable: `rkvenc_task_finish()` released unconditionally what `rkvenc_hw_run()` had already unwound (`bad unlock balance`, runtime-PM underflow); the worker then kept reading a task it had just freed (KASAN use-after-free); a secondary core stayed a dispatch target after a main-core rebind left its IOMMU domain NULL (Oops in `__iommu_attach_group()`); and a service-node unbind freed `srv` under an open descriptor, because its wait was skipped whenever a core had already claimed the quiesce. Carried as `0021`+`0023`+`0024`+`0025` while it was being discovered, folded into one patch afterwards — **byte-neutral**, proven by an identical `git am` tree object. |
-| `0022` | rkvenc ioctl request coverage and element bounds | `ceralive/` | **Root-caused on a REAL Rock 5B+, then broken by it TWICE and amended in place both times; the current version is hardware-verified.** From an ioctl drill that `0016` should have made green and did not: a register request naming bytes no class owns was clamped and accepted instead of refused; `INIT_TRANS_TABLE` bounded bytes but not alignment; an unreadable user buffer reported `-EIO`. Reading the same paths found two unbounded counts and a byte/element overrun no drill case covers. v1's coverage test then refused **every** encode, and v2's refused **every H.265** one — MPP's HEVC programme is a single write spanning `SQI` and `SCL` across a genuine 24-byte hole in the class map, which "one contiguous run" cannot accept. The rule is now *clipping*: a span may cross the map's own holes provided it leaves no class half-named, which is exactly what `class-overrun` does and still gets `-EINVAL` for. |
+| *0019–0022* | retired rkvenc concurrency, lifecycle and UAPI hardening | `retired/` | Historical board-found standalone-rkvenc fixes; the island fault campaign maps each intent to imported or CeraLive source and mutation evidence. |
 | *0023*–*0025* | — | — | **Retired ordinals.** Carried while the `0021` lifecycle defects were being discovered one at a time, then folded into `0021`. The slots are burned like `0004`'s and `0007`'s, not renumbered. What each one individually documented: [`docs/UPSTREAM-STATUS.md` § retired ordinals](docs/UPSTREAM-STATUS.md#retired-ordinals-0007-0023-0024-0025); the archived files: [`retired/REGISTRY.md`](retired/REGISTRY.md). |
 | `0026` | hdmirx register lock hardirq context | `ceralive/` | **Root-caused AND re-verified on a REAL Rock 5B+**, the first time a physical HDMI source was attached to a lockdep boot. `rst_lock` is a `spinlock_t` taken from the CEC and HDMI hardirqs, which `CONFIG_PROVE_RAW_LOCK_NESTING` reports as an invalid wait context — and that report calls `debug_locks_off()`, silencing lockdep for the rest of the boot in *every* subsystem. Promoted to `raw_spinlock_t`; same scope, same leaf position, identical code on a non-RT build. |
 | `0027` | hdmirx SCDC bit-clock-ratio recovery | `ceralive/` | **Root-caused, fixed AND validated on a REAL Rock 5B+ in one session** — the first HDMI-RX patch here whose evidence is a working 4K60 capture. `hdmirx_tmds_clk_ratio_config()` cannot tell "the source declared 1/10" from "the source wrote no SCDC at all", so an empty `SCDC_REGBANK_STATUS1` was treated as authoritative and a 4K59.94p link was structurally unlockable — ~500+ consecutive failures — with `0002`'s PHY re-init unable to help, because it ends by re-deriving the ratio from that same empty register. Fixes the failure log too: it named `SCDC_REGBANK_STATUS3`, the wrong register, and never printed `cmu_st`. After a completed lock-loop failure the ratio is forced to 1/40 once and the wait re-entered; the flag clears on `hdmirx_plugout()`. **600/600 frames at 3840x2160, steady 59.94 fps, zero errors, 4/4 across HPD renegotiation cycles.** Answers `docs/EVAL-0002-EDID.md` B4 in the negative. |
 | `0028` | Rock 5B+ Type-C dual-role-power PDOs | `ceralive/` | **Live root cause captured, then live-tested on a REAL Rock 5B+ against the patched v7.2 kernel — the PDO change itself is proven; the PR_SWAP it enables is `MIXED`, not clean-accepted.** Adds `PDO_FIXED_DUAL_ROLE` to the fixed sink and source PDOs in the Rock 5B+/5T connector so TCPM may put a PR_SWAP request on the wire. The peer Osmo already advertised the capability as `[RUD]`; the Rock exposed read-only `dual_role_power=0` and rejected locally with zero PD traffic. On the patched kernel `dual_role_power` reads `1` on both capability records, and a real `AMS POWER_ROLE_SWAP` reaches the wire. Two live replicates against a DJI Osmo Pocket 3 disagreed: the first was **accepted by the camera** and then **timed out** in the electrical handoff at the 920 ms guard (`ERROR_RECOVERY` → `PORT_RESET`, back to sink, camera USB device gone); the second **fully succeeded** — the Rock became source, `VBUS on`, and the camera negotiated and was granted 5 V / 3 A (capped 2000/2000 mA), confirmed by `power_role: [source]` and the `vbus5v0_typec` regulator `enabled`. One failure in two replicates is `TYPEC_PRSWAP: MIXED` under the campaign's pre-registered zero-failure rule: capable, not reliable. **Still open and undiagnosed:** after the successful swap the camera's USB *data* link dropped once ~10 s in and did not auto-recover, while the power layer stayed stable throughout. Evidence comes from a manually test-built kernel, so nothing here makes the patch a shipped default. Edge-track and Rock-only: Orange Pi, vendor 6.1, every non-PDO property and every other PDO flag remain untouched. The formal drill harness has since run to a real `RUN_COMPLETE` (run_uuid `68704060-…`) and **disagreed with the manual pass**: it scored PR_SWAP `REJECTED` **2 of 2** replicates, both `printf: write error: Protocol error` (EPROTO) on the `power_role` write, alongside `TYPEC_PEER: MIXED` / `TYPEC_DRSWAP: WORKS` / `TYPEC_CHARGE: BOARD_SOURCES_OK`. Session-wide the tally is **4 attempts: 1 success, 1 timeout, 2 rejected** — so the verdict stays `MIXED`/fragile rather than becoming a clean reject. **Correlated, causation not established:** both rejections landed at the exact dmesg timestamp of a full XHCI teardown matching the pre-existing F19 CC-line dropout signature, which was already known to fire spontaneously at idle; the fix that would have been the obvious candidate (`usb: typec: fusb302: cache PD RX state`, `1e61f6ab08786d`) is already in the pinned `v7.2` base, and there is no DT or module knob for the TCPM CC debounce. See [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) § `0028` for the full evidence and the outstanding `dyndbg` follow-up. |
 | `0029` | Rock 5B+ Type-C Try.SRC preference | `ceralive/` | **Patch application proven, then live-tested on a REAL Rock 5B+ against the patched v7.2 kernel: every observed attach cycle landed the board as source, zero failures.** The pinned v7.2 ground truth is a board-target override in `rk3588-rock-5b-plus.dts`: `&usb_con` keeps `power-role = "dual"` and sets `try-power-role = "sink"`. A same-camera, same-policy board A/B found the sink-preferring Rock charging only intermittently, with repeated `SNK_WAIT_CAPABILITIES_TIMEOUT`, while the Orange Pi's own pre-existing source preference settled immediately as source/host and charged reliably on first attach. This patch changes only that existing Rock 5B+ override to `try-power-role = "source"`. Try.SRC is a soft preference within normal CC-toggle detection, not the hard `port_type=source` FORCE_SOURCE pin that skipped the handshake and broke camera attachment 3/3. The port remains dual-role; `power-role`, `data-role`, connector/FUSB302 status, `0028`'s PDOs, Rock 5B/5T, Orange Pi and vendor 6.1 are untouched. **Hardware result, 2026-08-27.** After a RAUC deploy and boot of the patched kernel, `/sys/class/typec/port0/preferred_role` read `source` where it read `sink` before — the DT change taking effect, proven independently of any camera behaviour. One fully instrumented attach then produced a textbook-clean source contract: `TOGGLING → SRC_ATTACH_WAIT → SRC_ATTACHED`, `VBUS on`, capabilities offered, the Osmo Pocket 3 requesting `5000 mV, 3000 mA for 2000/2000 mA`, `SRC_NEGOTIATE_CAPABILITIES → SRC_TRANSITION_SUPPLY → SRC_READY` with no reset, timeout or reject, and the `vbus5v0_typec` regulator `enabled`. Multiple further operator-driven unplug/replug cycles were polled live, and every `PRESENT` sample read `power_role: [source] sink` / `data_role: [host] device`; the operator reported every cycle working, with no failure observed. That is a decisive improvement on the pre-patch MIXED/mostly-sink baseline in `0028`'s row above, though it is a qualitative multi-cycle result, not a guarantee. **What could not be measured:** this board carries no VBUS current sense — no INA2xx-class part on the i2c bus, and the FUSB302 is a CC-line PD controller with no VBUS ADC — so the `tcpm_source_psy_4_0022` hwmon `curr1_input`/`in0_input` nodes read `0` even mid-contract and are unpopulated stubs. The evidence here is therefore protocol-level (VBUS enabled, PD contract accepted, regulator enabled) and no delivered wattage figure exists to quote. **Open, unconfirmed:** the operator saw no charging icon on the camera during the session, and offered the plausible explanation that its battery was already at or near full — plausible, not independently verified, and recorded as an open detail rather than a finding. Measured on a manually test-built edge kernel; nothing here makes `0029` a shipped default, and the vendor 6.1 track gains none of this. |
 | `0030` | Orange Pi 5 Plus Type-C dual-role-power PDOs | `ceralive/` | **Clean PASS, confirmed on a REAL Orange Pi 5 Plus against the patched v7.2 kernel.** `0030` adds `PDO_FIXED_DUAL_ROLE` to the existing 5 V / 1.4 A source and 5 V / 10 mA sink declarations; both `dual_role_power` values read `1` after deployment. On the still-booted patched slot A, the operator performed a real USB-C detach/reattach lasting at least 10 seconds. The camera re-enumerated cleanly as `2ca3:0023` (`DJIPocket3`); `port_type` stayed `[dual]`; natural DRP arbitration settled `power_role=source` and `data_role=host` through the adaptive policy, with journal line `port0 settled as power_role=source data_role=host — no data-role swap needed` and zero manual role commands. `v4l2-ctl` confirmed live `/dev/video6`, `/dev/video7` and `/dev/media3` nodes, and the PDO capability fix remained intact (`dual_role_power=1` on both source and sink) after the cycle. The earlier post-boot camera absence was a transient camera/cable-side state, not a kernel or Type-C regression introduced by `0030`; the patch is confirmed compatible with normal camera operation. This remains Orange-Pi-only and edge-v7.2-only; no PR_SWAP behavior or reliability is claimed.** |
-
-Plus [`overlays/rockchip-rk3588-rkvenc-mpp.dts`](overlays/rockchip-rk3588-rkvenc-mpp.dts),
-the device-tree overlay the encoder needs, carried verbatim.
+| `0031` | media-island maintained source | `island/` | Squashed create-mode patch for the MPP and multi_rga maintained source and UAPI. |
+| `0032` | video build hooks | `island/` | Hooks the island MPP and multi_rga Kconfig and Makefiles into Linux. |
+| `0033` | Rockchip IOMMU provider exports | `island/` | Exposes the real provider controls required by MPP and RGA. |
+| `0034` | IOMMU DMA IOVA accessor | `island/` | Exposes the media IOVA allocation helpers used by the island. |
+| `0035` | MPP encoder DT nodes | `island/` | Adds `mpp_srv`, `rkvenc_ccu`, both RKVENC2 cores, and their IOMMUs in-tree. |
+| `0036` | MPP decoder DT ownership | `island/` | Hands `vdec0/1` to RKVDEC2 with the sole vendor compatible and adds `rkvdec_ccu`. |
+| `0037` | MPP JPEG decoder DT node | `island/` | Adds the island-owned `jpegd` client and IOMMU in-tree. |
 
 Which of these have an upstream counterpart, how far along it is, and what would
 have to be true before a patch can be dropped, is tracked per patch in
@@ -70,20 +68,10 @@ written down, the verdict gets its own document. So far:
   teardown, and because its device-tree half enables the sound card on Orange Pi 5
   Plus only, which would silently leave Rock 5B+ with no capture card.
 
-Several members carry an **`UNVALIDATED`** marker — `0008` and `0009` on Orange Pi
-5+, and the whole `0013`–`0022` + `0026` block to varying degrees. `0027` is the
-exception that shows what clearing one looks like: it landed already validated,
-with a 600-frame 4K59.94p capture behind it. What a real board has to
-demonstrate before a marker comes off — every leg, every command, on both boards —
-is [`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md), and what is
-already proven, per patch, is the **Last checked** column in
-[`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md).
-
-**A patch being landed is not a patch being verified.** `0015` and `0016` were both
-ticked before anything ran on hardware, and the first real drill against them
-failed — `0021` and `0022` are what came out of that, and `0021` alone is four
-defects deep, because fixing the bug that aborts an error path is how you find the
-bugs further down it. Read the marker, not the merge.
+Historical board evidence remains in [`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md)
+with its measured kernel base. The island release has its own source, CI, and board
+qualification contract; importing its mailbox is provenance work, not a new claim
+that its runtime behavior has already shipped.
 
 ## Layout
 
@@ -92,22 +80,21 @@ upstream/          Ross Cawston's original diff -ruN files, byte-for-byte
 ceralive/          first-party patches with no upstream counterpart
 backports/         patches taken from mainline / a stable tree / lore
 backports/lore/    canonical mail of each unmerged posting, one directory per candidate
+island/            byte-preserved rk3588-media-island release mailboxes
 tests/             stdlib unittest fixtures for the Python tooling
 retired/           patches moved out of the series, byte-unchanged, + REGISTRY.md
 patches/           the git-am series — GENERATED from the lanes, never hand-edit
-overlays/          the rkvenc/MPP device-tree overlay
 rebase/            per-kernel-tag context re-anchor rules
-scripts/           preflight · build-series · verify-payload-parity · apply
+scripts/           preflight · build-series · payload/release provenance checks · apply
 kernel-pin.env     every pinned coordinate, in one sourceable file
 docs/              provenance audit · rebase ledger · preflight derivation · upstream status · adopt-or-keep verdicts
 ```
 
-All three source lanes run through the same converter, so `patches/` stays 100 %
-generated and `verify-payload-parity.py` holds every patch — first-party and
-backported included — to byte-identical added/removed lines against its own source
-file. The build also refuses to run if any lane file is not accounted for exactly
-once, so a patch dropped into a lane and forgotten is an error rather than a silent
-no-op.
+All four source lanes run through the same converter, so `patches/` stays 100 %
+generated. `verify-payload-parity.py` holds every patch to its lane payload, while
+`verify-island-provenance.py` separately verifies the published asset SHA-256 and
+byte-compares each `island/` member. The build refuses any lane file not accounted
+for exactly once.
 
 **A source file is never deleted.** Dropping a patch from the series moves it into
 [`retired/`](retired/REGISTRY.md) byte-unchanged and records a row in the registry
@@ -164,20 +151,22 @@ Shell glob order is lexical, which is the correct apply order.
 
 ### Then: kernel config
 
-The encoder driver is not enabled by default.
+The island MPP service and multi_rga modules are selectable independently. The
+first island release compiles exactly RKVENC2, RKVDEC2 and JPGDEC as MPP clients.
 
 ```bash
-./scripts/config --module CONFIG_VIDEO_ROCKCHIP_RKVENC
+./scripts/config --module CONFIG_ROCKCHIP_MPP_SERVICE
+./scripts/config --enable CONFIG_ROCKCHIP_MPP_RKVENC2
+./scripts/config --enable CONFIG_ROCKCHIP_MPP_RKVDEC2
+./scripts/config --enable CONFIG_ROCKCHIP_MPP_JPGDEC
+./scripts/config --module CONFIG_ROCKCHIP_MULTI_RGA
 ```
 
 ### Then: device tree
 
-The encoder nodes are added to `rk3588-base.dtsi` by `0001`, so a stock build
-picks them up. If you are instead applying the overlay at runtime on Armbian:
-
-```bash
-armbian-add-overlay overlays/rockchip-rk3588-rkvenc-mpp.dts
-```
+The MPP encoder, decoder and JPEG nodes are integrated directly into
+`rk3588-base.dtsi` by `0035`–`0037`, so both supported board DTBs inherit them.
+The retired standalone-rkvenc overlay is not part of the active series.
 
 ### Then: userspace
 
@@ -247,9 +236,9 @@ That is what happened to `0007` at `v7.2`.
 with no mail headers at all, so `git am` rejects them before it reads a single
 hunk. Two of them additionally carry macOS `.DS_Store` `Binary files … differ`
 stanzas, which `git apply` refuses even once headers exist. Fixing that is the
-main reason this fork exists — `patches/` is generated from `upstream/` and
-`ceralive/` by `scripts/build-series.py`, which adds mailbox headers and drops the
-`.DS_Store` noise.
+main reason this fork exists — `patches/` is generated from all four source lanes
+by `scripts/build-series.py`, which adds the consumer's mailbox headers and drops
+the `.DS_Store` noise from the old imported files.
 
 **The series is re-anchored for `v7.2`.** Upstream targeted `v6.19-rc8`. Each base
 move gets its own ledger, and the current one is
@@ -268,35 +257,26 @@ that the set of added and removed lines in `patches/` is byte-identical to the
 patch's source lane, and it runs in CI. If a rebase rule ever overstepped, that
 check fails.
 
-**There are three first-party patches upstream does not have.** `0006` adds the
+**The retained first-party patches answer gaps upstream does not.** `0006` adds the
 device-tree sound card that turns upstream's `0005` HDMI-RX audio codec into a
 capturable ALSA card — without it the codec binds but `/proc/asound/cards` shows
 no HDMI-RX capture card, because nothing in the tree binds the codec to a DAI.
 `0006` adds `#sound-dai-cells` to `hdmi_receiver`, an `hdmirx-sound`
 `simple-audio-card`, and enables it plus `i2s7_8ch` on both boards.
 
-`0008` repairs `0001` rather than extending it: `rkvenc_dma_import_fd()` recorded
-an imported dma-buf's length from the first mapped segment only, and `0001` never
-set a DMA max segment size, so every import over 64 KiB was truncated to exactly
-`0x10000` bytes. `0008` sets and reads back the cap in `rkvenc_hw_probe()`,
-failing the probe if it did not take, and deliberately leaves the IOVA guardrail
-that caught the symptom alone. Marked **`UNVALIDATED`** in
-[`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) — compiles into a real
-kernel package; its runtime effect had never been observed on a board when it
-was written.
+The historical standalone-rkvenc `0008` and its associated hardening patches are
+archived byte-unchanged in `retired/`. Their intent is re-expressed in maintained
+island source and permanent tests, with the exact mapping in the registry.
 
-`0009` is the other two-thirds of the same problem: Rockchip's MPP userspace
+`0009` remains because Rockchip's MPP userspace
 hard-codes a `system-uncached` dma-heap name mainline does not provide, so
 `mpph264enc` failed to register at all, and MPP performs no CPU cache
 maintenance on a heap it believes is uncached, so cached memory under that name
 encoded non-deterministically. `0009` registers a second heap under exactly
 that name — non-cacheable mappings, a one-time cache clean at allocation, and
 skipped CPU-sync only for that heap — reusing the `system_heap.c` extension
-point `system_cc_shared` already has. Also **`UNVALIDATED`**: the kernel's
-cacheable linear-map alias of those pages is left in place, so getting the
-cache handling subtly wrong yields silent intermittent corruption rather than
-an error, and no compile can rule that out. What a real board must demonstrate
-first: [`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md).
+point `system_cc_shared` already has. Its board evidence was measured on v7.1.7
+and is explicitly historical at the current v7.2 base.
 
 ### Why not the `sfqr0414` fork
 
@@ -315,7 +295,6 @@ It gates **patch application**. It does not:
 - build a kernel, or produce any `.deb` or image artifact;
 - verify the patched tree compiles;
 - test anything on RK3588 hardware;
-- compile or apply the device-tree overlay;
 - claim the series is upstream-mergeable. It is a CeraLive-maintained adaptation,
   not a submission to `rcawston` or to the Linux kernel. Upstream's own README
   states the encoder driver is "not intended for upstream merge".
@@ -343,13 +322,14 @@ questions.
 
 ## Credits
 
-`0001`–`0005` are the work of **Ross Cawston**
+The retired `0001` plus active `0002`, `0003` and `0005` are the work of **Ross Cawston**
 ([`rcawston`](https://github.com/rcawston)), ported from Rockchip's BSP MPP
 driver, and are carried here byte-for-byte. This fork contributes packaging,
 pinning, auditing, and CI.
 
-`0006`, `0008` and `0009` are first-party CeraLive work with no upstream
-counterpart. `0006` is a device-tree change modelled on the Rockchip BSP's own
+`0006` and `0009` are retained first-party CeraLive work with no upstream
+counterpart. The retired `0008` remains archived with its credit intact. `0006`
+is a device-tree change modelled on the Rockchip BSP's own
 `hdmiin-sound` wiring (`rockchip,cpu = <&i2s7_8ch>`, receiver as clock master),
 expressed with mainline's `simple-audio-card` instead of the BSP's `rockchip,hdmi`
 machine driver. `0008` is a three-statement fix to the encoder driver `0001`
@@ -357,9 +337,12 @@ introduces, written against the pinned kernel's own DMA API. `0009` follows the
 shape of the ACK/Rockchip uncached dma-heap, but is written against mainline's
 `system_heap.c` and its existing per-heap drvdata mechanism rather than copied —
 mainline has no `dma_heap_get_dev()`, so the one-time cache clean uses
-`arch_dma_prep_coherent()`, the same primitive `dma_direct_alloc()` uses. All
-three are kept in a separate `ceralive/` directory precisely so the credit line
-above stays true.
+`arch_dma_prep_coherent()`, the same primitive `dma_direct_alloc()` uses.
+
+`0031`–`0037` are generated by CERALIVE/rk3588-media-island and copied here
+byte-for-byte from its `v2026.9.0` release asset. The `Island(...)` variant and
+independent verifier keep that provenance distinct from upstream commits,
+first-party raw diffs, and unmerged lore postings.
 
 `0007` was neither ours nor Ross Cawston's: it was a straight backport of a
 mainline commit by Simon Xue, carried in `backports/` with its own provenance
