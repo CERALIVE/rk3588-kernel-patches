@@ -14,18 +14,14 @@ On top of that, upstream targeted v6.19-rc8 and we target the tag in kernel-pin.
 so a few context anchors have drifted. Those are re-anchored from an explicit,
 reviewable table (rebase/<tag>.rules) -- never inline in this file.
 
-Three lanes, one pipeline
+Four lanes, one pipeline
 -------------------------
 ``upstream/`` holds Ross Cawston's files verbatim. ``ceralive/`` holds first-party
 patches this project authored, which have no upstream counterpart. ``backports/``
-holds patches taken from somewhere else entirely -- mainline, a stable tree, or a
-posting on lore -- which is why every member of that lane must name its own origin
-(the mainline commit it is a backport of, and the lore Message-ID it was posted
-under) instead of inheriting one blanket credit line the way ``upstream/`` does.
-All three lanes go through the same converter so that ``patches/`` stays fully
-generated -- the whole point of the ANTI-PATTERN "don't hand-edit patches/". The
-lane only changes the mail header the converter writes and which directory parity
-is proven against; every other guarantee is shared.
+holds patches taken from mainline, a stable tree, or lore. ``island/`` holds the
+already-generated mailbox members from a CeraLive rk3588-media-island release,
+byte-preserved and re-headed only to join this repository's ordinal sequence. All
+four lanes go through the same converter so that ``patches/`` stays fully generated.
 
 Retirement, not deletion
 ------------------------
@@ -79,27 +75,49 @@ REGISTRY_FILE = RETIRED_DIR / "REGISTRY.md"
 UPSTREAM = "upstream"
 CERALIVE = "ceralive"
 BACKPORTS = "backports"
+ISLAND = "island"
 SOURCE_DIRS = {
     UPSTREAM: ROOT / UPSTREAM,
     CERALIVE: ROOT / CERALIVE,
     BACKPORTS: ROOT / BACKPORTS,
+    ISLAND: ROOT / ISLAND,
 }
 
-# Only *.patch is a series candidate. Both upstream/README.MD and the per-lane
-# READMEs live beside the patches and are not part of any lane's membership.
+# overlays/ is NOT a source lane -- nothing in it becomes a series member -- but a
+# file may still leave it, and leaving is always a retirement. Registering it needs
+# a lane name, so the registry accepts this one in addition to the source lanes and
+# refuses it an ordinal (see NO_ORDINAL).
+OVERLAYS = "overlays"
+RETIRABLE_LANES = {**SOURCE_DIRS, OVERLAYS: ROOT / OVERLAYS}
+
+# Only *.patch is a series candidate. upstream/README.MD and the per-lane READMEs
+# live beside the patches and are not part of any lane's membership.
 LANE_GLOB = "*.patch"
 
 REGISTRY_COLUMNS = ("Patch", "Lane", "Ordinal", "Retired", "Kernel tag", "Reason")
 REGISTRY_RULE_RE = re.compile(r"^:?-{3,}:?$")
+# An artifact that never held a series slot records its ordinal as this, rather
+# than borrowing a number it never had. `0` would collide with nothing and still
+# be a lie; a slot is either held or it is not.
+NO_ORDINAL = "-"
 SHA1_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 REVISION_RE = re.compile(r"^v[0-9]+$")
+# CalVer, as the island releases it: vYYYY.M.P.
+ISLAND_TAG_RE = re.compile(r"^v[0-9]{4}\.[0-9]+\.[0-9]+$")
 
-# Slot count, not member count. 0004 was never published upstream and we keep the
-# gap so our files line up 1:1 with theirs. Every later ordinal continues the same
-# counter regardless of lane: 0007 and 0010-0012 into backports/, everything else
-# into ceralive/.
-SERIES_TOTAL = 30
+# Slot count, not member count, and it never shrinks. 0004 was never published
+# upstream and we keep the gap so our files line up 1:1 with theirs; 0007 and
+# 0023-0025 are retired ordinals whose slots stay burned, as are the ten rkvenc
+# slots the island release superseded. Every later ordinal continues the same
+# counter regardless of lane: 0010-0012 into backports/, 0031-0037 into island/,
+# everything else into ceralive/.
+#
+# 30 slots existed before the island lane; the release adds 7 members at 0031-0037,
+# so the highest slot -- and therefore this number -- is 37. Retiring ten members
+# out of those first 30 slots does NOT reduce it: an N/37 subject counts slots.
+SERIES_TOTAL = 37
+ISLAND_ORDINAL_OFFSET = 30
 
 DS_STORE_RE = re.compile(r"^Binary files .*\.DS_Store .* differ$")
 HUNK_RE = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$")
@@ -115,6 +133,22 @@ NULL_OID = "0" * 40
 # carries a sentinel that cannot be mistaken for an object id, and the generated
 # header states the absence of an identity instead of inventing one.
 LORE_POSTING = "lore-posting"
+
+# An island member has no kernel commit either. The island release DOES name a
+# commit, but it is a commit in CERALIVE/rk3588-media-island -- not in the history
+# this delimiter's field is for -- so putting it here would assert a kernel
+# identity that does not exist, exactly the way NULL_OID would. The release
+# coordinates travel in Island(...) instead, where they are labelled.
+ISLAND_RELEASE = "island-release"
+
+
+@dataclass(frozen=True)
+class Island:
+    """Immutable release coordinates for a byte-preserved island/ member."""
+
+    tag: str
+    commit: str
+    asset_sha256: str
 
 
 @dataclass(frozen=True)
@@ -163,7 +197,7 @@ class Patch:
     filename: str
     ordinal: int
     subject: str
-    provenance: str  # commit of origin: upstream's, the backported one, NULL_OID
+    provenance: str | Island
     author: str
     date: str
     origin: str = UPSTREAM
@@ -173,17 +207,6 @@ class Patch:
 
 
 SERIES: tuple[Patch, ...] = (
-    Patch(
-        filename="0001-rockchip-rk3588-vepu580-encoder-support-v3.patch",
-        ordinal=1,
-        subject=(
-            "rockchip: rk3588: add VEPU580 (RKVENC v2) "
-            "H.265/H.264/JPEG encoder support"
-        ),
-        provenance="09595583f3ffadd3d790a20ead392434e0e46728",
-        author="Ross Cawston <rcawston@users.noreply.github.com>",
-        date="Mon, 9 Feb 2026 20:42:16 -0800",
-    ),
     Patch(
         filename="0002-rockchip-rk3588-hdmirx-edid-fix-v1.patch",
         ordinal=2,
@@ -254,78 +277,6 @@ SERIES: tuple[Patch, ...] = (
             "matches the BSP and the fs*128 rate 0005 programs on the \"audio\" clock.",
             "i2s7_8ch declares only a \"rx\" DMA, so rockchip_i2s_tdm_init_dai() marks it",
             "capture-only and the link resolves to a single capture stream.",
-        ),
-    ),
-    Patch(
-        filename="0008-rkvenc-set-dma-max-segment-size.patch",
-        ordinal=8,
-        subject=(
-            "media: rockchip: rkvenc: set the DMA max segment size "
-            "in the hardware probe"
-        ),
-        provenance=NULL_OID,
-        author="Andres Cera <andres.cera@hotmail.com>",
-        date="Sat, 8 Aug 2026 12:00:00 -0500",
-        origin=CERALIVE,
-        rationale=(
-            "*** VALIDATED on Rock 5B+ (2026-08-09) -- UNVALIDATED on Orange Pi 5+. ***",
-            "A real 1080p/60-frame encode produced 1,854,524 bytes (7.1.5 produced 0 bytes",
-            "and a stream error). Output was byte-identical across 5 repeats, 3",
-            "resolutions, a reboot and 5.2 GiB of memory pressure; CABAC was confirmed in",
-            "use; and an 18,000-frame/10-minute soak completed clean with the IOVA",
-            "guardrail never firing while both guardrail strings stayed compiled into the",
-            "shipped rkvenc.ko. See docs/BOARD-QUALIFICATION.md for the full transcript",
-            "and image-building-pipeline's",
-            ".omo/evidence/image-pipeline-quality/hardware-validation-round1.md for the",
-            "raw session evidence. Orange Pi 5+ has never run this image at all -- do NOT",
-            "read this marker as a claim that MPP hardware encode is validated fleet-wide.",
-
-            "Origin: the root-cause analysis recorded as defect 2 of 3 in the CeraLive",
-            "image-building-pipeline AGENTS.md KNOWN ISSUE on MPP hardware video encode",
-            "not working on the edge kernel -- a Rock 5B+ board diagnosis, 2026-08-02.",
-            "",
-            "rkvenc_dma_import_fd() records an imported dma-buf's length as",
-            "sg_dma_len(sgt->sgl) -- the FIRST mapped segment only, not the mapping's total",
-            "length. That is only ever correct when the mapping is a single segment, and",
-            "0001 never told the DMA layer how long a segment may be. dma_get_max_seg_size()",
-            "therefore answers its SZ_64K default (include/linux/dma-mapping.h), and",
-            "iommu-dma's __finalise_sg() stops coalescing at that boundary",
-            "(drivers/iommu/dma-iommu.c: max_len = dma_get_max_seg_size(dev), then",
-            "`max_len - cur_len >= s_length`). Every import larger than 64 KiB is recorded",
-            "as exactly 0x10000 bytes -- which is the window width the board reported, in",
-            "every failing case.",
-            "",
-            "Expected effect: with the cap raised to the device's 32-bit addressing width,",
-            "an imported buffer's recorded length becomes the FULL buffer length, so a",
-            "frame's plane offsets resolve inside the mapped window instead of past its",
-            "truncated end.",
-            "",
-            "The IOVA guardrail in rkvenc_service.c is deliberately NOT touched. It is",
-            "correct: it rejects a register that genuinely points outside the window this",
-            "bookkeeping described, and with that window truncated to 64 KiB an NV12",
-            "chroma-plane offset genuinely is outside it. Silencing the guardrail would hide",
-            "the defect one layer down instead of fixing it, and would trade a clean -EINVAL",
-            "for a DMA write past the end of a mapping.",
-            "",
-            "The call is checked, not fire-and-forget -- but NOT by its return value, which",
-            "does not exist at this base. At v7.1.7 dma_set_max_seg_size() returns void and",
-            "merely WARN_ON_ONCE()s when dev->dma_parms is NULL, leaving the SZ_64K default",
-            "in place. So the probe reads the value back with dma_get_max_seg_size() and",
-            "fails with -EINVAL if it did not take: that verifies the EFFECT rather than a",
-            "status, and the state it refuses to boot into is exactly the defect above. The",
-            "platform bus does point dma_parms at the platform_device's own storage",
-            "(drivers/base/platform.c setup_pdev_dma_masks), so this is expected to pass on",
-            "every rkvenc core; the check exists so a future base that changes that fails",
-            "loudly at probe rather than silently truncating every frame.",
-            "",
-            "Placed before pm_runtime_enable()/device_init_wakeup(), so the failure path is",
-            "a plain return rather than the `failed` label -- unwinding there would call",
-            "pm_runtime_disable() without a matching enable.",
-            "",
-            "This is one of THREE stacked defects on that track. It does not address the",
-            "other two, both of which are userspace/heap problems: librockchip-mpp asks for",
-            "a `system-uncached` dma-heap that mainline does not register, and mainline has",
-            "no uncached heap for it to fall back to.",
         ),
     ),
     Patch(
@@ -602,190 +553,6 @@ SERIES: tuple[Patch, ...] = (
         ),
     ),
     Patch(
-        filename="0013-rkvenc-ceralive-test-instrumentation.patch",
-        ordinal=13,
-        subject=(
-            "media: rockchip: rkvenc: add gated deterministic fault injection "
-            "for the negative paths"
-        ),
-        provenance=NULL_OID,
-        author="Andres Cera <andres.cera@hotmail.com>",
-        date="Sun, 10 Aug 2026 09:00:00 -0500",
-        origin=CERALIVE,
-        rationale=(
-            "MOTIVATION. 0014-0017 fix negative paths a working board never",
-            "executes (supplier bind failure, refused clock enable, a session",
-            "closed mid-task, a worker cancelled under a lock) -- exactly where a",
-            "use-after-free or lock inversion hides, and exactly what ordinary",
-            "encoding cannot reach. Without a way to force each on demand, the only",
-            "evidence for those five patches would be source reasoning alone.",
-            "",
-            "BEHAVIOUR. Adds three Kconfig symbols and one new file: six one-shot,",
-            "mode-0600 debugfs controls under /sys/kernel/debug/rkvenc-test/",
-            "(fail_service_attach_once, fail_ccu_attach_once, fail_irq_request_once,",
-            "fail_clock_enable_once, fail_session_alloc_once,",
-            "delay_task_completion_ms), each consumed via atomic_cmpxchg() and",
-            "paired with a read-only <name>_consumed counter so a harness can tell",
-            "a fired fault from an ignored knob. CONFIG_VIDEO_ROCKCHIP_HDMIRX_CERALIVE_TEST",
-            "and CONFIG_DMABUF_HEAPS_CERALIVE_TEST are added here as symbols only,",
-            "owning instrumentation 0017 and 0018 implement later.",
-            "",
-            "NON-GOALS. Not a production feature: with all three symbols off this",
-            "patch contributes zero bytes of code, zero debugfs nodes and zero",
-            "symbols to the built modules -- checked, not asserted: a",
-            "production-config build produces no rkvenc_test.o and no",
-            "\"rkvenc-test\" string in rkvenc.ko. The image pipeline never builds",
-            "this: all three symbols are on manifests/kernel/forbidden-symbols.list,",
-            "enabled only by the opt-in `edge-test` variant its release workflow",
-            "refuses to publish.",
-            "",
-            "PROVENANCE. First-party CeraLive test scaffolding for the imported",
-            "0001 driver; no upstream counterpart.",
-            "",
-            "EVIDENCE POINTER. Run on a Rock 5B+ under KASAN and lockdep with every",
-            "fault forced in turn; see tests/rkvenc-unbind.sh, tests/rkvenc-fault-qa.sh",
-            "and docs/BOARD-QUALIFICATION.md.",
-        ),
-    ),
-    Patch(
-        filename="0014-rkvenc-teardown-and-service-ccu-unwind.patch",
-        ordinal=14,
-        subject=(
-            "media: rockchip: rkvenc: fix session teardown and unwind probe "
-            "stages in reverse"
-        ),
-        provenance=NULL_OID,
-        author="Andres Cera <andres.cera@hotmail.com>",
-        date="Sun, 10 Aug 2026 10:00:00 -0500",
-        origin=CERALIVE,
-        rationale=(
-            "MOTIVATION. Six defects in 0001's teardown path, all in code that",
-            "runs only when something goes away: a session freed while a task is",
-            "still in flight on the release drain's timeout path; that drain",
-            "sleeping under the lock its own completion path needs; a failed CCU",
-            "attach leaving a dangling list entry into freed memory; remove()",
-            "clearing almost none of the state it published; the service tearing",
-            "itself down under open file descriptors; and a devm IRQ outliving",
-            "the state it touches across remove().",
-            "",
-            "BEHAVIOUR. Three parts. device_link_add() from each core to its",
-            "service and CCU suppliers (DL_FLAG_AUTOREMOVE_CONSUMER |",
-            "DL_FLAG_PM_RUNTIME) so unbind ordering and PM sequencing are",
-            "structural rather than assumed. A service lifetime state --",
-            "LIVE -> QUIESCING -> DEAD -- guarded by the EXISTING session_lock,",
-            "refusing new opens/submissions, waking parked task waiters, and",
-            "draining before any supplier-owned resource releases; an aborted",
-            "task now reports -ENODEV rather than a stale success. A probe-stage",
-            "ledger: one bit per completed step, walked in exact reverse by both",
-            "the probe error path and remove(), idempotent per step.",
-            "",
-            "NON-GOALS. Does not change the encoder's data path or ioctl surface",
-            "(see 0016 for that). Does not add a new lock -- the service state",
-            "machine reuses the existing session_lock by design.",
-            "",
-            "PROVENANCE. First-party CeraLive fix to the imported 0001 driver; no",
-            "upstream counterpart.",
-            "",
-            "EVIDENCE POINTER. Source-verified and build-clean at W=1 in both",
-            "configurations; hardware validation pending. Forced by 0013's",
-            "controls and exercised by tests/rkvenc-unbind.sh (idle, held-open-FD,",
-            "and queued/in-flight supplier unbinds, including a deliberate",
-            "no-close `timeout-negative` fixture that must FAIL) under KASAN and",
-            "lockdep. See docs/BOARD-QUALIFICATION.md.",
-        ),
-    ),
-    Patch(
-        filename="0015-rkvenc-resource-error-observability.patch",
-        ordinal=15,
-        subject=(
-            "media: rockchip: rkvenc: fail on a missing required resource and "
-            "stop swallowing runtime errors"
-        ),
-        provenance=NULL_OID,
-        author="Andres Cera <andres.cera@hotmail.com>",
-        date="Sun, 10 Aug 2026 11:00:00 -0500",
-        origin=CERALIVE,
-        rationale=(
-            "MOTIVATION. The driver treated almost every resource the 0001",
-            "binding actually REQUIRES (reg, interrupts, three clocks, three",
-            "resets, iommus, rockchip,srv/ccu) as optional: clock-get failures",
-            "were logged and silently replaced with NULL, a failed IOMMU probe",
-            "left iommu_info NULL and probe continued, reset acquisition turned",
-            "every error into \"no reset\", and clk_prepare_enable() /",
-            "pm_runtime_get_sync() / rkvenc_hw_finish() / rkvenc_hw_reset()",
-            "returns were all discarded.",
-            "",
-            "BEHAVIOUR. Required-vs-optional is now read from the binding 0001",
-            "itself ships (rockchip,sram / rockchip,rcb-iova stay genuinely",
-            "optional, with one explicit log line naming an absent property).",
-            "Clock, IOMMU and runtime-PM failures now propagate through",
-            "dev_err_probe() / fatal error paths instead of shipping a",
-            "permanently-bound device with no clock or no IOMMU; a refused",
-            "runtime clock enable now unwinds the clocks it did enable and",
-            "aborts the task; a failed status readback is recorded on the task",
-            "and forces a reset rather than handing userspace stale registers.",
-            "",
-            "NON-GOALS. Does not change which DT properties are required --",
-            "only how their absence or failure is reported. Optional SRAM",
-            "behaviour is unchanged.",
-            "",
-            "PROVENANCE. First-party CeraLive fix to the imported 0001 driver;",
-            "no upstream counterpart.",
-            "",
-            "EVIDENCE POINTER. Source-verified and build-clean; hardware",
-            "validation pending. Forced by 0013's fail_clock_enable_once and",
-            "exercised by tests/rkvenc-fault-qa.sh --case fail-clock-enable. See",
-            "docs/BOARD-QUALIFICATION.md.",
-        ),
-    ),
-    Patch(
-        filename="0016-rkvenc-ioctl-bounds.patch",
-        ordinal=16,
-        subject=(
-            "media: rockchip: rkvenc: bound every userspace-supplied register "
-            "request"
-        ),
-        provenance=NULL_OID,
-        author="Andres Cera <andres.cera@hotmail.com>",
-        date="Sun, 10 Aug 2026 12:00:00 -0500",
-        origin=CERALIVE,
-        rationale=(
-            "MOTIVATION. req->offset and req->size arrive verbatim from",
-            "userspace in mpp_msg_v1 and were used unchecked, reachable by any",
-            "process that can open /dev/mpp_service (the video group on a",
-            "CeraLive device). The most serious instance: rkvenc_result()",
-            "located a read request's register class by its START offset only,",
-            "then copy_to_user()'d the caller's own claimed size -- a request",
-            "beginning one dword inside a class and claiming a large size read",
-            "past the end of a kmalloc'd buffer into whatever followed it on the",
-            "kernel heap and handed the result to userspace: an information",
-            "disclosure, not merely a robustness issue.",
-            "",
-            "BEHAVIOUR. Also fixes: offset+size underflow (size<4) and wrap;",
-            "unaligned-offset dword truncation; an element-vs-byte bound",
-            "mismatch in MPP_CMD_INIT_TRANS_TABLE (one-byte overrun); three",
-            "discarded parser/attach error returns that let a malformed blob",
-            "build and run a half-parsed task; and every allocation failure",
-            "collapsed to -ENOMEM, now an ERR_PTR carrying the real errno.",
-            "**Userspace-visible change**: a caller matching on ENOMEM will now",
-            "see EINVAL or EFAULT.",
-            "",
-            "NON-GOALS. Does not change the ioctl's wire format or add new",
-            "capabilities -- only bounds what was already accepted.",
-            "",
-            "PROVENANCE. First-party CeraLive fix to the imported 0001 UAPI",
-            "parser; no upstream counterpart.",
-            "",
-            "EVIDENCE POINTER. Source-verified and build-clean; hardware",
-            "validation pending. Harness: tests/rkvenc-invalid-ioctl.c (one",
-            "malformed request per defect, plus a well-formed request proving",
-            "the session still works) with tests/expected-errno.tsv owning the",
-            "expectations as reviewed data. build-rkvenc-harness.sh requires a",
-            "verified --kernel-tree (pinned SHA, applied log matches",
-            "patches/series) before compiling.",
-        ),
-    ),
-    Patch(
         filename="0017-hdmirx-audio-lifecycle-and-clock-errors.patch",
         ordinal=17,
         subject=(
@@ -883,566 +650,6 @@ SERIES: tuple[Patch, ...] = (
             "injection seam is actually used; nothing real is registered by the",
             "suite. tests/check-kunit-heap.sh re-asserts the boot's actual heaps",
             "from userspace with an anchored TAP match.",
-        ),
-    ),
-    Patch(
-        filename="0019-rkvenc-worker-lock-context-and-dma-buf-api.patch",
-        ordinal=19,
-        subject=(
-            "media: rockchip: rkvenc: fix the worker's lock context and the "
-            "dma-buf import API"
-        ),
-        provenance=NULL_OID,
-        author="Andres Cera <andres.cera@hotmail.com>",
-        date="Mon, 10 Aug 2026 18:00:00 -0500",
-        origin=CERALIVE,
-        rationale=(
-            "MOTIVATION. A plain, unfaulted 1080p encode on a Rock 5B+ running",
-            "a KASAN+LOCKDEP kernel produced three reports, all from 0001's",
-            "imported driver and none of them from fault injection:",
-            "",
-            "  BUG: sleeping function called from invalid context at",
-            "  kernel/locking/mutex.c:623 ... name: rkvenc-worker",
-            "  1 lock held by rkvenc-worker/249:",
-            "   #0: (&queue->running_lock){....}-{3:3}, at:",
-            "   rkvenc_task_worker_default+0x108",
-            "  [ BUG: Invalid wait context ] trying to lock",
-            "   (&queue->pending_lock){+.+.}-{4:4}, at:",
-            "   rkvenc_task_worker_default+0x1d4",
-            "  WARNING: drivers/dma-buf/dma-buf.c:1179 at",
-            "  dma_buf_map_attachment+0x184, rkvenc_dma_import_fd",
-            "",
-            "Two independent defects. First, rkvenc_task_worker_default() takes",
-            "queue->running_lock with spin_lock_irqsave() and then, still",
-            "holding it with interrupts off, takes queue->pending_lock -- which",
-            "0001 declares as a struct mutex. That is a sleeping lock acquired",
-            "from atomic context; it can schedule with interrupts disabled and",
-            "deadlock the box, and lockdep flags the {3:3}-inside-{4:4} wait",
-            "context before it gets that far. Second, rkvenc_dma_import_fd()",
-            "and rkvenc_dma_release_buffer() call the LOCKED dma-buf entry",
-            "points, dma_buf_map_attachment() and dma_buf_unmap_attachment(),",
-            "which since the dynamic-importer split assert the caller holds the",
-            "exporter's reservation lock. rkvenc holds no such lock and is not",
-            "a dynamic importer, so every single buffer import trips",
-            "dma_resv_assert_held(). The two are unrelated: the WARNING fires",
-            "in ioctl context on a task that never touches either queue lock.",
-            "",
-            "BEHAVIOUR. pending_lock becomes a spinlock_t, initialised with",
-            "spin_lock_init() and taken with spin_lock()/spin_unlock() at both",
-            "of its two sites. running_lock deliberately stays held across the",
-            "dequeue: claiming an idle core and taking the task that will",
-            "occupy it has to be one step, or two workers on different cores",
-            "can claim the same core_id. Neither pending_lock critical section",
-            "sleeps or is anything but an O(1) list operation, so the type",
-            "change costs nothing and is what the nesting already required.",
-            "The dma-buf calls move to dma_buf_map_attachment_unlocked() and",
-            "dma_buf_unmap_attachment_unlocked(), the entry points for static",
-            "importers that do not hold dmabuf->resv, which is exactly what",
-            "this driver is: it attaches with plain dma_buf_attach() and",
-            "registers no dma_buf_attach_ops.",
-            "",
-            "NON-GOALS. No lockdep suppression, no lockdep_off(), no",
-            "might_sleep() annotation change -- the lock order is fixed, not",
-            "hidden. The worker is not restructured and no work item is added:",
-            "the dequeue does not need to move contexts once the lock it takes",
-            "is the right type. No new locking is introduced and no critical",
-            "section grows.",
-            "",
-            "PROVENANCE. First-party CeraLive fix to the imported 0001 driver.",
-            "Both defects are 0001's as imported -- neither the 0013 test hook",
-            "nor the 0014 teardown work touches this block, and 0014's",
-            "pending_lock edits are all on the unrelated session->pending_lock.",
-            "No upstream counterpart: the VEPU580 driver is not in mainline.",
-            "",
-            "EVIDENCE POINTER. Root-caused from a REAL Rock 5B+ KASAN+LOCKDEP",
-            "boot log, not a self-test: the splat names both locks, both",
-            "acquisition offsets in rkvenc_task_worker_default, and the exact",
-            "dma-buf line. Source-verified against v7.1.7's own",
-            "drivers/dma-buf/dma-buf.c, where line 1179 is",
-            "dma_resv_assert_held(attach->dmabuf->resv). Build-clean; the",
-            "runtime re-test on the debug slot is the confirming evidence and",
-            "is pending. See docs/BOARD-QUALIFICATION.md.",
-        ),
-    ),
-    Patch(
-        filename="0020-rkvenc-service-survives-a-single-core-unbind.patch",
-        ordinal=20,
-        subject=(
-            "media: rockchip: rkvenc: keep the service usable across a single "
-            "core's unbind"
-        ),
-        provenance=NULL_OID,
-        author="Andres Cera <andres.cera@hotmail.com>",
-        date="Mon, 10 Aug 2026 21:00:00 -0500",
-        origin=CERALIVE,
-        rationale=(
-            "MOTIVATION. On a real Rock 5B+, unbinding ONE rkvenc core and",
-            "binding it back left /dev/mpp_service returning -ENODEV to every",
-            "open() for the rest of the boot -- even though dmesg reported",
-            "'rkvenc core 0 probe success' and the core had republished",
-            "itself. 0014's rkvenc_core_unwind() ends its first step with",
-            "",
-            "  rkvenc_service_quiesce(srv);",
-            "",
-            "and that function drives srv->state LIVE -> QUIESCING -> DEAD.",
-            "There is no path back: srv->state is assigned in exactly three",
-            "places -- LIVE once in rkvenc_service_probe(), then QUIESCING and",
-            "DEAD inside the quiesce -- so nothing short of unbinding and",
-            "re-binding the mpp-service node itself can make the service LIVE",
-            "again. rkvenc_dev_open() refuses on 'state != RKVENC_SRV_LIVE ||",
-            "!sub_devices[MPP_DEVICE_RKVENC]', so the service kept refusing",
-            "long after the sub-device came back. A single core's bind/unbind",
-            "cycle is transient; the state it was driving is terminal.",
-            "",
-            "BEHAVIOUR. The drain body is factored out unchanged as",
-            "rkvenc_service_drain(), which reports whether it owned the",
-            "transition and whether every session actually reached release().",
-            "The terminal state becomes the caller's: rkvenc_service_quiesce()",
-            "still ends DEAD and is still what rkvenc_service_remove() and",
-            "rkvenc_shutdown() call, while rkvenc_core_unwind() now calls the",
-            "new rkvenc_service_quiesce_for_core(), which returns a fully",
-            "drained service to LIVE. Nothing about the drain itself changes:",
-            "new opens are still refused throughout, parked waiters are still",
-            "woken with -ENODEV, the worker is still flushed, and the wait for",
-            "open descriptors is still the same bounded one, before the core",
-            "frees the IRQ and the mappings those sessions can reach. What",
-            "keeps opens out while the core is away is sub_devices[], cleared",
-            "one statement earlier under the same lock and repopulated by the",
-            "core's next successful probe -- the guard that was already doing",
-            "this job correctly, and the only one of the two that is",
-            "reversible. A drain that TIMES OUT still ends DEAD: sessions that",
-            "outlived it still point at the departing core, so refusing to",
-            "come back is the safe direction.",
-            "",
-            "NON-GOALS. Does NOT weaken the refusal: open() during a core's",
-            "absence still fails with -ENODEV, via the sub_devices[] half that",
-            "0014 already had, and the ordering inside the drain is untouched.",
-            "Does not remove the quiesce -- a bare removal would drop the",
-            "abort-and-drain that lets an in-flight waiter reach release()",
-            "before the core frees its IRQ, which is precisely what 0014 added",
-            "and what tests/rkvenc-unbind.sh's inflight and held-open-FD cases",
-            "prove. No new lock, no new wait, no change to DEAD being terminal",
-            "for real service teardown.",
-            "",
-            "PROVENANCE. First-party CeraLive fix to first-party 0014. No",
-            "upstream counterpart: neither the VEPU580 driver nor this service",
-            "lifetime model exists in mainline.",
-            "",
-            "EVIDENCE POINTER. Root-caused from a REAL Rock 5B+ fault-injection",
-            "run, not a self-test: two bind-fault cases in",
-            "tests/rkvenc-fault-qa.sh unbound core 0, re-bound it cleanly, saw",
-            "the kernel log its own probe success, and then could not open",
-            "/dev/mpp_service at all. That harness already ASSERTS the correct",
-            "behaviour -- it re-binds and then runs qa_encode '<case> post-fault'",
-            "-- so no test expectation changes here; the driver was wrong, not",
-            "the test. tests/rkvenc-unbind.sh unbinds the SERVICE node, whose",
-            "own remove() quiesces permanently and correctly, which is why it",
-            "never caught this. Build-clean; the runtime re-test on the debug",
-            "slot is the confirming evidence and is pending. See",
-            "docs/BOARD-QUALIFICATION.md.",
-        ),
-    ),
-    Patch(
-        filename="0021-rkvenc-balanced-hw-run-teardown.patch",
-        ordinal=21,
-        subject=(
-            "media: rockchip: rkvenc: release only what was acquired, and use "
-            "only what is still there"
-        ),
-        provenance=NULL_OID,
-        author="Andres Cera <andres.cera@hotmail.com>",
-        date="Tue, 11 Aug 2026 09:00:00 -0500",
-        origin=CERALIVE,
-        rationale=(
-            "MOTIVATION. One continuous fault-injection and unbind session on",
-            "a real Rock 5B+ walked this driver's task, core and service",
-            "lifecycle end to end. Four defects came out of it, in the order",
-            "below, and that order is not editorial: each fix is what made the",
-            "NEXT one reachable. They are one patch because they are one bug --",
-            "rkvenc's acquire/release pairs and its object lifetimes did not",
-            "describe what the code actually did, so every path that was not",
-            "the happy one gave back something it never took or kept using",
-            "something that had already been freed.",
-            "",
-            "(1) BALANCE. Arming 0013's fail_clock_enable_once produced",
-            "'WARNING: bad unlock balance detected!' from rkvenc_task_finish(),",
-            "DEBUG_RWSEMS_WARN_ON with the reset group's rwsem count at",
-            "0xffffffffffffff00, and 'Runtime PM usage count underflow!' -- for",
-            "the rest of the boot, not just for that task. rkvenc_hw_run()",
-            "acquires two runtime-PM references, a wakeup source, three clocks",
-            "and the reset group's read lock, and unwinds every one of them",
-            "itself on failure; rkvenc_task_finish() released the same set",
-            "UNCONDITIONALLY, guarded only by mpp->reset_group being non-NULL --",
-            "a static device-topology fact that says nothing about what this",
-            "task did. A refused task still reaches rkvenc_task_finish()",
-            "through the worker's own failure path, so every early exit",
-            "double-released. The injected fault only makes it reachable on",
-            "demand: a genuine clk_prepare_enable() or PM-resume failure takes",
-            "exactly the same path.",
-            "",
-            "(2) WORKER LIFETIME. With the release balanced, the encode stopped",
-            "wedging and the worker ran on far enough for KASAN to catch the",
-            "next one, and this time the board reported 'BUG:",
-            "KASAN: use-after-free in rkvenc_task_worker_default+0xcfc/0x10dc,",
-            "Read of size 8 at addr ffff00010da88030', shadow all 0xff and the",
-            "page refcount 0 -- long freed, not freshly poisoned.",
-            "rkvenc_task_finish() ends in",
-            "kref_put(&task->ref, rkvenc_free_task_callback), which kfree()s the",
-            "whole struct rkvenc_task. A task carries exactly two references,",
-            "the allocator's and the one rkvenc_dev_ioctl() takes for the",
-            "waiter, so whichever of the worker and the waiter puts last is the",
-            "one that frees -- and the worker kept using the pointer either way.",
-            "Its IRQ arm calls rkvenc_task_finish() and the timeout arm",
-            "immediately below re-reads mpp_task->state; its hw_run-failure arm",
-            "calls rkvenc_task_finish() and then wake_up(&pending_task->wait),",
-            "the same defect one field along.",
-            "",
-            "(3) CORE LIFETIME. With an encode that survives a refused task, the",
-            "unbind/rebind drills became runnable, and three cycles followed by",
-            "any encode that reached the second core Oopsed inside",
-            "rkvenc_iommu_attach(): 'KASAN: null-ptr-deref in range [0x20-0x27]',",
-            "pc __iommu_attach_group+0x15c, which is struct iommu_domain's owner",
-            "member, read through domain_iommu_ops_compatible() before anything",
-            "else. RK3588 wires two encoder cores behind one CCU and the",
-            "secondary BORROWS the main core's IOMMU domain at probe. A main-core",
-            "unbind detaches every secondary and NULLs its domain -- correctly,",
-            "the page tables are going away -- but a REBINDING main core lands in",
-            "the !ccu->main_core arm of rkvenc_attach_ccu(), which only claims the",
-            "main slot; the arm that shares a domain is the else, and only a",
-            "probing SECONDARY reaches it. The secondary never re-probes, so its",
-            "domain stays NULL for the rest of the boot while it is still in",
-            "queue->cores[] with its idle bit set, because the unwind's queue step",
-            "clears the slot of the core that is UNBINDING and that is not this",
-            "one.",
-            "",
-            "(4) SERVICE LIFETIME. With both cores surviving an unbind, the drill",
-            "could finally hold a descriptor open ACROSS one -- which reported 'BUG:",
-            "KASAN: slab-use-after-free in __mutex_lock' from",
-            "rkvenc_dev_release+0x100 the moment userspace closed it. The freed",
-            "object is srv itself: it is devm-allocated on the service's platform",
-            "device, so devres_release_all() frees it the moment",
-            "rkvenc_service_remove() returns, and release() then takes",
-            "mutex_lock(&srv->session_lock) on it. remove() exists to prevent",
-            "exactly that, and RKVENC_QUIESCE_TIMEOUT_MS's own comment states",
-            "teardown 'does NOT proceed to release state those descriptors can",
-            "still reach'. Two gaps made that untrue. On a SERVICE-node unbind the",
-            "cores unbind FIRST -- __device_release_driver() runs",
-            "device_links_unbind_consumers() before device_remove() -- so the",
-            "first core's rkvenc_service_quiesce_for_core() owns the",
-            "LIVE -> QUIESCING transition and the service's own",
-            "rkvenc_service_quiesce() gets RKVENC_DRAIN_NOT_OWNER and returns",
-            "without waiting even once. That is the NORMAL path on a service",
-            "unbind, not an edge case. And when it did own the transition it",
-            "discarded RKVENC_DRAIN_TIMED_OUT, so 'quiesce timed out ... refusing",
-            "to release service state' printed and the release went ahead anyway.",
-            "A third defect sits in the same drain:",
-            "rkvenc_service_sessions_gone() took session_lock, and every caller is",
-            "a wait_event*() condition -- which ___wait_event() evaluates AFTER",
-            "prepare_to_wait_event() has set the task state, so the board printed",
-            "'WARNING: kernel/sched/core.c:9091 at __might_sleep' from",
-            "rkvenc_service_drain+0x260. It had never fired before because no run",
-            "had reached the wait loop with a session still open.",
-            "",
-            "BEHAVIOUR. Each half of the lifecycle is made to state a fact the",
-            "other half can check, rather than infer one from device topology.",
-            "",
-            "(1) One task-state bit, TASK_STATE_HW_HELD, records the acquisition.",
-            "rkvenc_hw_run() sets it immediately after the last acquire and clears",
-            "it at err_pm, the common tail of all three of its error labels, so",
-            "the bit is true exactly when the function returned holding the set.",
-            "rkvenc_task_finish() takes it with test_and_clear_bit() and skips the",
-            "whole hardware teardown when it was not set -- which also makes the",
-            "teardown single-shot, so an IRQ and a timeout racing to finish one",
-            "task release once. The bit is set BEFORE the timeout work is",
-            "scheduled and before the start register is written, because either",
-            "can hand the task to rkvenc_task_finish() on another CPU immediately.",
-            "A task hw_run refused is also marked abort_request before it is",
-            "woken, so a POLL waiter takes rkvenc_wait_result()'s -ENODEV arm",
-            "instead of being handed zeroed status registers as a clean encode.",
-            "",
-            "(2) The worker stops touching a task it has handed to",
-            "rkvenc_task_finish(). The IRQ arm nulls its local afterwards, so the",
-            "timeout arm cannot read the freed state word, and the hw_run-failure",
-            "arm loses its trailing wake_up() -- rkvenc_task_finish() sets",
-            "TASK_STATE_DONE and wakes task->wait on every path, including the",
-            "teardown-skipping one (1) adds, so the waiter is already awake and",
-            "the second wake only read a freed wait queue. No reachable work is",
-            "skipped: rkvenc_hw_irq() and rkvenc_task_timeout_work() both claim a",
-            "task with test_and_set_bit(TASK_STATE_HANDLE), and the timeout side",
-            "does so with the encoder's IRQ disabled, so TASK_STATE_IRQ and",
-            "TASK_STATE_TIMEOUT are never both set on one task.",
-            "",
-            "(3) A core is dispatchable if and only if it has a usable IOMMU",
-            "domain. The unwind unpublishes a secondary at the moment it takes its",
-            "domain away, and a core that becomes main re-shares its domain with",
-            "the secondaries already on ccu->core_list and republishes each one",
-            "that takes it. rkvenc_iommu_attach() also refuses a NULL domain or",
-            "group outright rather than handing it to iommu_attach_group(): the",
-            "pre-existing comparison cannot catch that case, because",
-            "iommu_get_domain_for_dev() returns the core's DEFAULT domain, which",
-            "is never NULL, so NULL != default and the call went ahead.",
-            "rkvenc_hw_run() then unwinds through (1)'s balanced err_unlock and the",
-            "task fails as -ENODEV instead of taking the machine down. Publication",
-            "and unpublication become one idempotent pair of helpers, keyed on the",
-            "stage bit they already owned, so the four call sites cannot drift.",
-            "",
-            "(4) srv stops being devm-allocated and becomes reference counted,",
-            "anchored on a struct device it now EMBEDS and publishes with",
-            "cdev_device_add(); that device's release() frees srv. The driver",
-            "binding holds one reference and every open file holds another, so",
-            "teardown may RETURN with a descriptor open without the object going",
-            "anywhere. The kobject parenting cdev_device_add() sets up is what",
-            "covers __fput()'s cdev_put(), which runs AFTER ->release() and which",
-            "no explicit put of ours could ever reach. remove() then quiesces and",
-            "WAITS -- unbounded and interruptible. Unbounded because a bounded",
-            "wait that expires is a wait that then frees reachable state; the 10 s",
-            "bound stays where it belongs, on the TRANSIENT per-core drain, which",
-            "has somewhere to recover to. Interruptible because remove() runs in",
-            "the context of whoever wrote the sysfs unbind attribute, and an",
-            "uninterruptible wait parks that writer in D state where no signal",
-            "reaches it -- while the process tree that would close the descriptor",
-            "is typically the one blocked on that writer. That is a real deadlock,",
-            "not a slow unbind. NOT_OWNER stops being a reason to skip anything,",
-            "and the sessions-gone predicate becomes a lockless READ_ONCE() of a",
-            "counter its writers update under session_lock before waking.",
-            "",
-            "Reference counting srv alone would only move the use-after-free to",
-            "the core: struct rkvenc_dev is devm-allocated on the CORE's device,",
-            "and a surviving session reaches it through session->mpp and task->mpp",
-            "-- rkvenc_free_task_callback() decrements mpp->task_count,",
-            "rkvenc_task_finalize() takes mpp->iommu_info's rwsem, and",
-            "rkvenc_task_timeout_work() calls disable_irq(mpp->irq) up to two",
-            "seconds after a task that was running when the core went away. So a",
-            "core's unwind SEVERS those pointers, at the one point where its IRQ is",
-            "already silent and the worker already drained, and every consumer",
-            "treats the NULL as nothing left to release -- the same explicit,",
-            "checkable fact 0020 made of sub_devices[] and (3) makes of",
-            "iommu_info->domain. The DMA session additionally takes a reference on",
-            "the device it attached to, because its dma-buf detach outlives that",
-            "core.",
-            "",
-            "NON-GOALS. Does not change what rkvenc_hw_run() acquires, the order",
-            "it acquires in, or what its own unwinds release -- 0015's error paths",
-            "are correct in isolation and are untouched. Does not change the task",
-            "reference-counting model: two references, two owners and three drop",
-            "sites, exactly as 0001 and 0014 left them, and no kref_get() is added",
-            "to hold a window open instead of closing it. Does not change cold",
-            "boot: the first core to probe finds an empty ccu->core_list and the",
-            "re-share is a no-op. Does not change the happy path on teardown:",
-            "with no descriptor open the wait is a predicate test that returns",
-            "immediately, and an idle unbind still completes in under a second.",
-            "Does not weaken 0014's quiesce/drain, and does not change the",
-            "TRANSIENT per-core drain's bound or its LIVE/DEAD outcome, which are",
-            "0020's. Does not touch the IOMMU activate/deactivate pair, which",
-            "hw_run already owns on both sides, and does not touch 0022's ioctl",
-            "parser. Does NOT reclaim a task abandoned on queue->pending_list by",
-            "an abort: it keeps its allocator reference and is never freed, so it",
-            "is a leak on a teardown path and NOT a use-after-free, and fixing it",
-            "means changing the reference model (2) just stabilised. Does NOT fix",
-            "the 'possible recursive locking' warning on &rg->rw_sem --",
-            "rkvenc_hw_run() returns holding down_read() and the single",
-            "rkvenc-worker kthread necessarily nests it when it dispatches to the",
-            "second core, because find_first_bit() only picks core 1 while core 0",
-            "is busy. It cannot deadlock today (nothing takes that rwsem for",
-            "write) and is tracked separately. No new lock, no new wait, and no",
-            "fault-injection knob: the helpers added here take queue->dev_lock",
-            "under ccu->lock, the same order rkvenc_core_unwind() already uses,",
-            "and dev_lock is taken nowhere else.",
-            "",
-            "PROVENANCE. First-party CeraLive fix, with no upstream counterpart",
-            "for any of the four. The release half of (1) and both worker",
-            "dereferences in (2) are 0001's as imported, and no patch between them",
-            "changed either -- 0013 inserts its delay BEFORE the IRQ arm's finish",
-            "and 0019 changes only the queue lock types; what (1) changed is",
-            "reachability. The unguarded attach in (3) is likewise 0001's, while",
-            "the NULL-domain window it closes is 0020's as written: 0020 made the",
-            "service survive a single core's unbind and cleared the sharing stage",
-            "bit, but nothing re-set it. For (4), 'a devm-allocated service torn",
-            "down under open file descriptors' is claimed fixed by 0014's own",
-            "status row, and that claim holds only while the drain COMPLETES; the",
-            "NOT_OWNER early return is 0020's as written, and the mutex inside the",
-            "wait condition is 0014's. The ledger rows for both are corrected with",
-            "this patch.",
-            "",
-            "This patch was carried as four -- 0021, 0023, 0024 and 0025 -- while",
-            "it was being discovered, one ordinal per defect as each was found.",
-            "They are folded into this one because a reader who hits any of these",
-            "symptoms needs all four: the fixes interlock, and three of them are",
-            "unreachable in isolation. Ordinals 0023-0025 are retired and never",
-            "reused, exactly as the 0004 gap is never closed; the archived files",
-            "and the one-line record of what each used to document are in",
-            "retired/REGISTRY.md and docs/UPSTREAM-STATUS.md. The filename keeps",
-            "0021's original slug because filename-to-ordinal is 1:1 in this repo",
-            "and nothing records a rename of an active lane file; the subject line",
-            "carries the real scope. The FOLD IS BYTE-NEUTRAL: applying",
-            "0001-0020, this patch, 0022 and 0026 yields git tree",
-            "e8133646d100f528c17f1834a82f20becfc48b6a, which is the same tree",
-            "object the four-patch sequence produced, so nothing already validated",
-            "on hardware was revalidated by opinion.",
-            "",
-            "EVIDENCE POINTER. Every defect above was root-caused from a REAL Rock",
-            "5B+ transcript, never from reading code: (1) from",
-            "tests/rkvenc-fault-qa.sh --case fail-clock-enable, (2) from a KASAN",
-            "report on the same case -- pahole on a KASAN+PROVE_LOCKING arm64",
-            "build of this exact series puts rkvenc_mpp_task.state at offset 48",
-            "size 8 and struct rkvenc_task at 11408 bytes, and 0xffff00010da88030",
-            "is 0x30 into a 16 KiB-aligned allocation -- (3) from an Oops whose",
-            "fault offset is struct iommu_domain's owner member, with a boot log",
-            "showing three 'attach ccu as core 0 [main]' lines after the unbind",
-            "cycles and not one 'attach ccu as core 1', and (4) from a before/after",
-            "on ONE board, the same KASAN+PROVE_LOCKING kernel and the same",
-            "harness, with only the module swapped. (3) was re-verified ON",
-            "HARDWARE on its own: the unbind/rebind-then-encode sequence that",
-            "produced the Oops ran clean repeatedly with zero KASAN, zero Oops and",
-            "zero recursive-locking reports. (4)'s after-run is the widest",
-            "evidence there is for the whole stack, because it necessarily carried",
-            "(1)-(3) underneath it: tests/rkvenc-unbind.sh --states",
-            "timeout-negative goes from FAIL ('unbind COMPLETED with a file",
-            "descriptor still open', plus the slab-use-after-free and the",
-            "__might_sleep WARNING) to PASS, with 'teardown waiting for 1 open",
-            "file descriptor(s)' then 'teardown wait interrupted ... the service",
-            "outlives this unbind on its reference count' in the log; all four",
-            "states -- idle, held-open-fd, inflight, timeout-negative -- pass, 20",
-            "unbind/rebind cycles complete, every encode returns the canonical",
-            "1,854,524 bytes, and the sanitizer sweep is zero. The severing half of",
-            "(4) is covered separately, because the harness cannot reach it: its FD",
-            "holder never issues an ioctl, so its session never attaches to a core.",
-            "No test expectation changes anywhere -- the harnesses already asserted",
-            "the correct behaviour, so the driver was wrong, not the tests. See",
-            "docs/UPSTREAM-STATUS.md and docs/BOARD-QUALIFICATION.md.",
-        ),
-    ),
-    Patch(
-        filename="0022-rkvenc-ioctl-request-coverage-and-element-bounds.patch",
-        ordinal=22,
-        subject=(
-            "media: rockchip: rkvenc: refuse register requests that clip a "
-            "class"
-        ),
-        provenance=NULL_OID,
-        author="Andres Cera <andres.cera@hotmail.com>",
-        date="Tue, 11 Aug 2026 09:30:00 -0500",
-        origin=CERALIVE,
-        rationale=(
-            "MOTIVATION. tests/rkvenc-invalid-ioctl.c --all-malformed failed 4",
-            "of 8 on a real Rock 5B+ against tests/expected-errno.tsv, so 0016",
-            "did not finish the job. A register request is SPLIT across every",
-            "class it overlaps and each part clamped to that class's range, so",
-            "bytes no class owns were dropped rather than refused: class-overrun",
-            "was accepted with rc=0 while most of it was silently discarded.",
-            "INIT_TRANS_TABLE bounded bytes but not alignment, so 2*N+1 still",
-            "divided to N whole entries and trans-table-odd-size was accepted,",
-            "leaving one u16 half written and trans_count claiming it whole.",
-            "The register-write copy_from_user() returned -EIO, so",
-            "bad-user-pointer reported an I/O error for an unreadable user",
-            "address. Reading the same paths found two more of the same shape",
-            "that no case covers: w_req_cnt/r_req_cnt accumulate across every",
-            "message in the ioctl and were unbounded, so two write messages each",
-            "spanning all nine classes wrote 18 parts into a 9-element array",
-            "inside the task; and rkvenc_extract_reg_offset_info() bounded",
-            "ELEMENTS while copying BYTES, so 8*128+7 bytes passed the count",
-            "check and overran elem[] by seven, a partial trailing element",
-            "included.",
-            "",
-            "This patch has now been corrected TWICE by hardware, and the",
-            "correction is the interesting part. v1 required the summed",
-            "clamped parts to EQUAL the request's size, asserting that \"a",
-            "request that lies wholly inside the classes it names\" is what",
-            "librockchip-mpp sends. A cold-boot control encode on a real Rock",
-            "5B+ proved that FALSE: MPP's class BASE write is offset 0 size",
-            "96, reg_msg[] owns [0x0000,0x005c) = 92 bytes, so its last dword",
-            "lands in the 137-dword BASE-to-PIC hole and every production task",
-            "was refused, 0 bytes out against 1,854,524 from the same board",
-            "one RAUC slot earlier. v2 replaced equality with sum == span --",
-            "\"the split consumed ONE contiguous run\" -- which forgives a spill",
-            "off a class's edge but still refuses a span with a hole INSIDE",
-            "it.",
-            "",
-            "H.265 sends exactly that shape, and v2 refused every H.265 encode",
-            "for it. MPP's HEVC register programme is ONE 3228-byte write over",
-            "SQI (488 bytes) and SCL (2716) with the genuine 24-byte SQI-to-",
-            "SCL map hole between them: 3204 covered against a 3228 span, so",
-            "\"write request 00002000+3228 covers 3204 bytes, not one run\" ->",
-            "\"alloc task failed: -22\" -> MPP's own \"MPP_IOC_CFG_V1 failed ret",
-            "-1 errno 22\". The request starts on SQI's first byte and ends on",
-            "SCL's last; it overruns nothing and drops nothing at either edge.",
-            "H.264 issues no multi-class write, so it never noticed -- which",
-            "is also why the H.264-only control encode v2 shipped behind did",
-            "not catch this.",
-            "",
-            "BEHAVIOUR. req_coverage_check() asks WHERE the dropped bytes went",
-            "and WHETHER any class was left half-named. Three shapes reach it,",
-            "and only the third is a lie. ONE unbroken run, spilling off an",
-            "edge into the neighbouring hole -- MPP's 96-byte BASE write -- is",
-            "settled by sum == span alone, accepted and clamped exactly as it",
-            "was before 0022. SEVERAL runs where every run is a WHOLE class",
-            "and every gap is one of the map's own holes -- MPP's SQI+SCL",
-            "write -- is accepted by req_spans_whole_classes(), because",
-            "nothing was half-named: rkvenc_update_req() advances each part's",
-            "data pointer by the same amount it advances its offset, so every",
-            "byte the caller supplied for a real register still reaches that",
-            "register from the offset the caller put it at, and the only bytes",
-            "dropped are addresses no register answers to. SEVERAL runs that",
-            "CLIPPED a class to get there -- class-overrun, which starts one",
-            "dword inside BASE and runs to one dword inside ST -- is still",
-            "-EINVAL, and the clip is precisely what expected-errno.tsv calls",
-            "it: \"starts inside a class and claims a size that runs past its",
-            "end\". Contiguity and containment both miss a request running past",
-            "the LAST class, so the request is additionally bounded by the",
-            "map's own extent. Every bound is read out of reg_msg[], so a map",
-            "with different holes or none needs no change. READ and WRITE get",
-            "the SAME rule: both consume the CLAMPED per-class parts and",
-            "neither re-reads the caller's raw span, because rkvenc_result()",
-            "walks task->r_reqs[] and copies each part out of the class buffer",
-            "that owns it, bounded by 0016's rkvenc_class_reg_window(). Both",
-            "request counts are bounded by their own arrays. INIT_TRANS_TABLE",
-            "and SET_REG_ADDR_OFFSET both require a whole number of elements,",
-            "and the latter now bounds bytes against the room left rather than",
-            "elements against a count. Every copy_from_user() failure on this",
-            "path reports -EFAULT, matching the rule the expectation table",
-            "already states: EINVAL rejects the shape, EFAULT rejects the",
-            "buffer.",
-            "",
-            "NON-GOALS. Does not change the per-class split itself, the clamp,",
-            "or 0016's shape and window checks. Does NOT tighten what the",
-            "clamp has always tolerated: a request may still spill into an",
-            "adjacent hole by as much as that hole holds, and those bytes are",
-            "still dropped silently. That is the pre-0022 contract, and memory",
-            "safety on this path is 0016's window check, not this one's --",
-            "this check refuses a misleading SHAPE. It does NOT give the read",
-            "side a weaker rule than the write side, even though only a write",
-            "was observed failing; the two paths are structurally identical",
-            "here, and an asymmetry with nothing behind it is how the next",
-            "false positive gets built. It does not object to a whole-class",
-            "span being LARGE -- a request naming BASE through ST end to end",
-            "is accepted, because it is honest about every byte it covers, and",
-            "size is not the property under test. Does not make the class",
-            "map's inclusive/half-open mismatch between req_over_class() and",
-            "rkvenc_result() consistent, and does not widen reg_msg[]'s BASE",
-            "end to the 24 dwords MPP actually writes; both are pre-existing,",
-            "separate, and not changeable without a board. Does NOT fix the",
-            "valid-after-failures case, which fails for an unrelated reason",
-            "recorded in docs/UPSTREAM-STATUS.md.",
-            "",
-            "PROVENANCE. First-party CeraLive fix completing 0016, which is",
-            "itself a fix to the UAPI parser 0001 imports. No upstream",
-            "counterpart exists.",
-            "",
-            "EVIDENCE POINTER. Every version of this patch was corrected by a",
-            "REAL Rock 5B+, this one included. The H.265 refusal was root-",
-            "caused from the board's own dmesg, and the fix was then built as",
-            "a module against the running 7.1.7-ceralive-rk3588 and hot-",
-            "swapped onto it: mpph265enc, which had produced 0 bytes at every",
-            "geometry, produced decodable HEVC afterwards, and the H.264",
-            "control encode was unchanged. rkvenc-invalid-ioctl",
-            "--all-malformed was re-run on the same module and class-overrun,",
-            "trans-table-odd-size and bad-user-pointer stayed rejected. No",
-            "test expectation changes: expected-errno.tsv already demanded",
-            "these values. The general lesson stands and is now doubly",
-            "earned -- a control encode belongs in EVERY rkvenc UAPI change's",
-            "acceptance, and it has to cover every codec the board can be",
-            "asked for, because v2 passed an H.264-only one. See",
-            "docs/UPSTREAM-STATUS.md and docs/BOARD-QUALIFICATION.md.",
         ),
     ),
     Patch(
@@ -1812,6 +1019,125 @@ SERIES: tuple[Patch, ...] = (
             "values, or any other PDO flag on the Orange Pi.",
         ),
     ),
+    Patch(
+        filename="0031-rk3588-media-island-drivers.patch",
+        ordinal=31,
+        subject=(
+            "video: rockchip: add the CeraLive RK3588 media island"
+        ),
+        provenance=Island(
+            tag="v2026.9.0",
+            commit="dcda1a2218d9e52db2db2a0a809263d7d7e8831f",
+            asset_sha256=(
+                "bea66ab56a71e5869d5e9ac6d66bb5f4e5151190dd387abe345fc88dc9f5eec2"
+            ),
+        ),
+        author="CeraLive <dev@ceralive.tv>",
+        date="Wed, 2 Sep 2026 00:00:00 +0000",
+        origin=ISLAND,
+    ),
+    Patch(
+        filename="0032-video-rockchip-kconfig-makefile-hooks.patch",
+        ordinal=32,
+        subject=(
+            "video: rockchip: hook the MPP and multi_rga Kconfig and Makefiles"
+        ),
+        provenance=Island(
+            tag="v2026.9.0",
+            commit="dcda1a2218d9e52db2db2a0a809263d7d7e8831f",
+            asset_sha256=(
+                "bea66ab56a71e5869d5e9ac6d66bb5f4e5151190dd387abe345fc88dc9f5eec2"
+            ),
+        ),
+        author="CeraLive <dev@ceralive.tv>",
+        date="Wed, 2 Sep 2026 00:00:00 +0000",
+        origin=ISLAND,
+    ),
+    Patch(
+        filename="0033-iommu-rockchip-export-for-mpp.patch",
+        ordinal=33,
+        subject=(
+            "iommu: rockchip: export media-provider control for MPP and RGA"
+        ),
+        provenance=Island(
+            tag="v2026.9.0",
+            commit="dcda1a2218d9e52db2db2a0a809263d7d7e8831f",
+            asset_sha256=(
+                "bea66ab56a71e5869d5e9ac6d66bb5f4e5151190dd387abe345fc88dc9f5eec2"
+            ),
+        ),
+        author="CeraLive <dev@ceralive.tv>",
+        date="Wed, 2 Sep 2026 00:00:00 +0000",
+        origin=ISLAND,
+    ),
+    Patch(
+        filename="0034-iommu-dma-expose-iova-domain.patch",
+        ordinal=34,
+        subject=(
+            "iommu: expose media IOVA allocation helpers"
+        ),
+        provenance=Island(
+            tag="v2026.9.0",
+            commit="dcda1a2218d9e52db2db2a0a809263d7d7e8831f",
+            asset_sha256=(
+                "bea66ab56a71e5869d5e9ac6d66bb5f4e5151190dd387abe345fc88dc9f5eec2"
+            ),
+        ),
+        author="CeraLive <dev@ceralive.tv>",
+        date="Wed, 2 Sep 2026 00:00:00 +0000",
+        origin=ISLAND,
+    ),
+    Patch(
+        filename="0035-arm64-dts-rk3588-mpp-encoder-nodes.patch",
+        ordinal=35,
+        subject=(
+            "arm64: dts: rockchip: add RK3588 MPP encoder nodes"
+        ),
+        provenance=Island(
+            tag="v2026.9.0",
+            commit="dcda1a2218d9e52db2db2a0a809263d7d7e8831f",
+            asset_sha256=(
+                "bea66ab56a71e5869d5e9ac6d66bb5f4e5151190dd387abe345fc88dc9f5eec2"
+            ),
+        ),
+        author="CeraLive <dev@ceralive.tv>",
+        date="Wed, 2 Sep 2026 00:00:00 +0000",
+        origin=ISLAND,
+    ),
+    Patch(
+        filename="0036-arm64-dts-rk3588-mpp-decoder-nodes.patch",
+        ordinal=36,
+        subject=(
+            "arm64: dts: rockchip: hand RK3588 decoders to MPP"
+        ),
+        provenance=Island(
+            tag="v2026.9.0",
+            commit="dcda1a2218d9e52db2db2a0a809263d7d7e8831f",
+            asset_sha256=(
+                "bea66ab56a71e5869d5e9ac6d66bb5f4e5151190dd387abe345fc88dc9f5eec2"
+            ),
+        ),
+        author="CeraLive <dev@ceralive.tv>",
+        date="Wed, 2 Sep 2026 00:00:00 +0000",
+        origin=ISLAND,
+    ),
+    Patch(
+        filename="0037-arm64-dts-rk3588-mpp-jpegd-node.patch",
+        ordinal=37,
+        subject=(
+            "arm64: dts: rockchip: add the RK3588 MPP JPEG decoder"
+        ),
+        provenance=Island(
+            tag="v2026.9.0",
+            commit="dcda1a2218d9e52db2db2a0a809263d7d7e8831f",
+            asset_sha256=(
+                "bea66ab56a71e5869d5e9ac6d66bb5f4e5151190dd387abe345fc88dc9f5eec2"
+            ),
+        ),
+        author="CeraLive <dev@ceralive.tv>",
+        date="Wed, 2 Sep 2026 00:00:00 +0000",
+        origin=ISLAND,
+    ),
 )
 
 
@@ -1883,7 +1209,7 @@ def read_pin() -> dict[str, str]:
 class Retired:
     filename: str
     lane: str
-    ordinal: int
+    ordinal: int | None  # None only for a lane that holds no series slot
     retired: str
     kernel_tag: str
     reason: str
@@ -1938,14 +1264,21 @@ def load_retired() -> dict[str, Retired]:
                 f"expected {len(REGISTRY_COLUMNS)}"
             )
         name, lane, ordinal, retired, tag, reason = (c.strip("`") for c in cells)
-        if lane not in SOURCE_DIRS:
+        if lane not in RETIRABLE_LANES:
             raise LaneError(
                 f"{REGISTRY_FILE.name}:{lineno}: lane {lane!r} is not one of "
-                f"{sorted(SOURCE_DIRS)}"
+                f"{sorted(RETIRABLE_LANES)}"
             )
-        if not ordinal.isdigit():
+        if lane in SOURCE_DIRS:
+            if not ordinal.isdigit():
+                raise LaneError(
+                    f"{REGISTRY_FILE.name}:{lineno}: ordinal {ordinal!r} is not a "
+                    "number, and a source-lane retirement always held a slot"
+                )
+        elif ordinal != NO_ORDINAL:
             raise LaneError(
-                f"{REGISTRY_FILE.name}:{lineno}: ordinal {ordinal!r} is not a number"
+                f"{REGISTRY_FILE.name}:{lineno}: {lane}/ holds no series slot, so "
+                f"its ordinal must be {NO_ORDINAL!r}, not {ordinal!r}"
             )
         if not (retired and tag and reason):
             raise LaneError(
@@ -1960,7 +1293,7 @@ def load_retired() -> dict[str, Retired]:
         entries[name] = Retired(
             filename=name,
             lane=lane,
-            ordinal=int(ordinal),
+            ordinal=int(ordinal) if ordinal.isdigit() else None,
             retired=retired,
             kernel_tag=tag,
             reason=reason,
@@ -1984,6 +1317,8 @@ def validate_series() -> list[str]:
             )
         if patch.origin == BACKPORTS:
             problems += validate_backports_entry(patch, where)
+        elif patch.origin == ISLAND:
+            problems += validate_island_entry(patch, where)
         else:
             if patch.backport is not None:
                 problems.append(
@@ -1993,14 +1328,142 @@ def validate_series() -> list[str]:
                 problems.append(
                     f"{where}: only the {BACKPORTS}/ lane carries a LorePosting"
                 )
+            if isinstance(patch.provenance, Island):
+                problems.append(f"{where}: only the {ISLAND}/ lane carries an Island")
         if patch.origin == CERALIVE and not patch.rationale:
             problems.append(f"{where}: a first-party patch must state why it exists")
+    problems += validate_one_island_release()
     return problems
+
+
+def validate_one_island_release() -> list[str]:
+    """The lane mirrors ONE release, so a half-finished import is loud.
+
+    Seven members naming two releases would still pass every per-entry check and
+    would still generate; what it would mean is that somebody updated part of the
+    lane. The digest gate cannot see that, because each member would verify
+    against the asset it names.
+    """
+    releases = {
+        (p.provenance.tag, p.provenance.commit, p.provenance.asset_sha256)
+        for p in SERIES
+        if p.origin == ISLAND and isinstance(p.provenance, Island)
+    }
+    if len(releases) <= 1:
+        return []
+    named = ", ".join(sorted(f"rk3588-media-island@{tag}" for tag, _, _ in releases))
+    return [
+        f"the {ISLAND}/ lane names more than one island release ({named}); the lane "
+        "mirrors one release at a time, so a partial re-import is a stop"
+    ]
+
+
+def validate_island_entry(patch: Patch, where: str) -> list[str]:
+    """The island lane names a RELEASE, never a commit, and never a second variant."""
+    problems: list[str] = []
+    if patch.backport is not None or patch.lore is not None:
+        problems.append(
+            f"{where}: an island member is generated by the island's own release "
+            "workflow; carrying a Backport or LorePosting beside it claims two "
+            "mutually exclusive origins"
+        )
+        return problems
+    if not isinstance(patch.provenance, Island):
+        problems.append(
+            f"{where}: the {ISLAND}/ lane must name the release it was generated "
+            "from as provenance=Island(tag=..., commit=..., asset_sha256=...). "
+            "A string or mixed Island/string value claims a kernel identity too"
+        )
+        return problems
+
+    island = patch.provenance
+    for name, value in (
+        ("tag", island.tag),
+        ("commit", island.commit),
+        ("asset_sha256", island.asset_sha256),
+    ):
+        if not value.strip():
+            problems.append(f"{where}: Island.{name} is mandatory and empty")
+    if island.commit and not SHA1_RE.match(island.commit):
+        problems.append(
+            f"{where}: Island.commit is not a 40-hex object id: {island.commit!r}"
+        )
+    if island.asset_sha256 and not SHA256_RE.match(island.asset_sha256):
+        problems.append(f"{where}: Island.asset_sha256 is not a sha256 digest")
+    if island.tag and not ISLAND_TAG_RE.match(island.tag):
+        problems.append(
+            f"{where}: Island.tag {island.tag!r} is not a vYYYY.M.P release tag"
+        )
+    problems += validate_island_mailbox(patch, where)
+    return problems
+
+
+def validate_island_mailbox(patch: Patch, where: str) -> list[str]:
+    """The declared identity has to be the mailbox's own, or one of them is wrong.
+
+    Nothing here rewrites the member -- it is byte-preserved. The point is that the
+    SERIES entry restates the member's subject, author and date so they can appear
+    in a generated header, and a restatement that drifts from the bytes it claims
+    to describe is exactly the silent kind of wrong this repository refuses.
+    """
+    source = SOURCE_DIRS[ISLAND] / patch.filename
+    if not source.is_file():
+        return [f"{where}: {ISLAND}/{patch.filename} does not exist"]
+
+    headers = mailbox_headers(source.read_text(encoding="utf-8", errors="surrogateescape"))
+    problems: list[str] = []
+    subject = headers.get("Subject", "")
+    stripped = re.sub(r"^\[PATCH[^]]*\]\s*", "", subject)
+    if stripped != patch.subject:
+        problems.append(
+            f"{where}: declares subject {patch.subject!r}, but the member's own "
+            f"Subject is {stripped!r}"
+        )
+    if headers.get("From", "") != patch.author:
+        problems.append(
+            f"{where}: declares author {patch.author!r}, but the member's own "
+            f"From is {headers.get('From', '')!r}"
+        )
+    if headers.get("Date", "") != patch.date:
+        problems.append(
+            f"{where}: declares date {patch.date!r}, but the member's own "
+            f"Date is {headers.get('Date', '')!r}"
+        )
+
+    member = island_member_name(patch)
+    if patch.filename.split("-", 1)[1:] != member.split("-", 1)[1:]:
+        problems.append(
+            f"{where}: {ISLAND}/{patch.filename} and asset member {member} do not "
+            "share a stem, so the ordinal re-prefix is not mechanical"
+        )
+    return problems
+
+
+def island_member_name(patch: Patch) -> str:
+    """Map this repository's continuing ordinal to the release's 1-based ordinal."""
+    _, separator, stem = patch.filename.partition("-")
+    if not separator:
+        raise LaneError(f"{patch.filename}: island member filename has no ordinal")
+    return f"{patch.ordinal - ISLAND_ORDINAL_OFFSET:04d}-{stem}"
+
+
+def mailbox_headers(text: str) -> dict[str, str]:
+    """The RFC822 headers of a mailbox member, up to its first blank line."""
+    headers: dict[str, str] = {}
+    for line in text.splitlines():
+        if not line:
+            break
+        key, _, value = line.partition(": ")
+        if value:
+            headers[key] = value
+    return headers
 
 
 def validate_backports_entry(patch: Patch, where: str) -> list[str]:
     """The backports lane has exactly two provenance variants, never both."""
     problems: list[str] = []
+    if isinstance(patch.provenance, Island):
+        return [f"{where}: only the {ISLAND}/ lane carries an Island"]
     if patch.backport is not None and patch.lore is not None:
         problems.append(
             f"{where}: a backport is EITHER a merged commit OR an unmerged lore "
@@ -2149,8 +1612,16 @@ def check_membership(retired: dict[str, Retired]) -> None:
                 "scripts/build-series.py, or retire it per retired/REGISTRY.md"
             )
 
+    # Every file, not just *.patch: overlays/ retires a .dts, and an archived
+    # artifact of any suffix with no registry row is an unexplained archive.
     archived = (
-        {p.name for p in RETIRED_DIR.glob(LANE_GLOB)} if RETIRED_DIR.is_dir() else set()
+        {
+            p.name
+            for p in RETIRED_DIR.iterdir()
+            if p.is_file() and p.name != REGISTRY_FILE.name
+        }
+        if RETIRED_DIR.is_dir()
+        else set()
     )
     for name in sorted(archived - set(retired)):
         problems.append(
@@ -2168,6 +1639,14 @@ def check_membership(retired: dict[str, Retired]) -> None:
                 f"{name} is both an active SERIES member and retired at "
                 f"{REGISTRY_FILE.name}:{entry.lineno}; it must be exactly one"
             )
+        origin = RETIRABLE_LANES[entry.lane]
+        if entry.lane not in SOURCE_DIRS and (origin / name).is_file():
+            problems.append(
+                f"{entry.lane}/{name} is registered as retired but still sits in "
+                f"{entry.lane}/; retirement MOVES the file into retired/"
+            )
+        if entry.ordinal is None:
+            continue
         holder = ordinals.get(entry.ordinal)
         if holder and holder != name:
             problems.append(
@@ -2296,17 +1775,50 @@ def source_path(patch: Patch) -> Path:
     return SOURCE_DIRS[patch.origin] / patch.filename
 
 
+def split_mailbox(lines: list[str]) -> tuple[list[str], list[str]]:
+    """(message body, diff) of an already-generated mailbox member.
+
+    The RFC822 headers are dropped: this repository restates From/Date/Subject
+    itself so the N/SERIES_TOTAL ordinal is ours. Everything between them and the
+    bare '---' is the member's own message, which carries its Origin: trailers and
+    is therefore provenance, not decoration -- it is reproduced verbatim.
+    """
+    try:
+        end = lines.index("---")
+    except ValueError as exc:
+        raise RebaseError(
+            "island member has no '---' separator, so it is not a mailbox"
+        ) from exc
+    try:
+        blank = lines.index("")
+    except ValueError as exc:
+        raise RebaseError("island member has no header/body separator") from exc
+    if blank > end:
+        raise RebaseError("island member's headers run past its '---' separator")
+    return lines[blank + 1 : end], lines[end + 1 :]
+
+
 def build_patch(patch: Patch, rules: list[Rule], pin: dict[str, str]) -> str:
     src = source_path(patch)
     if not src.is_file():
         raise RebaseError(f"missing {patch.origin} patch: {src}")
 
     body = src.read_text(encoding="utf-8", errors="surrogateescape").splitlines()
+    message: list[str] = []
+    if patch.origin == ISLAND:
+        message, body = split_mailbox(body)
 
     dropped = sum(1 for line in body if DS_STORE_RE.match(line))
     body = [line for line in body if not DS_STORE_RE.match(line)]
 
     applied = [r for r in rules if r.patch == patch.filename]
+    if applied and patch.origin == ISLAND:
+        raise RebaseError(
+            f"{patch.filename}: island members are never re-anchored. The lane is "
+            "GENERATED upstream and byte-preserved here, so a hunk that stops "
+            "applying at a new base is an island release, not a rule in "
+            f"rebase/{pin['KERNEL_TAG']}.rules"
+        )
     for rule in applied:
         body = apply_rule(body, rule)
 
@@ -2322,7 +1834,8 @@ def build_patch(patch: Patch, rules: list[Rule], pin: dict[str, str]) -> str:
         # first-party lane has no such commit and uses NULL_OID, and an unmerged
         # lore posting uses the LORE_POSTING sentinel, which cannot be misread as
         # an object id of any kind.
-        f"From {patch.provenance} Mon Sep 17 00:00:00 2001",
+        f"From {ISLAND_RELEASE if isinstance(patch.provenance, Island) else patch.provenance} "
+        "Mon Sep 17 00:00:00 2001",
         f"From: {patch.author}",
         f"Date: {patch.date}",
         f"Subject: [PATCH {patch.ordinal}/{SERIES_TOTAL}] {patch.subject}",
@@ -2337,6 +1850,33 @@ def build_patch(patch: Patch, rules: list[Rule], pin: dict[str, str]) -> str:
             "Authored by Ross Cawston. This CeraLive copy re-packages the file as a git",
             "mailbox so it can be applied with `git am`. Every added and removed line is",
             "byte-identical to upstream's; scripts/verify-payload-parity.py enforces that.",
+            "",
+        ]
+    elif patch.origin == ISLAND:
+        island = patch.provenance
+        if not isinstance(island, Island):
+            raise LaneError(
+                f"{patch.filename}: the {ISLAND}/ lane must name its release"
+            )
+        asset = f"rk3588-media-island-{island.tag}.mbox.tar"
+        member = island_member_name(patch)
+        header += [
+            *message,
+            "",
+            f"Generated from CeraLive rk3588-media-island {island.tag} "
+            f"({island.commit}).",
+            "",
+            f"Release asset {asset}",
+            f"  asset_sha256  {island.asset_sha256}",
+            f"  member        {member}",
+            f"  member_sha256 {hashlib.sha256(src.read_bytes()).hexdigest()}",
+            "",
+            f"{ISLAND}/{patch.filename} is that member byte-for-byte -- the mail",
+            "header above is this repository's own, so the N/%d ordinal is ours and"
+            % SERIES_TOTAL,
+            "the message is the release's. scripts/verify-island-provenance.py",
+            "re-fetches the asset, checks asset_sha256 and byte-compares every",
+            "member, independently of scripts/build-series.py.",
             "",
         ]
     elif patch.origin == BACKPORTS and patch.lore is not None:
@@ -2431,6 +1971,19 @@ def build_patch(patch: Patch, rules: list[Rule], pin: dict[str, str]) -> str:
             f"to {upstream_repo.rsplit('/', 1)[-1]}. No Signed-off-by is added, because none",
             "was given upstream and inventing one would misattribute a DCO assertion.",
         ]
+    elif patch.origin == ISLAND:
+        header += [
+            "NOT upstream-bound: the island is a CeraLive-maintained out-of-tree driver",
+            "collection, not a submission. No commit id is claimed here. The island",
+            "release names a tag and a commit in its OWN repository, which is not the",
+            "kernel history this mailbox's delimiter field is for, so the delimiter",
+            "carries a sentinel rather than a 40-hex value that would read as one.",
+            "",
+            "This lane is GENERATED UPSTREAM and byte-preserved here: never hand-edited,",
+            "never re-anchored. A base bump is an island release first. Retire this when",
+            "the island stops carrying the component -- trigger and last-checked date:",
+            "docs/UPSTREAM-STATUS.md.",
+        ]
     elif patch.origin == BACKPORTS and patch.lore is not None:
         header += [
             "NOT upstream: this posting has NOT been merged, so no commit id exists for",
@@ -2503,7 +2056,10 @@ def write_series(out_dir: Path, pin: dict[str, str]) -> None:
         f"# Target kernel: {pin['KERNEL_TAG']} ({pin['KERNEL_COMMIT']})",
         *(
             f"# Retired slot {e.ordinal}: {e.filename} -- see retired/REGISTRY.md"
-            for e in sorted(retired.values(), key=lambda e: e.ordinal)
+            for e in sorted(
+                (entry for entry in retired.values() if entry.ordinal is not None),
+                key=lambda entry: entry.ordinal,
+            )
         ),
         *(p.filename for p in SERIES),
     ]

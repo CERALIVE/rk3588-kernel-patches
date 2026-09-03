@@ -1,10 +1,9 @@
 # Upstream status and retire-on-merge tracking
 
 **Base pin at last check:** `v7.2` — see [`kernel-pin.env`](../kernel-pin.env).
-**Last full sweep:** 2026-08-26, at the `v7.2` base. **Rows added since:** `0028`
-(2026-08-27), the Rock 5B+ Type-C dual-role-power PDO declaration; `0029`
-2026-08-27), the Orange Pi 5 Plus dual-role-power PDO declaration.
-(2026-08-27), the Orange Pi 5 Plus dual-role-power PDO declaration.
+**Last full sweep:** 2026-08-26, at the `v7.2` base. **Rows added since:** `0027`
+(2026-08-13), `0028`–`0030` (2026-08-27), and the island release members
+`0031`–`0037` (2026-09-03).
 **Previous full sweep:** 2026-08-08, at the `v7.1.7` base.
 **Row-consistency re-check:** 2026-08-09 — every import and every evaluation from
 this cycle has a row, and each row's verdict matches the series on disk. No
@@ -143,6 +142,46 @@ a verified row from a skipped one.
 ---
 
 ## Current series members
+
+The active series now has 22 members across 37 slots. Ten standalone-rkvenc
+members moved byte-unchanged to `retired/` after `rk3588-media-island v2026.9.0`
+re-expressed their intent as maintained source and permanent tests. The seven
+island rows name the release components; their exact tag, commit and asset digest
+are enforced in `scripts/build-series.py` and independently byte-verified by
+`scripts/verify-island-provenance.py`.
+
+<!-- current-series: begin -->
+| Patch | Origin | Upstream status | Retire trigger | Last checked | Notes |
+|---|---|---|---|---|---|
+| `0002` hdmirx EDID fix | `upstream/` | `merged@7.2-rc1` counterpart, but orthogonal | Hardware proves the upstream HPD hold fully replaces this mechanism | 2026-08-26 | Active; see the detailed historical analysis below |
+| `0003` hdmirx plugout fix | `upstream/` | `fork-carried-no-upstream` | Mainline absorbs the same plugout fix | 2026-08-26 | Active |
+| `0005` hdmirx audio | `upstream/` | `sent-v4` counterpart | Counterpart merges, reaches the base, preserves features, and covers both boards | 2026-08-26 | Active with `0006` |
+| `0006` hdmirx audio sound card | `ceralive/` | `first-party-no-upstream` | Upstream provides the sound card on both supported boards | 2026-08-26 | Active with `0005` |
+| `0009` system-uncached dma-heap | `ceralive/` | `first-party-no-upstream` | Mainline supplies the exact heap ABI or userspace no longer requires it | 2026-08-26 | Active; v7.1.7 board evidence is historical |
+| `0010` naneng-combphy RTERM erratum | `backports/` | `sent-v1` | Posting merges and the pinned base absorbs it | 2026-08-26 | Active unmerged lore posting |
+| `0011` dw-hdmi-qp N/CTS helper | `backports/` | `sent-v3` | Posting merges and the pinned base absorbs it | 2026-08-26 | Active unmerged lore posting |
+| `0012` dw-hdmi-qp audio EOPNOTSUPP | `backports/` | `sent-v1` | Posting merges and the pinned base absorbs it | 2026-08-26 | Active unmerged lore posting |
+| `0017` HDMI-RX audio lifecycle | `ceralive/` | `first-party-no-upstream` | Retire with `0005` when its full condition fires | 2026-08-26 | Active; historical board status remains below |
+| `0018` truthful dma-heap partial registration | `ceralive/` | `first-party-no-upstream` | A real dma-heap removal API permits unwind | 2026-08-26 | Active |
+| `0026` hdmirx hardirq lock context | `ceralive/` | `first-party-no-upstream` | Mainline makes the lock raw or leaves hardirq context | 2026-08-26 | Active |
+| `0027` hdmirx SCDC ratio recovery | `ceralive/` | `first-party-no-upstream` | Mainline distinguishes absent SCDC data or adds equivalent recovery | 2026-08-26 | Active |
+| `0028` Rock 5B+ dual-role-power PDOs | `ceralive/` | `first-party-no-upstream` | Mainline carries equivalent fixed-PDO capability | 2026-08-27 | Active |
+| `0029` Rock 5B+ Try.SRC preference | `ceralive/` | `first-party-no-upstream` | Mainline carries equivalent source preference | 2026-08-27 | Active |
+| `0030` Orange Pi 5 Plus dual-role-power PDOs | `ceralive/` | `first-party-no-upstream` | Mainline carries equivalent fixed-PDO capability | 2026-08-27 | Active |
+| `0031` media-island maintained source | `island/` | `first-party-no-upstream` | A later island release replaces or removes this source component | 2026-09-03 | From `rk3588-media-island v2026.9.0` |
+| `0032` media-island build hooks | `island/` | `first-party-no-upstream` | Mainline integration removes the out-of-tree hooks | 2026-09-03 | From `rk3588-media-island v2026.9.0` |
+| `0033` Rockchip IOMMU provider exports | `island/` | `first-party-no-upstream` | Mainline exports equivalent provider APIs | 2026-09-03 | From `rk3588-media-island v2026.9.0` |
+| `0034` IOMMU DMA IOVA accessor | `island/` | `first-party-no-upstream` | Mainline exposes an equivalent accessor | 2026-09-03 | From `rk3588-media-island v2026.9.0` |
+| `0035` MPP encoder DT nodes | `island/` | `first-party-no-upstream` | Mainline owns the encoder nodes with a usable production ABI | 2026-09-03 | From `rk3588-media-island v2026.9.0` |
+| `0036` MPP decoder DT ownership | `island/` | `first-party-no-upstream` | Decoder ownership returns to a production-capable mainline driver | 2026-09-03 | From `rk3588-media-island v2026.9.0` |
+| `0037` MPP JPEG decoder DT node | `island/` | `first-party-no-upstream` | Mainline provides the required JPEG decode path | 2026-09-03 | From `rk3588-media-island v2026.9.0` |
+<!-- current-series: end -->
+
+## Historical pre-island member detail
+
+The detailed rows and analyses below preserve the pre-island sweep, including the
+standalone-rkvenc rows that are now retired. They are historical context, not the
+machine-read current membership table above.
 
 The series has twenty-five members. `0004` is a deliberate ordinal gap — upstream never
 published one — and is not a row here for the same reason it is not a patch. `0023`,
@@ -299,7 +338,20 @@ the marker for a given patch is written down, per patch, in
 
 | `0030` Orange Pi 5 Plus Type-C dual-role-power PDOs — **live pre-patch capability gap captured; patch application proven; live-tested on a REAL Orange Pi 5 Plus against the patched v7.2 kernel with a clean PASS: the PDO capability fix is proven working, and the camera no-regression check is COMPLETE and PASSED across two physical detach/reattach cycles (2/2)** | `ceralive/` lane — **first-party CeraLive**. Never submitted. Pinned v7.2 defines the complete FUSB302 connector inline at `rk3588-orangepi-5-plus.dts:197-216`: `usb-typec@22` is `fcs,fusb302` at `reg = <0x22>`, and both fixed PDOs omit `PDO_FIXED_DUAL_ROLE`. Upstream counterpart: **N/A** — this is the Orange Pi half of the same owner-directed CeraLive capability-parity amendment as `0028` | `first-party-no-upstream` | Retire when mainline's `rk3588-orangepi-5-plus.dts` advertises `PDO_FIXED_DUAL_ROLE` in both its fixed sink and source PDOs, or an upstream board change replaces those declarations with equivalent dual-role-power capability | 2026-08-27 | **Evidence and boundary.** The live Orange Pi's pre-patch `source-capabilities` and `sink-capabilities` both exposed read-only `dual_role_power=0` below `/sys/devices/platform/fec80000.i2c/i2c-6/6-0022/usb_power_delivery/pd0/`, matching the operator's recollection of the same connection-capability issue on this board. The Orange Pi and Rock use the identical `fusb302`/`fcs,fusb302` controller at address `0x22` (`6-0022` and `4-0022`, respectively), but the source declarations are board-specific. Ground truth at exact commit `8d3ae59288f1e7d58d76558a6ee96d533bc5019f` is `source-pdos = <PDO_FIXED(5000, 1400, PDO_FIXED_USB_COMM)>` at line 214 and `sink-pdos = <PDO_FIXED(5000, 10, PDO_FIXED_USB_COMM)>` at line 215. `0030` preserves those Orange Pi-specific current values and ORs only `PDO_FIXED_DUAL_ROLE` into each fixed PDO. No Rock file, `try-power-role`, `power-role`, `data-role`, connector/FUSB302 status, other PDO flag, or vendor-track file changes. **No PR_SWAP claim:** todo 21's adaptive policy gates that operation behind `TYPEC_PRSWAP: ACCEPTED`, which has never been recorded for either board, so it never attempts PR_SWAP, and none is claimed here either. This patch closes the declared capability gap only. **Hardware result, 2026-08-27, patched v7.2 on a REAL Orange Pi 5 Plus (`7.2.0-ceralive-rk3588`), port left `dual`, peer a DJI Osmo Pocket 3 (`2ca3:0023`).** Recorded as a clean PASS: the capability half passed on first read, and the camera half — initially stopped and reported as incomplete — was afterwards closed by two real physical detach/reattach cycles, both clean. **What passed.** The build exited `0` with the patch series verified at `e531917d857bfec4f942ef57bfe9b4461a4226ba` and `0030-rk3588-orangepi-5-plus-typec-dual-role-power.patch` applied among 25 active patches; the RAUC install exited `0` into the inactive slot; the board booted that slot (`cera_slot=A`), RAUC marked it booted/activated/good with the expected rootfs checksum, `ceralive-healthcheck.service` exited `0/SUCCESS`, and the rollback slot stayed intact. The patch's own effect is then proven directly and independently of any camera behaviour: under `/sys/devices/platform/fec80000.i2c/i2c-6/6-0022/usb_power_delivery/pd0/`, `dual_role_power` reads `1` on **both** `source-capabilities/1:fixed_supply` and `sink-capabilities/1:fixed_supply`, where the pre-deployment readback on the same board read `0` on both. Separately, the adaptive Type-C policy migration was confirmed to survive the deploy: `port_type` still `[dual] source sink`, `preferred_role` still `source`, `ceralive-typec-policy.service` enabled, and the legacy `ceralive-typec-source.service` still absent. No write was made to `port_type`, `power_role`, `data_role`, `preferred_role`, the raw `usb_role_switch`, or any other Type-C control at any point — every reading above is read-only. **What did NOT complete on the first pass, stated plainly, and kept as history.** On the first untouched-cable post-boot state the camera no-regression check reached a genuine stop condition; it was reported rather than hidden behind runtime role writes or retry-until-green behaviour, and at that point it was neither a silent skip nor a pass. The physically untouched camera was present before the deploy at USB `7-1` (`2ca3:0023`, `DJIPocket3`) with `partner: PRESENT` and source/host roles. After the patched boot, and again on a separate later read-only recheck, `partner` read `ABSENT`, no camera USB device was found, and no DJI/UVC video nodes existed. Two corroborating read-only signals: the FUSB302 `fsc_interrupt_int_n` IRQ count was `0` after boot, and the TCPM trace contained only startup through `SRC_UNATTACHED`/`Start toggling`, recording no CC attach transition and no PD exchange. **This evidence does not establish whether the camera itself powered off or stopped presenting CC while the cable stayed physically attached, or whether the patched boot introduced a Type-C attach regression, so at the time no position was taken between them.** No physical replug cycle was available during that observation window to separate them, and the stop-and-report discipline was followed exactly: no no-regression claim was made, and the required next action was written down as a real full detach of at least 10 seconds followed by a reattach, with no role sysfs control written in either case. **How it was closed: two physical cycles, both PASS.** **Cycle 1, 2026-08-27T22:53Z.** With the patched slot A still booted, the operator performed that detach/reattach. The camera re-enumerated cleanly at `/sys/bus/usb/devices/7-1` as `2ca3:0023`, `DJIPocket3`, `partner: PRESENT`, `port_type: [dual] source sink`; `v4l2-ctl --list-devices` showed `DJIPocket3: OsmoPocket3 (usb-xhci-hcd.9.auto-1):` with `/dev/video6`, `/dev/video7` and `/dev/media3` all live. Natural DRP arbitration landed the roles with **zero manual role commands anywhere** — `journalctl -u ceralive-typec-policy.service` recorded `port0 settled as power_role=source data_role=host — no data-role swap needed`. `0030`'s own effect was re-confirmed intact after the cycle: `dual_role_power` still `1` on both `source-capabilities` and `sink-capabilities`, not reverted by the reboot/replug. **Cycle 2, 2026-08-28T02:11:25Z.** A second real detach (again at least 10 seconds) and reattach on the same still-booted slot A — no reboot, no deployment, no software USB reset, no driver unbind/rebind, no Type-C sysfs write. The before snapshot honestly records the detached state (`partner: ABSENT`, no DJI V4L2 nodes); after reattach, `partner: PRESENT`, `port_type` `[dual] source sink`, `power_role` `[source] sink`, `data_role` `[host] device`, `2ca3:0023` present at `7-1` bound to `uvcvideo` (`DRIVER=uvcvideo`, `PRODUCT=2ca3/23/504`), and the same three V4L2/media nodes live. Both `dual_role_power` records read `1` before and after this cycle. The board image ships no `lsusb`, so that attempted command and its `exit=127` are retained in the evidence rather than hidden; USB identity is established from USB sysfs plus `udevadm` and corroborated independently by V4L2 enumeration. **Verdict: `TODO_33_CYCLES: 2/2 PASS`.** The initial post-boot absence was a transient camera/cable-side state, **not** a kernel or Type-C regression introduced by `0030`, and the patch is confirmed compatible with normal camera operation on this board. The capability effect is stable across physical reattachment rather than a one-off state. **Scope.** Measured on a manually test-built kernel (`CERALIVE_BENCH_LABELS=1` plus a temporary, uncommitted `patches_commit` test pin in `image-building-pipeline`). Nothing here makes `0030` a shipped default, and the vendor 6.1 production track gains none of it — edge-only, exactly as `0028` and `0029` |
 
-### Retired ordinals `0007`, `0023`, `0024`, `0025`
+### Retired ordinals
+
+The island handoff retired the standalone-rkvenc lineage on 2026-09-03. Every
+file moved byte-unchanged to `retired/`; every hardening row points to the island
+commit and `FAULT-CAMPAIGN.md` evidence in `retired/REGISTRY.md`.
+
+| Retired ordinal(s) | Reason |
+|---|---|
+| `0001` | Standalone VEPU580 driver superseded by `rk3588-media-island v2026.9.0` maintained source and in-tree DT integration |
+| `0008` | DMA segment-size and IOVA intent re-expressed by island `95da048` |
+| `0013`–`0016` | Fault instrumentation, teardown, resource-error and request-bound intents re-expressed by island commits recorded in the registry |
+| `0019`–`0022` | Locking, dma-buf, rebind, lifecycle and UAPI intents re-expressed and mutation-locked by the island fault campaign |
+| overlay | Runtime rkvenc overlay superseded by island in-tree DT members `0035`–`0037` |
+| `0007`, `0023`–`0025` | Earlier retirements described below |
 
 `0007` was carried as a backport and is not any more: mainline commit
 `8d4346ecd495` landed in the `v7.2` base, so the backport is archived rather than

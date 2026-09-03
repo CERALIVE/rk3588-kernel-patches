@@ -33,6 +33,8 @@ ROOT = Path(__file__).resolve().parent.parent
 STATUS_DOC = ROOT / "docs" / "UPSTREAM-STATUS.md"
 
 MEMBER_ROW_RE = re.compile(r"^\|\s*`(?P<ordinal>\d{4})`")
+CURRENT_SERIES_BEGIN = "<!-- current-series: begin -->"
+CURRENT_SERIES_END = "<!-- current-series: end -->"
 SUBJECT_RE = re.compile(r"^Subject: \[PATCH (?P<ordinal>\d+)/(?P<total>\d+)\] (?P<rest>.*)$")
 FORBIDDEN_MERGED_MARKER_RE = re.compile(r"^commit [0-9a-f]{40} upstream\.$", re.MULTILINE)
 NULL_OID_RE = re.compile(r"\b0{40}\b")
@@ -56,6 +58,8 @@ def load_build_series():
 
 
 def status_member_ordinals(text: str) -> list[str]:
+    if CURRENT_SERIES_BEGIN in text and CURRENT_SERIES_END in text:
+        text = text.split(CURRENT_SERIES_BEGIN, 1)[1].split(CURRENT_SERIES_END, 1)[0]
     return [
         match.group("ordinal")
         for line in text.splitlines()
@@ -133,6 +137,28 @@ def check_provenance(bs, patch, header: str, problems: list[str]) -> None:
     where = patch.filename
     delimiter = header.splitlines()[0] if header else ""
     sha_delim = SHA1_ANYWHERE_RE.match(delimiter)
+
+    if patch.origin == bs.ISLAND:
+        if not isinstance(patch.provenance, bs.Island):
+            problems.append(f"{where}: island provenance is not an Island variant")
+            return
+        if sha_delim:
+            problems.append(
+                f"{where}: island delimiter claims kernel commit {sha_delim.group(1)}"
+            )
+        if FORBIDDEN_MERGED_MARKER_RE.search(header):
+            problems.append(f"{where}: island header claims an upstream commit")
+        if NULL_OID_RE.search(header):
+            problems.append(f"{where}: island header carries NULL_OID")
+        identity = (
+            "Generated from CeraLive rk3588-media-island "
+            f"{patch.provenance.tag} ({patch.provenance.commit})."
+        )
+        if identity not in header:
+            problems.append(f"{where}: island header omits {identity!r}")
+        if patch.provenance.asset_sha256 not in header:
+            problems.append(f"{where}: island header omits its asset sha256")
+        return
 
     if patch.origin == bs.BACKPORTS and patch.lore is not None:
         if patch.provenance != bs.LORE_POSTING:

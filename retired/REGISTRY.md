@@ -22,21 +22,22 @@ cannot tell "upstream only ever published four" from "someone quietly dropped th
 fifth" without walking history. So a patch that stops being carried is **moved**,
 not removed, and the move is recorded below.
 
-The same reasoning covers the other two lanes for a different reason: a retired
-`ceralive/` or `backports/` patch is the record of something CeraLive once shipped
-or once needed, and the registry row is where the *why* lives.
+The same reasoning covers the other lanes for a different reason: a retired
+`ceralive/`, `backports/`, or `island/` patch is the record of something CeraLive
+once shipped or needed, and the registry row is where the *why* lives. A retired
+overlay is registered too, with no ordinal because overlays never held a slot.
 
 ---
 
 ## The state machine
 
-Every `*.patch` under `upstream/`, `ceralive/` or `backports/` — plus every
-`*.patch` under `retired/` — is in exactly one of two states, and
+Every `*.patch` under `upstream/`, `ceralive/`, `backports/` or `island/` — plus
+every archived file under `retired/` — is in exactly one of two states, and
 `check_membership()` in `scripts/build-series.py` fails the build if it is in both
 or neither.
 
 ```
-              new file in upstream/ | ceralive/ | backports/
+              new file in upstream/ | ceralive/ | backports/ | island/
                               │
                               │  add a SERIES entry in scripts/build-series.py
                               ▼
@@ -87,6 +88,17 @@ upstream, superseded, or scoped out.
 | `0023-rkvenc-worker-task-lifetime.patch` | `ceralive` | 23 | 2026-08-12 | `v7.1.7` | Folded into `0021` — the worker use-after-free half. See `docs/UPSTREAM-STATUS.md` § retired ordinals |
 | `0024-rkvenc-secondary-core-iommu-domain-lifetime.patch` | `ceralive` | 24 | 2026-08-12 | `v7.1.7` | Folded into `0021` — the secondary-core NULL-domain half. See `docs/UPSTREAM-STATUS.md` § retired ordinals |
 | `0025-rkvenc-service-node-teardown-lifetime.patch` | `ceralive` | 25 | 2026-08-12 | `v7.1.7` | Folded into `0021` — the service-node teardown half. See `docs/UPSTREAM-STATUS.md` § retired ordinals |
+| `0001-rockchip-rk3588-vepu580-encoder-support-v3.patch` | `upstream` | 1 | 2026-09-03 | `v7.2` | Superseded by rk3588-media-island v2026.9.0; driver and DT intent re-expressed by island `fcdafc0` and `833c103`, indexed by the [island fault campaign][island-fault-campaign] |
+| `0008-rkvenc-set-dma-max-segment-size.patch` | `ceralive` | 8 | 2026-09-03 | `v7.2` | Superseded by rk3588-media-island v2026.9.0; intent re-expressed as island `95da048`, [fault campaign][island-fault-campaign] 0008 |
+| `0013-rkvenc-ceralive-test-instrumentation.patch` | `ceralive` | 13 | 2026-09-03 | `v7.2` | Superseded by rk3588-media-island v2026.9.0; intent re-expressed as island `18bd843`, [fault campaign][island-fault-campaign] 0013 |
+| `0014-rkvenc-teardown-and-service-ccu-unwind.patch` | `ceralive` | 14 | 2026-09-03 | `v7.2` | Superseded by rk3588-media-island v2026.9.0; intent re-expressed as island `77e0487`, [fault campaign][island-fault-campaign] 0014 |
+| `0015-rkvenc-resource-error-observability.patch` | `ceralive` | 15 | 2026-09-03 | `v7.2` | Superseded by rk3588-media-island v2026.9.0; intent re-expressed as island `c3318d6`, [fault campaign][island-fault-campaign] 0015 |
+| `0016-rkvenc-ioctl-bounds.patch` | `ceralive` | 16 | 2026-09-03 | `v7.2` | Superseded by rk3588-media-island v2026.9.0; intent re-expressed as island `c2661a9`, [fault campaign][island-fault-campaign] 0016 |
+| `0019-rkvenc-worker-lock-context-and-dma-buf-api.patch` | `ceralive` | 19 | 2026-09-03 | `v7.2` | Superseded by rk3588-media-island v2026.9.0; intent re-expressed as island `d257999`, [fault campaign][island-fault-campaign] 0019 |
+| `0020-rkvenc-service-survives-a-single-core-unbind.patch` | `ceralive` | 20 | 2026-09-03 | `v7.2` | Superseded by rk3588-media-island v2026.9.0; intent re-expressed as island `cb9e98b`, [fault campaign][island-fault-campaign] 0020 |
+| `0021-rkvenc-balanced-hw-run-teardown.patch` | `ceralive` | 21 | 2026-09-03 | `v7.2` | Superseded by rk3588-media-island v2026.9.0; intent re-expressed as island `a9f6967` plus imported guarantees, [fault campaign][island-fault-campaign] 0021 |
+| `0022-rkvenc-ioctl-request-coverage-and-element-bounds.patch` | `ceralive` | 22 | 2026-09-03 | `v7.2` | Superseded by rk3588-media-island v2026.9.0; intent re-expressed as island `c2661a9`, [fault campaign][island-fault-campaign] 0022 |
+| `rockchip-rk3588-rkvenc-mpp.dts` | `overlays` | - | 2026-09-03 | `v7.2` | Superseded by rk3588-media-island v2026.9.0 in-tree DT integration `833c103`; no overlay remains |
 
 **Folded, not dropped.** These three are the only rows here that retire a patch
 whose *content the series still carries*: `0021`, `0023`, `0024` and `0025` fixed
@@ -103,8 +115,10 @@ Column meanings:
 | Column | Content |
 |--------|---------|
 | `Patch` | The archived filename, exactly as it appears in `retired/` |
-| `Lane` | The lane it was moved out of: `upstream`, `ceralive` or `backports` |
-| `Ordinal` | The series slot it held. Permanently burned; never reused |
+| `Lane` | The lane it was moved out of: `upstream`, `ceralive`, `backports`, `island`, or `overlays` |
+| `Ordinal` | The series slot it held, or `-` for an overlay. Held slots stay permanently burned |
 | `Retired` | ISO date of the retirement commit |
 | `Kernel tag` | `KERNEL_TAG` at the time, so the row is anchored to a tree |
 | `Reason` | One line. Landed upstream / superseded by NNNN / scoped out — and where the detail lives |
+
+[island-fault-campaign]: https://github.com/CERALIVE/rk3588-media-island/blob/v2026.9.0/docs/FAULT-CAMPAIGN.md#intent-ledger

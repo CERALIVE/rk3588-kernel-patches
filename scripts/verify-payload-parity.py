@@ -39,7 +39,12 @@ ROOT = Path(__file__).resolve().parent.parent
 PATCHES_DIR = ROOT / "patches"
 # Deliberately NOT imported from build-series.py: this checker is the second,
 # independent opinion, so it re-derives a patch's lane from the filesystem.
-SOURCE_DIRS = (ROOT / "upstream", ROOT / "ceralive", ROOT / "backports")
+SOURCE_DIRS = (
+    ROOT / "upstream",
+    ROOT / "ceralive",
+    ROOT / "backports",
+    ROOT / "island",
+)
 
 # File-header lines share the '+'/'-' prefix with real payload but are metadata.
 FILE_HEADER_RE = re.compile(r"^(\+\+\+|---) ")

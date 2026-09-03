@@ -1,0 +1,84 @@
+From island-release Mon Sep 17 00:00:00 2001
+From: CeraLive <dev@ceralive.tv>
+Date: Wed, 2 Sep 2026 00:00:00 +0000
+Subject: [PATCH 32/37] video: rockchip: hook the MPP and multi_rga Kconfig and Makefiles
+
+Manifest-selected integration hunks replayed from the pinned 6.18 series.
+They are re-anchored to the pinned v7.2 tree in the CeraLive port commits.
+
+Origin: yisding/rock-5b-ysp@ca3da04280c48c004e522c15f31862bf88a2d1b9:kernel-drivers/patches/forward-port-rk3588/rk3588-fwport-0001-video-rockchip-RK3588-vendor-MPP-rkvenc2-rkvdec2-RGA.patch
+
+Patches a file mainline already carries. The payload below is carried byte-for-byte from integration/0001-video-rockchip-kconfig-makefile-hooks.patch; scripts/build-series.py adds the mail header and nothing else, and scripts/verify-series-parity.py proves that independently.
+
+
+Generated from CeraLive rk3588-media-island v2026.9.0 (dcda1a2218d9e52db2db2a0a809263d7d7e8831f).
+
+Release asset rk3588-media-island-v2026.9.0.mbox.tar
+  asset_sha256  bea66ab56a71e5869d5e9ac6d66bb5f4e5151190dd387abe345fc88dc9f5eec2
+  member        0002-video-rockchip-kconfig-makefile-hooks.patch
+  member_sha256 8e1d1b2687aa2676b9e6576d9e3fe4058800f33f82fa427a6c0c45aee21f0fcd
+
+island/0032-video-rockchip-kconfig-makefile-hooks.patch is that member byte-for-byte -- the mail
+header above is this repository's own, so the N/37 ordinal is ours and
+the message is the release's. scripts/verify-island-provenance.py
+re-fetches the asset, checks asset_sha256 and byte-compares every
+member, independently of scripts/build-series.py.
+
+NOT upstream-bound: the island is a CeraLive-maintained out-of-tree driver
+collection, not a submission. No commit id is claimed here. The island
+release names a tag and a commit in its OWN repository, which is not the
+kernel history this mailbox's delimiter field is for, so the delimiter
+carries a sentinel rather than a 40-hex value that would read as one.
+
+This lane is GENERATED UPSTREAM and byte-preserved here: never hand-edited,
+never re-anchored. A base bump is an island release first. Retire this when
+the island stops carrying the component -- trigger and last-checked date:
+docs/UPSTREAM-STATUS.md.
+
+---
+diff --git a/drivers/video/Kconfig b/drivers/video/Kconfig
+index a7144d275f54e295c530e50012472ade1169ccd4..7f2f3cc74921050e5edf218a69ffae5408bd8e07 100644
+--- a/drivers/video/Kconfig
++++ b/drivers/video/Kconfig
+@@ -50,6 +50,8 @@ endmenu
+ 
+ source "drivers/video/backlight/Kconfig"
+ 
++source "drivers/video/rockchip/Kconfig"
++
+ config VGASTATE
+        tristate
+        default n
+diff --git a/drivers/video/Makefile b/drivers/video/Makefile
+index ffbac4387c670b7403690dd21dcc9cf633debb42..de60ba8512c8a76f2d780827969a8400ab890e19 100644
+--- a/drivers/video/Makefile
++++ b/drivers/video/Makefile
+@@ -17,6 +17,8 @@ obj-y				  += backlight/
+ 
+ obj-y				  += fbdev/
+ 
++obj-y				  += rockchip/
++
+ obj-$(CONFIG_VIDEOMODE_HELPERS) += display_timing.o videomode.o
+ ifeq ($(CONFIG_OF),y)
+ obj-$(CONFIG_VIDEOMODE_HELPERS) += of_display_timing.o of_videomode.o
+diff --git a/drivers/video/rockchip/Kconfig b/drivers/video/rockchip/Kconfig
+new file mode 100644
+index 0000000000000000000000000000000000000000..13ecab409e7d1c9ef3c6b925221818ada36c545c
+--- /dev/null
++++ b/drivers/video/rockchip/Kconfig
+@@ -0,0 +1,3 @@
++# SPDX-License-Identifier: GPL-2.0
++source "drivers/video/rockchip/mpp/Kconfig"
++source "drivers/video/rockchip/rga3/Kconfig"
+diff --git a/drivers/video/rockchip/Makefile b/drivers/video/rockchip/Makefile
+new file mode 100644
+index 0000000000000000000000000000000000000000..5a7a4716c38f145334a661574903fd1e50e29eb4
+--- /dev/null
++++ b/drivers/video/rockchip/Makefile
+@@ -0,0 +1,3 @@
++# SPDX-License-Identifier: GPL-2.0
++obj-$(CONFIG_ROCKCHIP_MPP_SERVICE) += mpp/
++obj-$(CONFIG_ROCKCHIP_MULTI_RGA) += rga3/
+-- 
+2.51.0
