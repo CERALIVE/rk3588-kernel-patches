@@ -143,9 +143,9 @@ a verified row from a skipped one.
 
 ## Current series members
 
-The active series now has 22 members across 37 slots. Ten standalone-rkvenc
+The active series now has 24 members across 39 slots. Ten standalone-rkvenc
 members moved byte-unchanged to `retired/` after `rk3588-media-island v2026.9.0`
-re-expressed their intent as maintained source and permanent tests. The seven
+re-expressed their intent as maintained source and permanent tests. The nine
 island rows name the release components; their exact tag, commit and asset digest
 are enforced in `scripts/build-series.py` and independently byte-verified by
 `scripts/verify-island-provenance.py`.
@@ -168,13 +168,15 @@ are enforced in `scripts/build-series.py` and independently byte-verified by
 | `0028` Rock 5B+ dual-role-power PDOs | `ceralive/` | `first-party-no-upstream` | Mainline carries equivalent fixed-PDO capability | 2026-08-27 | Active |
 | `0029` Rock 5B+ Try.SRC preference | `ceralive/` | `first-party-no-upstream` | Mainline carries equivalent source preference | 2026-08-27 | Active |
 | `0030` Orange Pi 5 Plus dual-role-power PDOs | `ceralive/` | `first-party-no-upstream` | Mainline carries equivalent fixed-PDO capability | 2026-08-27 | Active |
-| `0031` media-island maintained source | `island/` | `first-party-no-upstream` | A later island release replaces or removes this source component | 2026-09-03 | From `rk3588-media-island v2026.9.1` |
-| `0032` media-island build hooks | `island/` | `first-party-no-upstream` | Mainline integration removes the out-of-tree hooks | 2026-09-03 | From `rk3588-media-island v2026.9.1` |
-| `0033` Rockchip IOMMU provider exports | `island/` | `first-party-no-upstream` | Mainline exports equivalent provider APIs | 2026-09-03 | From `rk3588-media-island v2026.9.1` |
-| `0034` IOMMU DMA IOVA accessor | `island/` | `first-party-no-upstream` | Mainline exposes an equivalent accessor | 2026-09-03 | From `rk3588-media-island v2026.9.1` |
-| `0035` MPP encoder DT nodes | `island/` | `first-party-no-upstream` | Mainline owns the encoder nodes with a usable production ABI | 2026-09-03 | From `rk3588-media-island v2026.9.1` |
-| `0036` MPP decoder DT ownership | `island/` | `first-party-no-upstream` | Decoder ownership returns to a production-capable mainline driver | 2026-09-03 | From `rk3588-media-island v2026.9.1` |
-| `0037` MPP JPEG decoder DT node | `island/` | `first-party-no-upstream` | Mainline provides the required JPEG decode path | 2026-09-03 | From `rk3588-media-island v2026.9.1` |
+| `0031` media-island maintained source | `island/` | `first-party-no-upstream` | A later island release replaces or removes this source component | 2026-09-04 | From `rk3588-media-island v2026.9.2` |
+| `0032` media-island build hooks | `island/` | `first-party-no-upstream` | Mainline integration removes the out-of-tree hooks | 2026-09-04 | From `rk3588-media-island v2026.9.2` |
+| `0033` Rockchip IOMMU provider exports | `island/` | `first-party-no-upstream` | Mainline exports equivalent provider APIs | 2026-09-04 | From `rk3588-media-island v2026.9.2` |
+| `0034` IOMMU DMA IOVA accessor | `island/` | `first-party-no-upstream` | Mainline exposes an equivalent accessor | 2026-09-04 | From `rk3588-media-island v2026.9.2` |
+| `0035` MPP encoder DT nodes | `island/` | `first-party-no-upstream` | Mainline owns the encoder nodes with a usable production ABI | 2026-09-04 | From `rk3588-media-island v2026.9.2` |
+| `0036` MPP decoder DT ownership | `island/` | `first-party-no-upstream` | Decoder ownership returns to a production-capable mainline driver | 2026-09-04 | From `rk3588-media-island v2026.9.2` |
+| `0037` MPP JPEG decoder DT node | `island/` | `first-party-no-upstream` | Mainline provides the required JPEG decode path | 2026-09-04 | From `rk3588-media-island v2026.9.2` |
+| `0038` RGA3 DT ownership | `island/` | `first-party-no-upstream` | Mainline provides a production-capable multi-core RGA driver | 2026-09-04 | From `rk3588-media-island v2026.9.2`; owns RGA3 core0 and core1 |
+| `0039` RGA2 DT ownership | `island/` | `first-party-no-upstream` | Mainline provides a production-capable RGA2 driver | 2026-09-04 | From `rk3588-media-island v2026.9.2`; owns RGA2 |
 <!-- current-series: end -->
 
 ## Historical pre-island member detail

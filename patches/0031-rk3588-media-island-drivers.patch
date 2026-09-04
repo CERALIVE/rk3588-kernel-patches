@@ -1,7 +1,7 @@
 From island-release Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Wed, 2 Sep 2026 00:00:00 +0000
-Subject: [PATCH 31/37] video: rockchip: add the CeraLive RK3588 media island
+Subject: [PATCH 31/39] video: rockchip: add the CeraLive RK3588 media island
 
 The Rockchip MPP service with its three compiled clients (RKVENC2, RKVDEC2, JPGDEC), the multi_rga 2D engine driver, and the UAPI headers they publish.
 
@@ -10,15 +10,15 @@ The Rockchip MPP service with its three compiled clients (RKVENC2, RKVDEC2, JPGD
 GENERATED from the rk3588-media-island source tree by scripts/build-series.py. The source is the truth and this series is its output; per-file provenance is docs/PROVENANCE.md and the originating commits' Origin: trailers, never this mailbox header.
 
 
-Generated from CeraLive rk3588-media-island v2026.9.1 (b825aaedd538a97d83ba1c0ae08bc9a2b04e7b6c).
+Generated from CeraLive rk3588-media-island v2026.9.2 (1fd357d8a8b83b6f4ed7f7692d761f7b653d44f5).
 
-Release asset rk3588-media-island-v2026.9.1.mbox.tar
-  asset_sha256  a1992957b0e3b409cea7c570e2fedd64ebd29e95f0ea39635dc4f336325b6fbd
+Release asset rk3588-media-island-v2026.9.2.mbox.tar
+  asset_sha256  393b50a26117b95659f35a603abb9939f767e397f71e85fb180dda107e2df616
   member        0001-rk3588-media-island-drivers.patch
-  member_sha256 266831246394176721e2a9f08a4eea205b0157a562116e01fb89a95e5c0dea9e
+  member_sha256 bc01229b723e2eb0e1f40b366562c0f56325b332831cd5468b50f3d84a85fd3d
 
 island/0031-rk3588-media-island-drivers.patch is that member byte-for-byte -- the mail
-header above is this repository's own, so the N/37 ordinal is ours and
+header above is this repository's own, so the N/39 ordinal is ours and
 the message is the release's. scripts/verify-island-provenance.py
 re-fetches the asset, checks asset_sha256 and byte-compares every
 member, independently of scripts/build-series.py.
@@ -32061,7 +32061,7 @@ index 0000000000000000000000000000000000000000..aff932c94292105a8025e0c45018f936
 +endif
 diff --git a/drivers/video/rockchip/rga3/Makefile b/drivers/video/rockchip/rga3/Makefile
 new file mode 100644
-index 0000000000000000000000000000000000000000..7027ce9b1edfdcf999bdbaac68b2d5a1da89b8d3
+index 0000000000000000000000000000000000000000..d4386ee6061d7962a24382eeb1dc3ab321bac178
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/Makefile
 @@ -0,0 +1,10 @@
@@ -32069,12 +32069,12 @@ index 0000000000000000000000000000000000000000..7027ce9b1edfdcf999bdbaac68b2d5a1
 +
 +ccflags-y += -I$(src) -I$(src)/include
 +
-+rga3-y	:= rga_drv.o rga_common.o rga3_reg_info.o rga_iommu.o rga_dma_buf.o \
++rga_multicore-y := rga_drv.o rga_common.o rga3_reg_info.o rga_iommu.o rga_dma_buf.o \
 +	   rga_job.o rga_hw_config.o rga2_reg_info.o rga_policy.o rga_mm.o \
 +	   rga_fence.o rga_trace.o
-+rga3-$(CONFIG_ROCKCHIP_RGA_DEBUGGER)	+= rga_debugger.o
++rga_multicore-$(CONFIG_ROCKCHIP_RGA_DEBUGGER) += rga_debugger.o
 +
-+obj-$(CONFIG_ROCKCHIP_MULTI_RGA)	+= rga3.o
++obj-$(CONFIG_ROCKCHIP_MULTI_RGA) += rga_multicore.o
 diff --git a/drivers/video/rockchip/rga3/include/rga.h b/drivers/video/rockchip/rga3/include/rga.h
 new file mode 100644
 index 0000000000000000000000000000000000000000..06659667b65f29f72bd362231e6ed60591d0f472
@@ -34243,10 +34243,10 @@ index 0000000000000000000000000000000000000000..0c7aabe6239228c752184081cd39689d
 +
 diff --git a/drivers/video/rockchip/rga3/include/rga_common.h b/drivers/video/rockchip/rga3/include/rga_common.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..80014ff09e7c21f5843f19b5d32c1800d4bd7a5e
+index 0000000000000000000000000000000000000000..a09a8f2d7b7938854abcdb7faf7a24b338994dbd
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/include/rga_common.h
-@@ -0,0 +1,89 @@
+@@ -0,0 +1,90 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -34332,6 +34332,7 @@ index 0000000000000000000000000000000000000000..80014ff09e7c21f5843f19b5d32c1800
 +void rga_dump_memory_parm(struct rga_memory_parm *parm);
 +void rga_dump_external_buffer(struct rga_external_buffer *buffer);
 +void rga_dump_req(struct rga_request *request, struct rga_req *req);
++int rga_job_validate(struct rga_job *job);
 +
 +unsigned long rga_get_free_pages(gfp_t gfp_mask, unsigned int *order, unsigned long size);
 +
@@ -34624,10 +34625,10 @@ index 0000000000000000000000000000000000000000..b9fcfa507997d60325220f6edb59a73d
 +#endif
 diff --git a/drivers/video/rockchip/rga3/include/rga_drv.h b/drivers/video/rockchip/rga3/include/rga_drv.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..de9f7cc33b67a1246f89df6dcc23c8847e5b9131
+index 0000000000000000000000000000000000000000..83eaf7cc76c6f595fa6150c9bcfeca0afe56fd77
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/include/rga_drv.h
-@@ -0,0 +1,598 @@
+@@ -0,0 +1,604 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -34785,9 +34786,7 @@ index 0000000000000000000000000000000000000000..de9f7cc33b67a1246f89df6dcc23c884
 +	struct device *dev;
 +	struct device *default_dev;		/* for dma-buf_api */
 +	struct iommu_domain *domain;
-+	struct iommu_domain *default_domain;
 +	struct iommu_group *group;
-+	bool shared_domain;
 +	bool rockchip_fault_handler;
 +	bool generic_fault_handler;
 +};
@@ -34964,6 +34963,14 @@ index 0000000000000000000000000000000000000000..de9f7cc33b67a1246f89df6dcc23c884
 +	/* Shared, job-owned DMA32 staging references for incompatible DMA-BUFs. */
 +	struct rga_rga2_stage *rga2_stage[3];
 +	int rga2_stage_count;
++
++	/* Per-job mappings when an imported handle executes on another RGA3 core. */
++	struct {
++		struct rga_internal_buffer *origin;
++		struct rga_dma_buffer *mapping;
++		struct sg_table *owned_sgt;
++	} iommu_mapping[3];
++	int iommu_mapping_count;
 +};
 +
 +struct rga_job_task_buffers {
@@ -35202,7 +35209,7 @@ index 0000000000000000000000000000000000000000..de9f7cc33b67a1246f89df6dcc23c884
 +
 +struct rga_match_data_t {
 +	enum RGA_DEVICE_TYPE device_type;
-+
++	int core;
 +	const struct rga_backend_ops *ops;
 +};
 +
@@ -35395,7 +35402,7 @@ index 0000000000000000000000000000000000000000..12e7e81e3f47f12f4aeb43a1212a11e7
 +#endif /* __LINUX_RGA_HW_CONFIG_H_ */
 diff --git a/drivers/video/rockchip/rga3/include/rga_iommu.h b/drivers/video/rockchip/rga3/include/rga_iommu.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..69464f2586e1f46c0240f25369907d5af76c72d1
+index 0000000000000000000000000000000000000000..39b7ffd690891b4f692f4e3e84a55c73780ba973
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/include/rga_iommu.h
 @@ -0,0 +1,85 @@
@@ -35476,6 +35483,7 @@ index 0000000000000000000000000000000000000000..69464f2586e1f46c0240f25369907d5a
 +
 +int rga_iommu_detach(struct rga_iommu_info *info);
 +int rga_iommu_attach(struct rga_iommu_info *info);
++int rga_iommu_flush_tlb(struct rga_iommu_info *info);
 +struct rga_iommu_info *rga_iommu_probe(struct device *dev);
 +int rga_iommu_remove(struct rga_iommu_info *info);
 +
@@ -35483,13 +35491,12 @@ index 0000000000000000000000000000000000000000..69464f2586e1f46c0240f25369907d5a
 +void rga_iommu_unbind(void);
 +
 +#endif
-+
 diff --git a/drivers/video/rockchip/rga3/include/rga_job.h b/drivers/video/rockchip/rga3/include/rga_job.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..642f7c3423a9aa6511afb7fedf0ebdca65eb4112
+index 0000000000000000000000000000000000000000..d3ac4cc0de0ef9c7a2a214200998f0810ee25871
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/include/rga_job.h
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,65 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -35525,6 +35532,8 @@ index 0000000000000000000000000000000000000000..642f7c3423a9aa6511afb7fedf0ebdca
 +int rga_job_mpi_commit(struct rga_req *rga_command_base, struct rga_request *request);
 +
 +int rga_job_assign(struct rga_job *job);
++bool rga_check_format(const struct rga_hw_data *data, int rd_mode, int format,
++		      int win_num);
 +
 +
 +int rga_request_check(struct rga_user_request *req);
@@ -35555,10 +35564,10 @@ index 0000000000000000000000000000000000000000..642f7c3423a9aa6511afb7fedf0ebdca
 +#endif /* __LINUX_RKRGA_JOB_H_ */
 diff --git a/drivers/video/rockchip/rga3/include/rga_mm.h b/drivers/video/rockchip/rga3/include/rga_mm.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..6dc8c87104ae7f6a9638ee46a969ad020df80909
+index 0000000000000000000000000000000000000000..aeba404d133469bd9fe3f158280d0597478a13af
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/include/rga_mm.h
-@@ -0,0 +1,91 @@
+@@ -0,0 +1,93 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -35630,6 +35639,8 @@ index 0000000000000000000000000000000000000000..6dc8c87104ae7f6a9638ee46a969ad02
 +int rga_mm_lookup_flag(struct rga_mm *mm_session, uint64_t handle);
 +int rga_mm_lookup_rga2_support(struct rga_mm *mm_session, uint64_t handle,
 +			       struct rga_session *session);
++int rga_mm_get_handle_size(uint64_t handle, struct rga_session *session,
++			   u64 *size);
 +dma_addr_t rga_mm_lookup_iova(struct rga_internal_buffer *buffer);
 +struct sg_table *rga_mm_lookup_sgt(struct rga_internal_buffer *buffer);
 +
@@ -35652,10 +35663,10 @@ index 0000000000000000000000000000000000000000..6dc8c87104ae7f6a9638ee46a969ad02
 +#endif
 diff --git a/drivers/video/rockchip/rga3/include/rga_request_validation.h b/drivers/video/rockchip/rga3/include/rga_request_validation.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..6a3ea6faae36497fa9a960d7d1d3b019a2e1a3d3
+index 0000000000000000000000000000000000000000..1d29e9cafd1e3517988ecd89f193bdb08bd50166
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/include/rga_request_validation.h
-@@ -0,0 +1,63 @@
+@@ -0,0 +1,99 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +#ifndef __ROCKCHIP_RGA_REQUEST_VALIDATION_H__
 +#define __ROCKCHIP_RGA_REQUEST_VALIDATION_H__
@@ -35669,9 +35680,16 @@ index 0000000000000000000000000000000000000000..6a3ea6faae36497fa9a960d7d1d3b019
 +#define RGA_REQUEST_FORMAT_RESERVED_27 0x27
 +#define RGA_REQUEST_FORMAT_MAX 0x34
 +#define RGA_REQUEST_FORMAT_UNKNOWN 0x100
++#define RGA_REQUEST_MAX_PLANES 3
++
++struct rga_plane_buffer {
++	u64 descriptor;
++	u64 offset;
++	u64 size;
++	u64 required;
++};
 +
 +struct rga_plane_request {
-+	u64 address;
 +	u32 active_width;
 +	u32 active_height;
 +	u32 x_offset;
@@ -35679,6 +35697,12 @@ index 0000000000000000000000000000000000000000..6a3ea6faae36497fa9a960d7d1d3b019
 +	u32 width_stride;
 +	u32 height_stride;
 +	u32 format;
++	u32 plane_count;
++	u32 byte_stride;
++	u32 byte_stride_align;
++	u32 max_byte_stride;
++	bool format_supported;
++	struct rga_plane_buffer planes[RGA_REQUEST_MAX_PLANES];
 +};
 +
 +static inline bool rga_request_format_valid(u32 format)
@@ -35703,8 +35727,10 @@ index 0000000000000000000000000000000000000000..6a3ea6faae36497fa9a960d7d1d3b019
 +{
 +	u32 width_end;
 +	u32 height_end;
++	u32 i;
 +
-+	if (!plane->address || !plane->active_width || !plane->active_height)
++	if (!plane->active_width || !plane->active_height ||
++	    !plane->plane_count || plane->plane_count > RGA_REQUEST_MAX_PLANES)
 +		return -EINVAL;
 +	if (check_add_overflow(plane->active_width, plane->x_offset,
 +			       &width_end) ||
@@ -35713,8 +35739,29 @@ index 0000000000000000000000000000000000000000..6a3ea6faae36497fa9a960d7d1d3b019
 +	    plane->width_stride < width_end ||
 +	    plane->height_stride < height_end)
 +		return -EINVAL;
-+	if (!rga_request_format_valid(plane->format))
++	if (!rga_request_format_valid(plane->format) ||
++	    !plane->format_supported || !plane->byte_stride ||
++	    !plane->byte_stride_align ||
++	    !IS_ALIGNED(plane->byte_stride, plane->byte_stride_align) ||
++	    plane->byte_stride > plane->max_byte_stride)
 +		return -EINVAL;
++
++	for (i = 0; i < RGA_REQUEST_MAX_PLANES; i++) {
++		const struct rga_plane_buffer *buffer = &plane->planes[i];
++		u64 end;
++
++		if (i >= plane->plane_count) {
++			if (buffer->descriptor || buffer->offset ||
++			    buffer->size || buffer->required)
++				return -EINVAL;
++			continue;
++		}
++		if (!buffer->descriptor || !buffer->size || !buffer->required ||
++		    check_add_overflow(buffer->offset, buffer->required, &end) ||
++		    end > buffer->size)
++			return -EINVAL;
++	}
++
 +	return 0;
 +}
 +
@@ -41680,10 +41727,10 @@ index 0000000000000000000000000000000000000000..4548133c0a147e9e2cfe9a3a13b0be99
 +};
 diff --git a/drivers/video/rockchip/rga3/rga_common.c b/drivers/video/rockchip/rga3/rga_common.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..f100894dff638ed3a915ceee19d0aed47fa2eafa
+index 0000000000000000000000000000000000000000..084c931e7d1a82110a96807bddeae683b60f2b19
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/rga_common.c
-@@ -0,0 +1,984 @@
+@@ -0,0 +1,1141 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -41693,6 +41740,10 @@ index 0000000000000000000000000000000000000000..f100894dff638ed3a915ceee19d0aed4
 +
 +#include "rga.h"
 +#include "rga_common.h"
++#include "rga_hw_config.h"
++#include "rga_job.h"
++#include "rga_mm.h"
++#include "rga_request_validation.h"
 +
 +bool rga_is_rgb_format(uint32_t format)
 +{
@@ -42563,6 +42614,159 @@ index 0000000000000000000000000000000000000000..f100894dff638ed3a915ceee19d0aed4
 +		*v_size = v;
 +
 +	return (yrgb + uv + v);
++}
++
++static int rga_validate_get_descriptor_size(struct rga_job *job, u64 descriptor,
++					    bool handle, u64 *size)
++{
++	struct dma_buf *dma_buf;
++
++	if (!descriptor || !size)
++		return -EINVAL;
++	if (handle)
++		return rga_mm_get_handle_size(descriptor, job->session, size);
++	if (descriptor > INT_MAX)
++		return -EINVAL;
++
++	dma_buf = dma_buf_get((int)descriptor);
++	if (IS_ERR(dma_buf))
++		return PTR_ERR(dma_buf);
++	*size = dma_buf->size;
++	dma_buf_put(dma_buf);
++
++	return *size ? 0 : -EINVAL;
++}
++
++static int rga_validate_image(struct rga_job *job,
++			      const struct rga_img_info_t *img, int win_num)
++{
++	struct rga_plane_request plane = {
++		.active_width = img->act_w,
++		.active_height = img->act_h,
++		.x_offset = img->x_offset,
++		.y_offset = img->y_offset,
++		.width_stride = img->vir_w,
++		.height_stride = img->vir_h,
++		.format = img->format,
++		.byte_stride_align = job->scheduler->data->byte_stride_align,
++		.max_byte_stride = job->scheduler->data->max_byte_stride,
++		.format_supported = rga_check_format(job->scheduler->data,
++						     img->rd_mode, img->format,
++						     win_num),
++	};
++	u64 descriptor = img->yrgb_addr ? img->yrgb_addr : img->uv_addr;
++	u64 total_size;
++	u64 buffer_size;
++	u64 bit_stride;
++	int required[RGA_REQUEST_MAX_PLANES] = {};
++	bool handle = job->flags & RGA_JOB_USE_HANDLE;
++	bool separate = handle && img->uv_addr;
++	int pixel_stride;
++	int image_size;
++	int ret;
++	int i;
++
++	image_size = rga_image_size_cal(img->vir_w, img->vir_h, img->format,
++					required, required + 1, required + 2);
++	if (image_size <= 0)
++		return -EINVAL;
++
++	if (rga_is_yuv10bit_format(img->format)) {
++		plane.byte_stride = img->vir_w;
++	} else {
++		pixel_stride = rga_get_pixel_stride_from_format(img->format);
++		if (pixel_stride <= 0 ||
++		    check_mul_overflow((u64)pixel_stride, (u64)img->vir_w,
++				       &bit_stride) ||
++		    DIV_ROUND_UP_ULL(bit_stride, 8) > U32_MAX)
++			return -EINVAL;
++		plane.byte_stride = DIV_ROUND_UP_ULL(bit_stride, 8);
++	}
++
++	for (i = 0; i < RGA_REQUEST_MAX_PLANES; i++)
++		if (required[i] > 0)
++			plane.plane_count++;
++	if (!plane.plane_count)
++		return -EINVAL;
++
++	if (separate) {
++		const u64 descriptors[RGA_REQUEST_MAX_PLANES] = {
++			img->yrgb_addr, img->uv_addr, img->v_addr,
++		};
++
++		for (i = 0; i < RGA_REQUEST_MAX_PLANES; i++) {
++			if (i >= plane.plane_count) {
++				if (descriptors[i])
++					return -EINVAL;
++				continue;
++			}
++			ret = rga_validate_get_descriptor_size(job, descriptors[i],
++							 handle, &buffer_size);
++			if (ret)
++				return -EINVAL;
++			plane.planes[i].descriptor = descriptors[i];
++			plane.planes[i].size = buffer_size;
++			plane.planes[i].required = required[i];
++		}
++	} else {
++		if (img->yrgb_addr) {
++			ret = rga_validate_get_descriptor_size(job, descriptor, handle,
++							 &buffer_size);
++			if (ret)
++				return -EINVAL;
++		} else {
++			buffer_size = image_size;
++		}
++
++		total_size = 0;
++		for (i = 0; i < plane.plane_count; i++) {
++			plane.planes[i].descriptor = descriptor;
++			plane.planes[i].offset = total_size;
++			plane.planes[i].size = buffer_size;
++			plane.planes[i].required = required[i];
++			if (check_add_overflow(total_size, (u64)required[i],
++					       &total_size))
++				return -EINVAL;
++		}
++	}
++
++	return rga_plane_request_validate(&plane);
++}
++
++static int rga_validate_task(struct rga_job *job, const struct rga_req *task)
++{
++	switch (task->render_mode) {
++	case BITBLT_MODE:
++	case COLOR_PALETTE_MODE:
++		if (rga_validate_image(job, &task->src, 0) ||
++		    rga_validate_image(job, &task->dst, 2))
++			return -EINVAL;
++		if (task->bsfilter_flag &&
++		    rga_validate_image(job, &task->pat, 1))
++			return -EINVAL;
++		return 0;
++	case COLOR_FILL_MODE:
++		return rga_validate_image(job, &task->dst, 2);
++	case UPDATE_PALETTE_TABLE_MODE:
++	case UPDATE_PATTEN_BUF_MODE:
++		return rga_validate_image(job, &task->pat, 1);
++	default:
++		return -EINVAL;
++	}
++}
++
++int rga_job_validate(struct rga_job *job)
++{
++	size_t i;
++
++	if (!job || !job->scheduler || !job->scheduler->data)
++		return -EINVAL;
++
++	for (i = 0; i < job->task_count; i++)
++		if (rga_validate_task(job, &job->task_list[i]))
++			return -EINVAL;
++
++	return 0;
 +}
 +
 +void rga_dump_memory_parm(struct rga_memory_parm *parm)
@@ -43959,10 +44163,10 @@ index 0000000000000000000000000000000000000000..f4dd4dd05474e33c0e82797b9e592067
 +#endif /* #ifdef CONFIG_NO_GKI */
 diff --git a/drivers/video/rockchip/rga3/rga_dma_buf.c b/drivers/video/rockchip/rga3/rga_dma_buf.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..a0f6d1e2269db091fca81cc75089379c3bc9a576
+index 0000000000000000000000000000000000000000..27cdea2f7b70b6d3b26056d63df89ce86ca23f68
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/rga_dma_buf.c
-@@ -0,0 +1,874 @@
+@@ -0,0 +1,871 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -44440,18 +44644,17 @@ index 0000000000000000000000000000000000000000..a0f6d1e2269db091fca81cc75089379c
 +{
 +	int ret = 0;
 +
-+	ret = dma_map_sg(map_dev, sgt->sgl, sgt->orig_nents, dir);
-+	if (ret <= 0) {
-+		rga_err("dma_map_sg failed! ret = %d\n", ret);
-+		return ret < 0 ? ret : -EINVAL;
++	ret = dma_map_sgtable(map_dev, sgt, dir, 0);
++	if (ret) {
++		rga_err("dma_map_sgtable failed! ret = %d\n", ret);
++		return ret;
 +	}
-+	sgt->nents = ret;
 +
 +	if (page_granular) {
 +		ret = rga_dma_set_buffer_mapping(sgt, buffer, dir, map_dev,
 +						 "sg_table", true);
 +		if (ret) {
-+			dma_unmap_sg(map_dev, sgt->sgl, sgt->orig_nents, dir);
++			dma_unmap_sgtable(map_dev, sgt, dir, 0);
 +			rga_dma_reset_sgt_dma_state(sgt);
 +			return ret;
 +		}
@@ -44461,7 +44664,7 @@ index 0000000000000000000000000000000000000000..a0f6d1e2269db091fca81cc75089379c
 +
 +	ret = rga_dma_check_iova_contract(sgt, "sg_table", false);
 +	if (ret) {
-+		dma_unmap_sg(map_dev, sgt->sgl, sgt->orig_nents, dir);
++		dma_unmap_sgtable(map_dev, sgt, dir, 0);
 +		rga_dma_reset_sgt_dma_state(sgt);
 +
 +		if (ret == -EOPNOTSUPP || ret == -EOVERFLOW) {
@@ -44477,7 +44680,7 @@ index 0000000000000000000000000000000000000000..a0f6d1e2269db091fca81cc75089379c
 +	ret = rga_dma_set_buffer_mapping(sgt, buffer, dir, map_dev,
 +					 "sg_table", false);
 +	if (ret) {
-+		dma_unmap_sg(map_dev, sgt->sgl, sgt->orig_nents, dir);
++		dma_unmap_sgtable(map_dev, sgt, dir, 0);
 +		return ret;
 +	}
 +
@@ -44506,10 +44709,7 @@ index 0000000000000000000000000000000000000000..a0f6d1e2269db091fca81cc75089379c
 +		return;
 +	}
 +
-+	dma_unmap_sg(buffer->map_dev,
-+		     buffer->sgt->sgl,
-+		     buffer->sgt->orig_nents,
-+		     buffer->dir);
++	dma_unmap_sgtable(buffer->map_dev, buffer->sgt, buffer->dir, 0);
 +}
 +
 +static int rga_dma_do_map_buf(struct dma_buf *dma_buf,
@@ -44529,6 +44729,7 @@ index 0000000000000000000000000000000000000000..a0f6d1e2269db091fca81cc75089379c
 +		return ret;
 +	}
 +
++	/* The exporter maps this attachment with dma_map_sgtable(attach->dev, ...). */
 +	sgt = dma_buf_map_attachment_unlocked(attach, dir);
 +	if (IS_ERR(sgt)) {
 +		ret = PTR_ERR(sgt);
@@ -44839,10 +45040,10 @@ index 0000000000000000000000000000000000000000..a0f6d1e2269db091fca81cc75089379c
 +}
 diff --git a/drivers/video/rockchip/rga3/rga_drv.c b/drivers/video/rockchip/rga3/rga_drv.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..fce414ed2a17ce87931a166cdf6455558d033b9d
+index 0000000000000000000000000000000000000000..16750d32bde1bf866a32f043b511660e65c9a8f8
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/rga_drv.c
-@@ -0,0 +1,1971 @@
+@@ -0,0 +1,2005 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -46297,11 +46498,31 @@ index 0000000000000000000000000000000000000000..fce414ed2a17ce87931a166cdf645555
 +
 +static const struct rga_match_data_t rga2_match_data = {
 +	.device_type = RGA_DEVICE_RGA2,
++	.core = RGA_NONE_CORE,
++	.ops = &rga2_ops,
++};
++
++static const struct rga_match_data_t rga2_core0_match_data = {
++	.device_type = RGA_DEVICE_RGA2,
++	.core = RGA2_SCHEDULER_CORE0,
 +	.ops = &rga2_ops,
 +};
 +
 +static const struct rga_match_data_t rga3_match_data = {
 +	.device_type = RGA_DEVICE_RGA3,
++	.core = RGA_NONE_CORE,
++	.ops = &rga3_ops,
++};
++
++static const struct rga_match_data_t rga3_core0_match_data = {
++	.device_type = RGA_DEVICE_RGA3,
++	.core = RGA3_SCHEDULER_CORE0,
++	.ops = &rga3_ops,
++};
++
++static const struct rga_match_data_t rga3_core1_match_data = {
++	.device_type = RGA_DEVICE_RGA3,
++	.core = RGA3_SCHEDULER_CORE1,
 +	.ops = &rga3_ops,
 +};
 +
@@ -46313,11 +46534,11 @@ index 0000000000000000000000000000000000000000..fce414ed2a17ce87931a166cdf645555
 +	/* legacy */
 +	{
 +	 .compatible = "rockchip,rga3_core0",
-+	 .data = &rga3_match_data,
++	 .data = &rga3_core0_match_data,
 +	},
 +	{
 +	 .compatible = "rockchip,rga3_core1",
-+	 .data = &rga3_match_data,
++	 .data = &rga3_core1_match_data,
 +	},
 +	{},
 +};
@@ -46331,7 +46552,7 @@ index 0000000000000000000000000000000000000000..fce414ed2a17ce87931a166cdf645555
 +	/* legacy */
 +	{
 +	 .compatible = "rockchip,rga2_core0",
-+	 .data = &rga2_match_data,
++	 .data = &rga2_core0_match_data,
 +	},
 +	{},
 +};
@@ -46342,6 +46563,11 @@ index 0000000000000000000000000000000000000000..fce414ed2a17ce87931a166cdf645555
 +			  const struct rga_match_data_t *match_data,
 +			  struct rga_drvdata_t *drv_data)
 +{
++	if (match_data->core != RGA_NONE_CORE) {
++		scheduler->core = match_data->core;
++		goto scheduler_ready;
++	}
++
 +	switch (match_data->device_type) {
 +	case RGA_DEVICE_RGA2:
 +		switch (drv_data->device_count[match_data->device_type]) {
@@ -46372,10 +46598,10 @@ index 0000000000000000000000000000000000000000..fce414ed2a17ce87931a166cdf645555
 +
 +		break;
 +	default:
-+
 +		return -EINVAL;
 +	}
 +
++scheduler_ready:
 +	scheduler->ops = match_data->ops;
 +	scheduler->dev = dev;
 +
@@ -46535,10 +46761,6 @@ index 0000000000000000000000000000000000000000..fce414ed2a17ce87931a166cdf645555
 +		}
 +	}
 +
-+	data->scheduler[data->num_of_scheduler] = scheduler;
-+	data->num_of_scheduler++;
-+	data->device_count[match_data->device_type]++;
-+
 +#ifndef RGA_DISABLE_PM
 +	clk_bulk_disable_unprepare(scheduler->num_clks, scheduler->clks);
 +
@@ -46556,8 +46778,10 @@ index 0000000000000000000000000000000000000000..fce414ed2a17ce87931a166cdf645555
 +	if (scheduler->data->mmu == RGA_IOMMU) {
 +		scheduler->iommu_info = rga_iommu_probe(dev);
 +		if (IS_ERR(scheduler->iommu_info)) {
-+			dev_err(dev, "failed to attach iommu\n");
++			ret = PTR_ERR(scheduler->iommu_info);
++			dev_err(dev, "failed to attach iommu: %d\n", ret);
 +			scheduler->iommu_info = NULL;
++			goto err_disable_pm;
 +		}
 +
 +		rga_set_iommu_dma_limit(dev);
@@ -46571,12 +46795,23 @@ index 0000000000000000000000000000000000000000..fce414ed2a17ce87931a166cdf645555
 +			dma_set_min_align_mask(dev, PAGE_SIZE - 1);
 +	}
 +
++	data->scheduler[data->num_of_scheduler] = scheduler;
++	data->num_of_scheduler++;
++	data->device_count[match_data->device_type]++;
++
 +	platform_set_drvdata(pdev, scheduler);
 +
 +	dev_info(dev, "probe successfully, irq = %d, hw_version:%s\n",
 +		 scheduler->irq, scheduler->version.str);
 +
 +	return 0;
++
++err_disable_pm:
++#ifndef RGA_DISABLE_PM
++	device_init_wakeup(dev, false);
++	pm_runtime_disable(dev);
++#endif
++	return ret;
 +
 +#ifndef RGA_DISABLE_PM
 +pm_put:
@@ -47741,10 +47976,10 @@ index 0000000000000000000000000000000000000000..6fe05d4e879927175aed9392b6959628
 +};
 diff --git a/drivers/video/rockchip/rga3/rga_iommu.c b/drivers/video/rockchip/rga3/rga_iommu.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..bbdde2c42d9bed4a2b51ad38c271309b3a23869a
+index 0000000000000000000000000000000000000000..377e502d7d5c3666496b570e6390452effa004c1
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/rga_iommu.c
-@@ -0,0 +1,584 @@
+@@ -0,0 +1,544 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -48022,7 +48257,9 @@ index 0000000000000000000000000000000000000000..bbdde2c42d9bed4a2b51ad38c271309b
 +		return 0;
 +	}
 +
-+	rga_err("IOMMU intr fault, IOVA[0x%lx], STATUS[0x%x]\n", iova, status);
++	rga_job_err(job,
++		    "IOMMU fault on scheduler[%d], IOVA[0x%lx], STATUS[0x%x]\n",
++		    scheduler->core, iova, status);
 +	if (scheduler->ops->irq)
 +		scheduler->ops->irq(scheduler);
 +
@@ -48104,12 +48341,16 @@ index 0000000000000000000000000000000000000000..bbdde2c42d9bed4a2b51ad38c271309b
 +		info->domain->cookie_type = IOMMU_COOKIE_NONE;
 +		info->generic_fault_handler = false;
 +	}
++
++	rockchip_iommu_sync_fault_handler(info->dev);
 +}
 +
 +int rga_iommu_detach(struct rga_iommu_info *info)
 +{
 +	if (!info)
 +		return 0;
++	if (!info->domain || !info->group)
++		return -ENODEV;
 +
 +	iommu_detach_group(info->domain, info->group);
 +	return 0;
@@ -48119,46 +48360,22 @@ index 0000000000000000000000000000000000000000..bbdde2c42d9bed4a2b51ad38c271309b
 +{
 +	if (!info)
 +		return 0;
++	if (!info->domain || !info->group)
++		return -ENODEV;
++	if (info->domain == iommu_get_domain_for_dev(info->dev))
++		return 0;
 +
 +	return iommu_attach_group(info->domain, info->group);
 +}
 +
-+static void rga_iommu_unbind_shared_domain(struct rga_iommu_info *info)
++int rga_iommu_flush_tlb(struct rga_iommu_info *info)
 +{
-+	struct iommu_domain *cur;
-+	struct iommu_domain *shared_domain;
-+	struct device *shared_default_dev;
-+	bool was_shared;
-+	int ret;
++	if (!info || !info->domain)
++		return -ENODEV;
 +
-+	if (!info || !info->shared_domain)
-+		return;
++	iommu_flush_iotlb_all(info->domain);
 +
-+	shared_domain = info->domain;
-+	shared_default_dev = info->default_dev;
-+	was_shared = info->shared_domain;
-+
-+	rga_iommu_detach(info);
-+	info->domain = info->default_domain;
-+	info->default_dev = info->dev;
-+	info->shared_domain = false;
-+
-+	cur = iommu_get_domain_for_dev(info->dev);
-+	if (cur == info->domain)
-+		return;
-+
-+	ret = rga_iommu_attach(info);
-+	if (ret) {
-+		dev_err(info->dev, "failed to restore default RGA IOMMU domain: %d\n",
-+			ret);
-+		info->domain = shared_domain;
-+		info->default_dev = shared_default_dev;
-+		info->shared_domain = was_shared;
-+		ret = rga_iommu_attach(info);
-+		if (ret)
-+			dev_err(info->dev, "failed to reattach shared RGA IOMMU domain: %d\n",
-+				ret);
-+	}
++	return 0;
 +}
 +
 +struct rga_iommu_info *rga_iommu_probe(struct device *dev)
@@ -48188,7 +48405,6 @@ index 0000000000000000000000000000000000000000..bbdde2c42d9bed4a2b51ad38c271309b
 +	info->default_dev = info->dev;
 +	info->group = group;
 +	info->domain = domain;
-+	info->default_domain = domain;
 +
 +	return info;
 +
@@ -48214,7 +48430,6 @@ index 0000000000000000000000000000000000000000..bbdde2c42d9bed4a2b51ad38c271309b
 +	int i;
 +	int ret;
 +	struct rga_scheduler_t *scheduler = NULL;
-+	struct rga_iommu_info *main_iommu = NULL;
 +	int main_iommu_index = -1;
 +	int main_mmu_index = -1;
 +	int another_index = -1;
@@ -48224,37 +48439,19 @@ index 0000000000000000000000000000000000000000..bbdde2c42d9bed4a2b51ad38c271309b
 +
 +		switch (scheduler->data->mmu) {
 +		case RGA_IOMMU:
-+			if (scheduler->iommu_info == NULL)
-+				continue;
-+
-+			if (main_iommu == NULL) {
-+				main_iommu = scheduler->iommu_info;
-+				main_iommu_index = i;
-+				ret = rga_iommu_set_fault_handler(scheduler);
-+				if (ret)
-+					goto err_unbind;
-+			} else {
-+				struct rga_iommu_info *info = scheduler->iommu_info;
-+				struct device *old_default_dev = info->default_dev;
-+				struct iommu_domain *old_domain = info->domain;
-+
-+				info->domain = main_iommu->domain;
-+				info->default_dev = main_iommu->default_dev;
-+				ret = rga_iommu_attach(info);
-+				if (ret) {
-+					dev_err(scheduler->dev,
-+						"failed to attach shared RGA IOMMU domain: %d\n",
-+						ret);
-+					info->domain = old_domain;
-+					info->default_dev = old_default_dev;
-+					goto err_unbind;
-+				}
-+				info->shared_domain = true;
-+
-+				ret = rga_iommu_set_fault_handler(scheduler);
-+				if (ret)
-+					goto err_unbind;
++			if (scheduler->iommu_info == NULL) {
++				ret = -ENODEV;
++				goto err_unbind;
 +			}
++
++			ret = rga_iommu_attach(scheduler->iommu_info);
++			if (ret)
++				goto err_unbind;
++			ret = rga_iommu_set_fault_handler(scheduler);
++			if (ret)
++				goto err_unbind;
++			if (main_iommu_index < 0)
++				main_iommu_index = i;
 +
 +			break;
 +
@@ -48319,10 +48516,8 @@ index 0000000000000000000000000000000000000000..bbdde2c42d9bed4a2b51ad38c271309b
 +	int i;
 +
 +	for (i = 0; i < rga_drvdata->num_of_scheduler; i++)
-+		if (rga_drvdata->scheduler[i]->iommu_info) {
++		if (rga_drvdata->scheduler[i]->iommu_info)
 +			rga_iommu_clear_fault_handler(rga_drvdata->scheduler[i]->iommu_info);
-+			rga_iommu_unbind_shared_domain(rga_drvdata->scheduler[i]->iommu_info);
-+		}
 +
 +	if (rga_drvdata->mmu_base)
 +		rga_mmu_base_free(&rga_drvdata->mmu_base);
@@ -48331,10 +48526,10 @@ index 0000000000000000000000000000000000000000..bbdde2c42d9bed4a2b51ad38c271309b
 +}
 diff --git a/drivers/video/rockchip/rga3/rga_job.c b/drivers/video/rockchip/rga3/rga_job.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..4c9ad9aa7f331d6d843e6866a39ad7fd7f4602cd
+index 0000000000000000000000000000000000000000..33815154dce52c7e0fa5f04b60dae2af2a168b26
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/rga_job.c
-@@ -0,0 +1,2104 @@
+@@ -0,0 +1,2041 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -48903,6 +49098,11 @@ index 0000000000000000000000000000000000000000..4c9ad9aa7f331d6d843e6866a39ad7fd
 +		ret = PTR_ERR(scheduler);
 +		goto err_free_job;
 +	}
++	ret = rga_job_validate(job);
++	if (ret) {
++		rga_job_err(job, "request validation failed before mapping\n");
++		goto err_free_job;
++	}
 +
 +	/* Memory mapping needs to keep pd enabled. */
 +	ret = rga_power_enable(scheduler);
@@ -49191,68 +49391,6 @@ index 0000000000000000000000000000000000000000..4c9ad9aa7f331d6d843e6866a39ad7fd
 +	}
 +
 +	return ret;
-+}
-+
-+static int rga_request_channel_validate(const struct rga_img_info_t *img)
-+{
-+	const struct rga_plane_request plane = {
-+		.address = img->yrgb_addr ? img->yrgb_addr : img->uv_addr,
-+		.active_width = img->act_w,
-+		.active_height = img->act_h,
-+		.x_offset = img->x_offset,
-+		.y_offset = img->y_offset,
-+		.width_stride = img->vir_w,
-+		.height_stride = img->vir_h,
-+		.format = img->format,
-+	};
-+
-+	return rga_plane_request_validate(&plane);
-+}
-+
-+static int rga_request_task_check(const struct rga_req *task)
-+{
-+	switch (task->render_mode) {
-+	case BITBLT_MODE:
-+	case COLOR_PALETTE_MODE:
-+		if (rga_request_channel_validate(&task->src) ||
-+		    rga_request_channel_validate(&task->dst))
-+			return -EINVAL;
-+
-+		if (task->bsfilter_flag && rga_request_channel_validate(&task->pat))
-+			return -EINVAL;
-+
-+		break;
-+	case COLOR_FILL_MODE:
-+		if (rga_request_channel_validate(&task->dst))
-+			return -EINVAL;
-+
-+		break;
-+	case UPDATE_PALETTE_TABLE_MODE:
-+	case UPDATE_PATTEN_BUF_MODE:
-+		if (rga_request_channel_validate(&task->pat))
-+			return -EINVAL;
-+
-+		break;
-+	default:
-+		return -EINVAL;
-+	}
-+
-+	return 0;
-+}
-+
-+static int rga_request_task_list_check(const struct rga_req *task_list,
-+				       size_t task_count)
-+{
-+	size_t i;
-+	int ret;
-+
-+	for (i = 0; i < task_count; i++) {
-+		ret = rga_request_task_check(&task_list[i]);
-+		if (ret)
-+			return ret;
-+	}
-+
-+	return 0;
 +}
 +
 +struct rga_request *rga_request_lookup(struct rga_pending_request_manager *manager, uint32_t id)
@@ -49913,12 +50051,6 @@ index 0000000000000000000000000000000000000000..4c9ad9aa7f331d6d843e6866a39ad7fd
 +		goto err_free_task_list;
 +	}
 +
-+	ret = rga_request_task_list_check(task_list, user_request->task_num);
-+	if (ret) {
-+		rga_req_err(request, "invalid task list\n");
-+		goto err_free_task_list;
-+	}
-+
 +	mutex_lock(&request->run_lock);
 +	mutex_lock(&request->commit_lock);
 +	spin_lock_irqsave(&request->lock, flags);
@@ -50441,10 +50573,10 @@ index 0000000000000000000000000000000000000000..4c9ad9aa7f331d6d843e6866a39ad7fd
 +}
 diff --git a/drivers/video/rockchip/rga3/rga_mm.c b/drivers/video/rockchip/rga3/rga_mm.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0efa889e4
+index 0000000000000000000000000000000000000000..2571babc2c993e1928bc8f7a7aff511689d961b8
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/rga_mm.c
-@@ -0,0 +1,4041 @@
+@@ -0,0 +1,4300 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -52001,6 +52133,31 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +	return session && rga_mm_lookup_import(buffer, session);
 +}
 +
++int rga_mm_get_handle_size(uint64_t handle, struct rga_session *session,
++			   u64 *size)
++{
++	struct rga_internal_buffer *buffer;
++	struct rga_mm *mm = rga_drvdata->mm;
++	int ret = 0;
++
++	if (!mm || !handle || handle > U32_MAX || !size)
++		return -EINVAL;
++
++	mutex_lock(&mm->lock);
++	buffer = rga_mm_lookup_handle(mm, handle);
++	if (!buffer)
++		ret = -EINVAL;
++	else if (!rga_mm_handle_authorized(buffer, session))
++		ret = -EPERM;
++	else if (!buffer->size)
++		ret = -EINVAL;
++	else
++		*size = buffer->size;
++	mutex_unlock(&mm->lock);
++
++	return ret;
++}
++
 +static int rga_mm_record_import(struct rga_internal_buffer *buffer,
 +				struct rga_session *session, bool take_ref)
 +{
@@ -53089,7 +53246,207 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +	return ret;
 +}
 +
++static struct rga_dma_buffer *
++rga_mm_find_job_iommu_mapping(struct rga_job_buffer *job_buf,
++			      struct rga_internal_buffer *origin)
++{
++	int i;
++
++	for (i = 0; i < job_buf->iommu_mapping_count; i++)
++		if (job_buf->iommu_mapping[i].origin == origin)
++			return job_buf->iommu_mapping[i].mapping;
++
++	return NULL;
++}
++
++static void rga_mm_unmap_job_iommu_mapping(struct rga_job_buffer *job_buf,
++					   int index)
++{
++	struct rga_dma_buffer *mapping = job_buf->iommu_mapping[index].mapping;
++	struct sg_table *owned_sgt = job_buf->iommu_mapping[index].owned_sgt;
++	int last = --job_buf->iommu_mapping_count;
++
++	if (mapping->attach)
++		rga_dma_unmap_buf(mapping);
++	else
++		rga_dma_unmap_sgt(mapping);
++	if (owned_sgt)
++		rga_free_sgt(&owned_sgt);
++	kfree(mapping);
++
++	if (index != last)
++		job_buf->iommu_mapping[index] = job_buf->iommu_mapping[last];
++	memset(&job_buf->iommu_mapping[last], 0,
++	       sizeof(job_buf->iommu_mapping[last]));
++}
++
++static void rga_mm_release_job_iommu_mappings(struct rga_job_buffer *job_buf)
++{
++	while (job_buf->iommu_mapping_count)
++		rga_mm_unmap_job_iommu_mapping(job_buf,
++					       job_buf->iommu_mapping_count - 1);
++}
++
++static struct rga_dma_buffer *
++rga_mm_job_dma_buffer(struct rga_job_buffer *job_buf,
++		      struct rga_internal_buffer *origin)
++{
++	struct rga_dma_buffer *mapping;
++
++	mapping = rga_mm_find_job_iommu_mapping(job_buf, origin);
++	return mapping ? mapping : origin->dma_buffer;
++}
++
++static struct sg_table *
++rga_mm_alloc_job_virt_sgt(struct rga_internal_buffer *origin,
++			  size_t *real_offset)
++{
++	struct rga_virt_addr *virt_addr = origin->virt_addr;
++	size_t map_offset;
++	size_t map_size;
++
++	if (!virt_addr || !virt_addr->pages || virt_addr->page_count <= 0)
++		return ERR_PTR(-EINVAL);
++
++	if (rga_shadow_active(virt_addr)) {
++		if (virt_addr->shadow_head) {
++			*real_offset = virt_addr->offset;
++			map_offset = 0;
++			map_size = (size_t)virt_addr->page_count << PAGE_SHIFT;
++		} else {
++			*real_offset = 0;
++			map_offset = virt_addr->offset;
++			map_size = ((size_t)virt_addr->page_count << PAGE_SHIFT) -
++				   virt_addr->offset;
++		}
++	} else {
++		*real_offset = 0;
++		map_offset = virt_addr->offset;
++		map_size = virt_addr->size;
++	}
++
++	return rga_alloc_sgt(virt_addr->pages, virt_addr->page_count,
++			     map_offset, map_size, GFP_KERNEL);
++}
++
++static struct sg_table *
++rga_mm_alloc_job_phys_sgt(struct rga_internal_buffer *origin)
++{
++	phys_addr_t aligned = ALIGN_DOWN(origin->phys_addr, PAGE_SIZE);
++	size_t offset = offset_in_page(origin->phys_addr);
++	struct page **pages;
++	struct sg_table *sgt;
++	size_t span;
++	u32 page_count;
++	int ret;
++
++	if (!origin->size || check_add_overflow(offset, origin->size, &span))
++		return ERR_PTR(-EINVAL);
++	page_count = DIV_ROUND_UP(span, PAGE_SIZE);
++	if (!page_count)
++		return ERR_PTR(-EINVAL);
++
++	pages = kvcalloc(page_count, sizeof(*pages), GFP_KERNEL);
++	if (!pages)
++		return ERR_PTR(-ENOMEM);
++
++	ret = rga_get_phys_addr_pages(pages, aligned, page_count);
++	if (ret) {
++		sgt = ERR_PTR(ret);
++		goto out_free_pages;
++	}
++
++	sgt = rga_alloc_sgt(pages, page_count, offset, origin->size, GFP_KERNEL);
++
++out_free_pages:
++	kvfree(pages);
++	return sgt;
++}
++
++static struct rga_dma_buffer *
++rga_mm_map_job_iommu_buffer(struct rga_job *job,
++			    struct rga_job_buffer *job_buf,
++			    struct rga_internal_buffer *origin)
++{
++	struct rga_dma_buffer *mapping;
++	struct sg_table *owned_sgt = NULL;
++	size_t real_offset = 0;
++	int ret;
++	int slot;
++
++	if (job->scheduler->data->mmu != RGA_IOMMU)
++		return origin->dma_buffer;
++	if (rga_mm_is_invalid_dma_buffer(origin->dma_buffer))
++		return ERR_PTR(-EINVAL);
++	if (origin->dma_buffer->map_dev == job->scheduler->dev)
++		return origin->dma_buffer;
++
++	mapping = rga_mm_find_job_iommu_mapping(job_buf, origin);
++	if (mapping)
++		return mapping;
++	if (job_buf->iommu_mapping_count >= ARRAY_SIZE(job_buf->iommu_mapping))
++		return ERR_PTR(-E2BIG);
++
++	mapping = kzalloc(sizeof(*mapping), GFP_KERNEL);
++	if (!mapping)
++		return ERR_PTR(-ENOMEM);
++
++	switch (origin->type) {
++	case RGA_DMA_BUFFER:
++	case RGA_DMA_BUFFER_PTR:
++		if (!origin->dma_buffer->dma_buf) {
++			ret = -EINVAL;
++			break;
++		}
++		ret = rga_dma_map_buf(origin->dma_buffer->dma_buf, mapping,
++				      DMA_BIDIRECTIONAL, job->scheduler->dev);
++		break;
++	case RGA_VIRTUAL_ADDRESS:
++		owned_sgt = rga_mm_alloc_job_virt_sgt(origin, &real_offset);
++		if (IS_ERR(owned_sgt)) {
++			ret = PTR_ERR(owned_sgt);
++			owned_sgt = NULL;
++			break;
++		}
++		ret = rga_dma_map_sgt(owned_sgt, mapping, DMA_BIDIRECTIONAL,
++				      job->scheduler->dev);
++		if (!ret)
++			mapping->offset = real_offset;
++		break;
++	case RGA_PHYSICAL_ADDRESS:
++		owned_sgt = rga_mm_alloc_job_phys_sgt(origin);
++		if (IS_ERR(owned_sgt)) {
++			ret = PTR_ERR(owned_sgt);
++			owned_sgt = NULL;
++			break;
++		}
++		ret = rga_dma_map_sgt(owned_sgt, mapping, DMA_BIDIRECTIONAL,
++				      job->scheduler->dev);
++		break;
++	default:
++		ret = -EINVAL;
++		break;
++	}
++	if (ret)
++		goto err_free_mapping;
++
++	mapping->iova = mapping->dma_addr;
++	slot = job_buf->iommu_mapping_count++;
++	job_buf->iommu_mapping[slot].origin = origin;
++	job_buf->iommu_mapping[slot].mapping = mapping;
++	job_buf->iommu_mapping[slot].owned_sgt = owned_sgt;
++
++	return mapping;
++
++err_free_mapping:
++	if (owned_sgt)
++		rga_free_sgt(&owned_sgt);
++	kfree(mapping);
++	return ERR_PTR(ret);
++}
++
 +static int rga_mm_sync_dma_sg_for_device(struct rga_internal_buffer *buffer,
++					 struct rga_dma_buffer *dma_buffer,
 +					 struct rga_job *job,
 +					 enum dma_data_direction dir)
 +{
@@ -53098,7 +53455,10 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +	ktime_t timestamp = ktime_get();
 +	bool has_shadow = rga_shadow_active(buffer->virt_addr);
 +
-+	scheduler = buffer->scheduler;
++	if (!dma_buffer)
++		dma_buffer = buffer->dma_buffer;
++	scheduler = dma_buffer == buffer->dma_buffer ? buffer->scheduler :
++		    job->scheduler;
 +	if (scheduler == NULL) {
 +		rga_job_err(job, "%s(%d), failed to get scheduler, core = 0x%x\n",
 +			__func__, __LINE__, job->core);
@@ -53110,33 +53470,33 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +
 +	if (buffer->mm_flag & RGA_MEM_PHYSICAL_CONTIGUOUS) {
 +		if (scheduler->data->mmu == RGA_IOMMU) {
-+			dma_addr_t iova = rga_mm_lookup_iova(buffer);
++			dma_addr_t iova = dma_buffer->iova + dma_buffer->offset;
 +
-+			if (dma_mapping_error(buffer->dma_buffer->map_dev, iova)) {
++			if (dma_mapping_error(dma_buffer->map_dev, iova)) {
 +				rga_job_err(job, "invalid iova for dma-buffer with IOMMU device!\n");
 +				return -EFAULT;
 +			}
 +
-+			dma_sync_single_for_device(buffer->dma_buffer->map_dev,
++			dma_sync_single_for_device(dma_buffer->map_dev,
 +				iova, buffer->size, dir);
 +		} else {
 +			dma_sync_single_for_device(scheduler->dev,
 +				buffer->phys_addr, buffer->size, dir);
 +		}
 +	} else {
-+		sgt = rga_mm_lookup_sgt(buffer);
++		sgt = dma_buffer->sgt;
 +		if (sgt == NULL) {
 +			rga_job_err(job, "%s(%d), failed to get sgt, core = 0x%x\n",
 +				__func__, __LINE__, job->core);
 +			return -EINVAL;
 +		}
 +
-+		if (rga_mm_is_invalid_dma_buffer(buffer->dma_buffer)) {
++		if (!dma_buffer->map_dev) {
 +			rga_job_err(job, "invalid dma-buffer with IOMMU device!\n");
 +			return -EFAULT;
 +		}
 +
-+		dma_sync_sg_for_device(buffer->dma_buffer->map_dev, sgt->sgl,
++		dma_sync_sg_for_device(dma_buffer->map_dev, sgt->sgl,
 +				       sgt->orig_nents, dir);
 +	}
 +
@@ -53149,6 +53509,7 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +}
 +
 +static int rga_mm_sync_dma_sg_for_cpu(struct rga_internal_buffer *buffer,
++				      struct rga_dma_buffer *dma_buffer,
 +				      struct rga_job *job,
 +				      enum dma_data_direction dir)
 +{
@@ -53157,7 +53518,10 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +	ktime_t timestamp = ktime_get();
 +	bool has_shadow = rga_shadow_active(buffer->virt_addr);
 +
-+	scheduler = buffer->scheduler;
++	if (!dma_buffer)
++		dma_buffer = buffer->dma_buffer;
++	scheduler = dma_buffer == buffer->dma_buffer ? buffer->scheduler :
++		    job->scheduler;
 +	if (scheduler == NULL) {
 +		rga_job_err(job, "%s(%d), failed to get scheduler, core = 0x%x\n",
 +			__func__, __LINE__, job->core);
@@ -53166,33 +53530,33 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +
 +	if (buffer->mm_flag & RGA_MEM_PHYSICAL_CONTIGUOUS) {
 +		if (scheduler->data->mmu == RGA_IOMMU) {
-+			dma_addr_t iova = rga_mm_lookup_iova(buffer);
++			dma_addr_t iova = dma_buffer->iova + dma_buffer->offset;
 +
-+			if (dma_mapping_error(buffer->dma_buffer->map_dev, iova)) {
++			if (dma_mapping_error(dma_buffer->map_dev, iova)) {
 +				rga_job_err(job, "invalid iova for dma-buffer with IOMMU device!\n");
 +				return -EFAULT;
 +			}
 +
-+			dma_sync_single_for_cpu(buffer->dma_buffer->map_dev,
++			dma_sync_single_for_cpu(dma_buffer->map_dev,
 +				iova, buffer->size, dir);
 +		} else {
 +			dma_sync_single_for_cpu(scheduler->dev,
 +				buffer->phys_addr, buffer->size, dir);
 +		}
 +	} else {
-+		sgt = rga_mm_lookup_sgt(buffer);
++		sgt = dma_buffer->sgt;
 +		if (sgt == NULL) {
 +			rga_job_err(job, "%s(%d), failed to get sgt, core = 0x%x\n",
 +				__func__, __LINE__, job->core);
 +			return -EINVAL;
 +		}
 +
-+		if (rga_mm_is_invalid_dma_buffer(buffer->dma_buffer)) {
++		if (!dma_buffer->map_dev) {
 +			rga_job_err(job, "invalid dma-buffer with IOMMU device!\n");
 +			return -EFAULT;
 +		}
 +
-+		dma_sync_sg_for_cpu(buffer->dma_buffer->map_dev, sgt->sgl,
++		dma_sync_sg_for_cpu(dma_buffer->map_dev, sgt->sgl,
 +				    sgt->orig_nents, dir);
 +	}
 +
@@ -53209,21 +53573,25 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +
 +static int rga_mm_get_buffer_info(struct rga_job *job,
 +				  struct rga_internal_buffer *internal_buffer,
++				  struct rga_job_buffer *job_buf,
 +				  uint64_t *channel_addr)
 +{
++	struct rga_dma_buffer *dma_buffer;
 +	uint64_t addr;
 +
 +	switch (job->scheduler->data->mmu) {
 +	case RGA_IOMMU:
-+		if (rga_mm_is_invalid_dma_buffer(internal_buffer->dma_buffer)) {
++		dma_buffer = rga_mm_map_job_iommu_buffer(job, job_buf,
++						     internal_buffer);
++		if (IS_ERR(dma_buffer)) {
 +			rga_job_err(job,
 +				"core[%d] handle[%d] lookup buffer_type[0x%x] iova error!\n",
 +				job->core, internal_buffer->handle, internal_buffer->type);
-+			return -EINVAL;
++			return PTR_ERR(dma_buffer);
 +		}
 +
-+		addr = rga_mm_lookup_iova(internal_buffer);
-+		if (dma_mapping_error(internal_buffer->dma_buffer->map_dev, (dma_addr_t)addr)) {
++		addr = dma_buffer->iova + dma_buffer->offset;
++		if (dma_mapping_error(dma_buffer->map_dev, (dma_addr_t)addr)) {
 +			rga_job_err(job, "invalid iova for dma-buffer with IOMMU device!\n");
 +			return -EFAULT;
 +		}
@@ -53285,6 +53653,7 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +
 +static int rga_mm_get_buffer(struct rga_mm *mm,
 +			     struct rga_job *job,
++			     struct rga_job_buffer *job_buf,
 +			     uint64_t handle,
 +			     uint64_t *channel_addr,
 +			     struct rga_internal_buffer **buf,
@@ -53326,7 +53695,8 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +
 +	mutex_unlock(&mm->lock);
 +
-+	ret = rga_mm_get_buffer_info(job, internal_buffer, channel_addr);
++	ret = rga_mm_get_buffer_info(job, internal_buffer, job_buf,
++				     channel_addr);
 +	if (ret < 0) {
 +		rga_job_err(job, "handle[%ld] failed to get internal buffer info!\n",
 +			(unsigned long)handle);
@@ -53347,7 +53717,9 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +		 * interface for flushing the cache, so it is mandatory
 +		 * to flush the cache when the virtual address is used.
 +		 */
-+		ret = rga_mm_sync_dma_sg_for_device(internal_buffer, job, dir);
++		ret = rga_mm_sync_dma_sg_for_device(
++			internal_buffer,
++			rga_mm_job_dma_buffer(job_buf, internal_buffer), job, dir);
 +		if (ret < 0) {
 +			rga_job_err(job, "sync sgt for device error!\n");
 +			goto put_internal_buffer;
@@ -53368,11 +53740,15 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +
 +static void rga_mm_put_buffer(struct rga_mm *mm,
 +			      struct rga_job *job,
++			      struct rga_job_buffer *job_buf,
 +			      struct rga_internal_buffer *internal_buffer,
 +			      enum dma_data_direction dir)
 +{
 +	if (internal_buffer->mm_flag & RGA_MEM_FORCE_FLUSH_CACHE && dir != DMA_NONE)
-+		if (rga_mm_sync_dma_sg_for_cpu(internal_buffer, job, dir))
++		if (rga_mm_sync_dma_sg_for_cpu(
++				internal_buffer,
++				rga_mm_job_dma_buffer(job_buf, internal_buffer), job,
++				dir))
 +			rga_job_err(job, "sync sgt for cpu error!\n");
 +
 +	if (DEBUGGER_EN(MM)) {
@@ -53398,15 +53774,15 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +	rga_mm_put_rga2_bounce(job, job_buf, dir);
 +
 +	if (job_buf->y_addr) {
-+		rga_mm_put_buffer(mm, job, job_buf->y_addr, dir);
++		rga_mm_put_buffer(mm, job, job_buf, job_buf->y_addr, dir);
 +		job_buf->y_addr = NULL;
 +	}
 +	if (job_buf->uv_addr) {
-+		rga_mm_put_buffer(mm, job, job_buf->uv_addr, dir);
++		rga_mm_put_buffer(mm, job, job_buf, job_buf->uv_addr, dir);
 +		job_buf->uv_addr = NULL;
 +	}
 +	if (job_buf->v_addr) {
-+		rga_mm_put_buffer(mm, job, job_buf->v_addr, dir);
++		rga_mm_put_buffer(mm, job, job_buf, job_buf->v_addr, dir);
 +		job_buf->v_addr = NULL;
 +	}
 +
@@ -53422,6 +53798,8 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +		free_pages((unsigned long)job_buf->page_table, job_buf->order);
 +		job_buf->page_table = NULL;
 +	}
++
++	rga_mm_release_job_iommu_mappings(job_buf);
 +}
 +
 +static int rga_mm_get_channel_handle_info(struct rga_mm *mm,
@@ -53446,7 +53824,7 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +	if (img->uv_addr > 0) {
 +		handle = img->yrgb_addr;
 +		if (handle > 0) {
-+			ret = rga_mm_get_buffer(mm, job, handle, &img->yrgb_addr,
++			ret = rga_mm_get_buffer(mm, job, job_buf, handle, &img->yrgb_addr,
 +						&job_buf->y_addr, yrgb_size, dir);
 +			if (ret < 0) {
 +				rga_job_err(job, "handle[%d] Can't get y/rgb address info!\n",
@@ -53457,7 +53835,7 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +
 +		handle = img->uv_addr;
 +		if (handle > 0) {
-+			ret = rga_mm_get_buffer(mm, job, handle, &img->uv_addr,
++			ret = rga_mm_get_buffer(mm, job, job_buf, handle, &img->uv_addr,
 +						&job_buf->uv_addr, uv_size, dir);
 +			if (ret < 0) {
 +				rga_job_err(job, "handle[%d] Can't get uv address info!\n", handle);
@@ -53467,7 +53845,7 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +
 +		handle = img->v_addr;
 +		if (handle > 0) {
-+			ret = rga_mm_get_buffer(mm, job, handle, &img->v_addr,
++			ret = rga_mm_get_buffer(mm, job, job_buf, handle, &img->v_addr,
 +						&job_buf->v_addr, v_size, dir);
 +			if (ret < 0) {
 +				rga_job_err(job, "handle[%d] Can't get uv address info!\n", handle);
@@ -53477,7 +53855,7 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +	} else {
 +		handle = img->yrgb_addr;
 +		if (handle > 0) {
-+			ret = rga_mm_get_buffer(mm, job, handle, &img->yrgb_addr,
++			ret = rga_mm_get_buffer(mm, job, job_buf, handle, &img->yrgb_addr,
 +						&job_buf->addr, img_size, dir);
 +			if (ret < 0) {
 +				rga_job_err(job, "handle[%d] Can't get y/rgb address info!\n",
@@ -53764,7 +54142,10 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +	rga_mm_put_rga2_bounce(job, job_buffer, dir);
 +
 +	if (job_buffer->addr->mm_flag & RGA_MEM_FORCE_FLUSH_CACHE && dir != DMA_NONE)
-+		if (rga_mm_sync_dma_sg_for_cpu(job_buffer->addr, job, dir))
++		if (rga_mm_sync_dma_sg_for_cpu(
++				job_buffer->addr,
++				rga_mm_job_dma_buffer(job_buffer, job_buffer->addr),
++				job, dir))
 +			rga_job_err(job, "sync sgt for cpu error!\n");
 +
 +	if (DEBUGGER_EN(MM)) {
@@ -53772,6 +54153,7 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +		rga_mm_dump_buffer(job_buffer->addr);
 +	}
 +
++	rga_mm_release_job_iommu_mappings(job_buffer);
 +	rga_mm_unmap_buffer(job_buffer->addr);
 +	kfree(job_buffer->addr);
 +
@@ -53806,14 +54188,16 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +		rga_mm_dump_buffer(buffer);
 +	}
 +
-+	ret = rga_mm_get_buffer_info(job, buffer, &img->yrgb_addr);
++	ret = rga_mm_get_buffer_info(job, buffer, job_buffer,
++				     &img->yrgb_addr);
 +	if (ret < 0) {
 +		rga_job_err(job, "Failed to get internal buffer info!\n");
 +		goto error_unmap_buffer;
 +	}
 +
 +	if (buffer->mm_flag & RGA_MEM_FORCE_FLUSH_CACHE) {
-+		ret = rga_mm_sync_dma_sg_for_device(buffer, job, dir);
++		ret = rga_mm_sync_dma_sg_for_device(
++			buffer, rga_mm_job_dma_buffer(job_buffer, buffer), job, dir);
 +		if (ret < 0) {
 +			rga_job_err(job, "sync sgt for device error!\n");
 +			goto error_unmap_buffer;
@@ -53996,7 +54380,8 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +	buffer->memory_parm.format = img->format;
 +	buffer->memory_parm.size = size;
 +
-+	ret = rga_mm_get_buffer_info(job, buffer, &img->yrgb_addr);
++	ret = rga_mm_get_buffer_info(job, buffer, job_buffer,
++				     &img->yrgb_addr);
 +	if (ret < 0)
 +		goto error_free_dma_buf;
 +
@@ -54192,6 +54577,12 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +			rga_job_err(job, "task[%d] failed to map job info\n", i);
 +			goto err_unmap_job_info;
 +		}
++	}
++
++	if (job->scheduler->data->mmu == RGA_IOMMU) {
++		ret = rga_iommu_flush_tlb(job->scheduler->iommu_info);
++		if (ret)
++			goto err_unmap_job_info;
 +	}
 +
 +	return 0;
@@ -54488,7 +54879,7 @@ index 0000000000000000000000000000000000000000..04dd974013c068a1658d29e78c5052e0
 +}
 diff --git a/drivers/video/rockchip/rga3/rga_policy.c b/drivers/video/rockchip/rga3/rga_policy.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..45d4715bb69cc5b7deff521fee06d819b0502fdb
+index 0000000000000000000000000000000000000000..351decd40262afaec1353cf7e5aa5309171b7db0
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/rga_policy.c
 @@ -0,0 +1,582 @@
@@ -54607,8 +54998,8 @@ index 0000000000000000000000000000000000000000..45d4715bb69cc5b7deff521fee06d819
 +	return true;
 +}
 +
-+static bool rga_check_format(const struct rga_hw_data *data,
-+		int rd_mode, int format, int win_num)
++bool rga_check_format(const struct rga_hw_data *data, int rd_mode, int format,
++		      int win_num)
 +{
 +	int i;
 +	const uint32_t *formats;

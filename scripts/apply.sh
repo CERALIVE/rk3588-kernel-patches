@@ -190,11 +190,11 @@ else
 	fail=1
 fi
 
-if grep -q 'obj-$(CONFIG_ROCKCHIP_MULTI_RGA).*+= rga3.o' \
+if grep -q 'obj-$(CONFIG_ROCKCHIP_MULTI_RGA).*+= rga_multicore.o' \
 	drivers/video/rockchip/rga3/Makefile; then
-	echo "  ok      CONFIG_ROCKCHIP_MULTI_RGA builds rga3.ko"
+	echo "  ok      CONFIG_ROCKCHIP_MULTI_RGA builds rga_multicore.ko"
 else
-	echo "  MISSING rga3.ko module mapping" >&2
+	echo "  MISSING rga_multicore.ko module mapping" >&2
 	fail=1
 fi
 
@@ -235,6 +235,21 @@ else
 	echo "  MISSING sole rockchip,rkv-decoder-v2 compatible on vdec0" >&2
 	fail=1
 fi
+
+for rga in \
+	'fdb60000:rga3_core0:rockchip,rga3_core0' \
+	'fdb70000:rga3_core1:rockchip,rga3_core1' \
+	'fdb80000:rga:rockchip,rga2_core0'; do
+	IFS=: read -r address label compatible <<<"${rga}"
+	rga_block="$(awk "/^\\t${label}: /,/^\\t};/" arch/arm64/boot/dts/rockchip/rk3588-base.dtsi)"
+	if [[ "$(grep -c '^\s*compatible = ' <<<"${rga_block}")" == 1 ]] && \
+		grep -q "^\\s*compatible = \"${compatible}\";$" <<<"${rga_block}"; then
+		echo "  ok      ${address} has the sole compatible ${compatible}"
+	else
+		echo "  MISSING sole ${compatible} compatible on ${address}" >&2
+		fail=1
+	fi
+done
 
 # 0009's entire userspace contract is the heap NAME: librockchip-mpp opens
 # /dev/dma_heap/system-uncached by hard-coded string and has no override. A typo

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Wed, 2 Sep 2026 00:00:00 +0000
-Subject: [PATCH 6/7] arm64: dts: rockchip: hand RK3588 decoders to MPP
+Subject: [PATCH 6/9] arm64: dts: rockchip: hand RK3588 decoders to MPP
 
 Use the sole decoder compatible matched by the imported mpp_rkvdec2 driver and
 add the vendor CCU/task metadata.  Linux v7.2's physical decoder addresses are

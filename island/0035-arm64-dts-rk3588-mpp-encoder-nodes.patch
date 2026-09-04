@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Wed, 2 Sep 2026 00:00:00 +0000
-Subject: [PATCH 5/7] arm64: dts: rockchip: add RK3588 MPP encoder nodes
+Subject: [PATCH 5/9] arm64: dts: rockchip: add RK3588 MPP encoder nodes
 
 Re-express the VEPU580 device-tree hunk carried by
 CERALIVE/rk3588-kernel-patches 0001 against the pinned Linux v7.2

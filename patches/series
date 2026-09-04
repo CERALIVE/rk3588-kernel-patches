@@ -41,3 +41,5 @@
 0035-arm64-dts-rk3588-mpp-encoder-nodes.patch
 0036-arm64-dts-rk3588-mpp-decoder-nodes.patch
 0037-arm64-dts-rk3588-mpp-jpegd-node.patch
+0038-arm64-dts-rk3588-rga3-vendor-compat.patch
+0039-arm64-dts-rk3588-rga2-vendor-compat.patch
