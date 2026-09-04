@@ -7,8 +7,8 @@ Holds the **mainline-track RK3588 kernel patch series** for CeraLive: the
 three backported **unmerged lore postings**, and board Type-C policy patches —
 assembled as one `git am` mailbox series pinned to an exact kernel tag.
 
-The base is **`v7.2`**; the series applies clean. **22 members are active across
-37 slots** — `0004` was never published, and fourteen retired ordinals stay
+The base is **`v7.2`**; the series applies clean. **24 members are active across
+39 slots** — `0004` was never published, and fourteen retired ordinals stay
 burned. Board evidence quoted anywhere in this repo was measured at the previous
 `v7.1.7` base and is historical here.
 
@@ -20,7 +20,7 @@ image pipeline to fetch.
 Relates to:
 - `image-building-pipeline/` — the production downstream consumer. Its immutable
   `patches_commit` selects this series for the shipped mainline 7.2 kernel.
-- `rk3588-media-island/` — the source repository that publishes the seven mailbox
+- `rk3588-media-island/` — the source repository that publishes the nine mailbox
   members consumed byte-preserved through `island/`.
 
 Upstream: GitHub fork of
@@ -233,11 +233,11 @@ verbatim by CI, so it cannot rot the same way.
 **Upstream numbering is preserved, gap included: `0001`, `0002`, `0003`, `0005`.**
 There is no `0004` upstream. **Do NOT renumber to close the gap** — the 1:1 filename
 correspondence with upstream is what makes the import auditable. First-party,
-backported, and island patches continue the same counter. The seven island members
-begin at the actual next ordinal, `0031`, and end at `0037`; no retired slot was
+backported, and island patches continue the same counter. The nine island members
+begin at the actual next ordinal, `0031`, and end at `0039`; no retired slot was
 reused and `0004` remains visible. Ten standalone-rkvenc members plus the earlier
-`0007` and `0023`–`0025` retirements leave fourteen burned slots. That yields **22
-active members across 37 slots**. `SERIES_TOTAL` is the slot ceiling, never the
+`0007` and `0023`–`0025` retirements leave fourteen burned slots. That yields **24
+active members across 39 slots**. `SERIES_TOTAL` is the slot ceiling, never the
 member count, and retirement never shrinks it.
 
 **`0005` is driver-only; `0006` is what makes HDMI-RX audio reachable.** Upstream's
@@ -438,7 +438,7 @@ defconfig, and a 30-minute job to prove something the image pipeline proves bett
   lore fetch — Anubis answers `Mozilla/5.0` with an HTTP 200 challenge page, so
   the spoof is what breaks it, not what gets you through
 - Don't renumber to close a retired ordinal's slot, and don't read `SERIES_TOTAL`
-  as a member count — it is 37 slots holding 22 members
+  as a member count — it is 39 slots holding 24 members
 - Don't rename, alias, symlink or `mknod` the `system-uncached` heap — the name is
   a userspace ABI and an alias is a corruption trap, not a workaround
 - Don't tick anything in `docs/BOARD-QUALIFICATION.md` without a pasted transcript,

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Wed, 2 Sep 2026 00:00:00 +0000
-Subject: [PATCH 7/7] arm64: dts: rockchip: add the RK3588 MPP JPEG decoder
+Subject: [PATCH 7/9] arm64: dts: rockchip: add the RK3588 MPP JPEG decoder
 
 Add the donor-only JPEG decoder client and its mainline Rockchip IOMMU node.
 The compatible is read directly from the imported mpp_jpgdec match table, and

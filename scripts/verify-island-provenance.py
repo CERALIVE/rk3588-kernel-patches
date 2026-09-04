@@ -16,11 +16,11 @@ from typing import Final
 ROOT: Final = Path(__file__).resolve().parent.parent
 ISLAND_DIR: Final = ROOT / "island"
 REPOSITORY: Final = "CERALIVE/rk3588-media-island"
-TAG: Final = "v2026.9.1"
-COMMIT: Final = "b825aaedd538a97d83ba1c0ae08bc9a2b04e7b6c"
+TAG: Final = "v2026.9.2"
+COMMIT: Final = "1fd357d8a8b83b6f4ed7f7692d761f7b653d44f5"
 ASSET: Final = f"rk3588-media-island-{TAG}.mbox.tar"
 ASSET_SHA256: Final = (
-    "a1992957b0e3b409cea7c570e2fedd64ebd29e95f0ea39635dc4f336325b6fbd"
+    "393b50a26117b95659f35a603abb9939f767e397f71e85fb180dda107e2df616"
 )
 ASSET_URL: Final = (
     f"https://github.com/{REPOSITORY}/releases/download/{TAG}/{ASSET}"
@@ -33,6 +33,8 @@ MEMBERS: Final = (
     ("0005-arm64-dts-rk3588-mpp-encoder-nodes.patch", "0035-arm64-dts-rk3588-mpp-encoder-nodes.patch"),
     ("0006-arm64-dts-rk3588-mpp-decoder-nodes.patch", "0036-arm64-dts-rk3588-mpp-decoder-nodes.patch"),
     ("0007-arm64-dts-rk3588-mpp-jpegd-node.patch", "0037-arm64-dts-rk3588-mpp-jpegd-node.patch"),
+    ("0008-arm64-dts-rk3588-rga3-vendor-compat.patch", "0038-arm64-dts-rk3588-rga3-vendor-compat.patch"),
+    ("0009-arm64-dts-rk3588-rga2-vendor-compat.patch", "0039-arm64-dts-rk3588-rga2-vendor-compat.patch"),
 )
 
 

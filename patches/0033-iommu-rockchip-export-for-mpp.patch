@@ -1,7 +1,7 @@
 From island-release Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Wed, 2 Sep 2026 00:00:00 +0000
-Subject: [PATCH 33/37] iommu: rockchip: export media-provider control for MPP and RGA
+Subject: [PATCH 33/39] iommu: rockchip: export media-provider control for MPP and RGA
 
 Manifest-selected integration hunks replayed from the pinned 6.18 series.
 They are re-anchored to the pinned v7.2 tree in the CeraLive port commits.
@@ -16,15 +16,15 @@ Origin: yisding/rock-5b-ysp@ca3da04280c48c004e522c15f31862bf88a2d1b9:kernel-driv
 Patches a file mainline already carries. The payload below is carried byte-for-byte from integration/0002-iommu-rockchip-export-for-mpp.patch; scripts/build-series.py adds the mail header and nothing else, and scripts/verify-series-parity.py proves that independently.
 
 
-Generated from CeraLive rk3588-media-island v2026.9.1 (b825aaedd538a97d83ba1c0ae08bc9a2b04e7b6c).
+Generated from CeraLive rk3588-media-island v2026.9.2 (1fd357d8a8b83b6f4ed7f7692d761f7b653d44f5).
 
-Release asset rk3588-media-island-v2026.9.1.mbox.tar
-  asset_sha256  a1992957b0e3b409cea7c570e2fedd64ebd29e95f0ea39635dc4f336325b6fbd
+Release asset rk3588-media-island-v2026.9.2.mbox.tar
+  asset_sha256  393b50a26117b95659f35a603abb9939f767e397f71e85fb180dda107e2df616
   member        0003-iommu-rockchip-export-for-mpp.patch
-  member_sha256 6ba81a87546d80613a9d7eef29de49a0caf970689d9c51039871d7508a1e55d8
+  member_sha256 b8bd9a0f5a251ec5770606634eed2bb18c4997859012e1852326e3435dcf6397
 
 island/0033-iommu-rockchip-export-for-mpp.patch is that member byte-for-byte -- the mail
-header above is this repository's own, so the N/37 ordinal is ours and
+header above is this repository's own, so the N/39 ordinal is ours and
 the message is the release's. scripts/verify-island-provenance.py
 re-fetches the asset, checks asset_sha256 and byte-compares every
 member, independently of scripts/build-series.py.

@@ -1,0 +1,37 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: CeraLive <dev@ceralive.tv>
+Date: Wed, 2 Sep 2026 00:00:00 +0000
+Subject: [PATCH 8/9] arm64: dts: rockchip: give RK3588 RGA3 ownership to multi_rga
+
+Switch both RGA3 nodes to the multi_rga driver's core-specific compatibles.
+Each node has one owner and can return to mainline rockchip-rga by reverting
+this patch together with the RGA2 ownership patch.
+
+Reference: armbian/linux-rockchip@fd9f82366e235b8afbdf516765210e97d24dce93:arch/arm64/boot/dts/rockchip/rk3588s.dtsi
+
+Patches a file mainline already carries. The payload below is carried byte-for-byte from integration/0020-arm64-dts-rk3588-rga3-vendor-compat.patch; scripts/build-series.py adds the mail header and nothing else, and scripts/verify-series-parity.py proves that independently.
+
+---
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588-base.dtsi b/arch/arm64/boot/dts/rockchip/rk3588-base.dtsi
+--- a/arch/arm64/boot/dts/rockchip/rk3588-base.dtsi
++++ b/arch/arm64/boot/dts/rockchip/rk3588-base.dtsi
+@@ -1263,7 +1263,7 @@
+ 	};
+ 
+ 	rga3_core0: rga@fdb60000 {
+-		compatible = "rockchip,rk3588-rga3";
++		compatible = "rockchip,rga3_core0";
+ 		reg = <0x0 0xfdb60000 0x0 0x200>;
+ 		interrupts = <GIC_SPI 114 IRQ_TYPE_LEVEL_HIGH 0>;
+ 		clocks = <&cru ACLK_RGA3_0>, <&cru HCLK_RGA3_0>, <&cru CLK_RGA3_0_CORE>;
+@@ -1285,7 +1285,7 @@
+ 	};
+ 
+ 	rga3_core1: rga@fdb70000 {
+-		compatible = "rockchip,rk3588-rga3";
++		compatible = "rockchip,rga3_core1";
+ 		reg = <0x0 0xfdb70000 0x0 0x200>;
+ 		interrupts = <GIC_SPI 115 IRQ_TYPE_LEVEL_HIGH 0>;
+ 		clocks = <&cru ACLK_RGA3_1>, <&cru HCLK_RGA3_1>, <&cru CLK_RGA3_1_CORE>;
+-- 
+2.51.0

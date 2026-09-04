@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Andres Cera <andres.cera@hotmail.com>
 Date: Thu, 27 Aug 2026 16:00:00 +0000
-Subject: [PATCH 30/37] arm64: dts: rockchip: orange pi 5 plus: advertise dual-role power in the Type-C PDOs
+Subject: [PATCH 30/39] arm64: dts: rockchip: orange pi 5 plus: advertise dual-role power in the Type-C PDOs
 
 MOTIVATION. A live readback on an Orange Pi 5 Plus on 2026-08-27
 found dual_role_power=0 on both source-capabilities and

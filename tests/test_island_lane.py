@@ -10,10 +10,10 @@ from tests import ROOT, load_script
 
 bs = load_script("build-series.py", "ceralive_build_series_island")
 
-RELEASE_TAG = "v2026.9.1"
-RELEASE_COMMIT = "b825aaedd538a97d83ba1c0ae08bc9a2b04e7b6c"
+RELEASE_TAG = "v2026.9.2"
+RELEASE_COMMIT = "1fd357d8a8b83b6f4ed7f7692d761f7b653d44f5"
 RELEASE_ASSET_SHA256 = (
-    "a1992957b0e3b409cea7c570e2fedd64ebd29e95f0ea39635dc4f336325b6fbd"
+    "393b50a26117b95659f35a603abb9939f767e397f71e85fb180dda107e2df616"
 )
 SOURCE_FIXTURE = "0031-rk3588-media-island-drivers.patch"
 MERGED_MARKER_RE = re.compile(r"^commit [0-9a-f]{40} upstream\.$", re.MULTILINE)
@@ -56,7 +56,7 @@ class TestIslandProvenance(unittest.TestCase):
 
     def test_real_members_name_the_published_release(self) -> None:
         members = island_members()
-        self.assertEqual([patch.ordinal for patch in members], list(range(31, 38)))
+        self.assertEqual([patch.ordinal for patch in members], list(range(31, 40)))
         for patch in members:
             with self.subTest(patch=patch.filename):
                 self.assertEqual(patch.provenance, sample_island())
