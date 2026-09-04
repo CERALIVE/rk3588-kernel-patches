@@ -168,13 +168,13 @@ are enforced in `scripts/build-series.py` and independently byte-verified by
 | `0028` Rock 5B+ dual-role-power PDOs | `ceralive/` | `first-party-no-upstream` | Mainline carries equivalent fixed-PDO capability | 2026-08-27 | Active |
 | `0029` Rock 5B+ Try.SRC preference | `ceralive/` | `first-party-no-upstream` | Mainline carries equivalent source preference | 2026-08-27 | Active |
 | `0030` Orange Pi 5 Plus dual-role-power PDOs | `ceralive/` | `first-party-no-upstream` | Mainline carries equivalent fixed-PDO capability | 2026-08-27 | Active |
-| `0031` media-island maintained source | `island/` | `first-party-no-upstream` | A later island release replaces or removes this source component | 2026-09-03 | From `rk3588-media-island v2026.9.0` |
-| `0032` media-island build hooks | `island/` | `first-party-no-upstream` | Mainline integration removes the out-of-tree hooks | 2026-09-03 | From `rk3588-media-island v2026.9.0` |
-| `0033` Rockchip IOMMU provider exports | `island/` | `first-party-no-upstream` | Mainline exports equivalent provider APIs | 2026-09-03 | From `rk3588-media-island v2026.9.0` |
-| `0034` IOMMU DMA IOVA accessor | `island/` | `first-party-no-upstream` | Mainline exposes an equivalent accessor | 2026-09-03 | From `rk3588-media-island v2026.9.0` |
-| `0035` MPP encoder DT nodes | `island/` | `first-party-no-upstream` | Mainline owns the encoder nodes with a usable production ABI | 2026-09-03 | From `rk3588-media-island v2026.9.0` |
-| `0036` MPP decoder DT ownership | `island/` | `first-party-no-upstream` | Decoder ownership returns to a production-capable mainline driver | 2026-09-03 | From `rk3588-media-island v2026.9.0` |
-| `0037` MPP JPEG decoder DT node | `island/` | `first-party-no-upstream` | Mainline provides the required JPEG decode path | 2026-09-03 | From `rk3588-media-island v2026.9.0` |
+| `0031` media-island maintained source | `island/` | `first-party-no-upstream` | A later island release replaces or removes this source component | 2026-09-03 | From `rk3588-media-island v2026.9.1` |
+| `0032` media-island build hooks | `island/` | `first-party-no-upstream` | Mainline integration removes the out-of-tree hooks | 2026-09-03 | From `rk3588-media-island v2026.9.1` |
+| `0033` Rockchip IOMMU provider exports | `island/` | `first-party-no-upstream` | Mainline exports equivalent provider APIs | 2026-09-03 | From `rk3588-media-island v2026.9.1` |
+| `0034` IOMMU DMA IOVA accessor | `island/` | `first-party-no-upstream` | Mainline exposes an equivalent accessor | 2026-09-03 | From `rk3588-media-island v2026.9.1` |
+| `0035` MPP encoder DT nodes | `island/` | `first-party-no-upstream` | Mainline owns the encoder nodes with a usable production ABI | 2026-09-03 | From `rk3588-media-island v2026.9.1` |
+| `0036` MPP decoder DT ownership | `island/` | `first-party-no-upstream` | Decoder ownership returns to a production-capable mainline driver | 2026-09-03 | From `rk3588-media-island v2026.9.1` |
+| `0037` MPP JPEG decoder DT node | `island/` | `first-party-no-upstream` | Mainline provides the required JPEG decode path | 2026-09-03 | From `rk3588-media-island v2026.9.1` |
 <!-- current-series: end -->
 
 ## Historical pre-island member detail
