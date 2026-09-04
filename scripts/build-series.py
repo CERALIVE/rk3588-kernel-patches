@@ -1026,10 +1026,10 @@ SERIES: tuple[Patch, ...] = (
             "video: rockchip: add the CeraLive RK3588 media island"
         ),
         provenance=Island(
-            tag="v2026.9.0",
-            commit="dcda1a2218d9e52db2db2a0a809263d7d7e8831f",
+            tag="v2026.9.1",
+            commit="b825aaedd538a97d83ba1c0ae08bc9a2b04e7b6c",
             asset_sha256=(
-                "bea66ab56a71e5869d5e9ac6d66bb5f4e5151190dd387abe345fc88dc9f5eec2"
+                "a1992957b0e3b409cea7c570e2fedd64ebd29e95f0ea39635dc4f336325b6fbd"
             ),
         ),
         author="CeraLive <dev@ceralive.tv>",
@@ -1043,10 +1043,10 @@ SERIES: tuple[Patch, ...] = (
             "video: rockchip: hook the MPP and multi_rga Kconfig and Makefiles"
         ),
         provenance=Island(
-            tag="v2026.9.0",
-            commit="dcda1a2218d9e52db2db2a0a809263d7d7e8831f",
+            tag="v2026.9.1",
+            commit="b825aaedd538a97d83ba1c0ae08bc9a2b04e7b6c",
             asset_sha256=(
-                "bea66ab56a71e5869d5e9ac6d66bb5f4e5151190dd387abe345fc88dc9f5eec2"
+                "a1992957b0e3b409cea7c570e2fedd64ebd29e95f0ea39635dc4f336325b6fbd"
             ),
         ),
         author="CeraLive <dev@ceralive.tv>",
@@ -1060,10 +1060,10 @@ SERIES: tuple[Patch, ...] = (
             "iommu: rockchip: export media-provider control for MPP and RGA"
         ),
         provenance=Island(
-            tag="v2026.9.0",
-            commit="dcda1a2218d9e52db2db2a0a809263d7d7e8831f",
+            tag="v2026.9.1",
+            commit="b825aaedd538a97d83ba1c0ae08bc9a2b04e7b6c",
             asset_sha256=(
-                "bea66ab56a71e5869d5e9ac6d66bb5f4e5151190dd387abe345fc88dc9f5eec2"
+                "a1992957b0e3b409cea7c570e2fedd64ebd29e95f0ea39635dc4f336325b6fbd"
             ),
         ),
         author="CeraLive <dev@ceralive.tv>",
@@ -1077,10 +1077,10 @@ SERIES: tuple[Patch, ...] = (
             "iommu: expose media IOVA allocation helpers"
         ),
         provenance=Island(
-            tag="v2026.9.0",
-            commit="dcda1a2218d9e52db2db2a0a809263d7d7e8831f",
+            tag="v2026.9.1",
+            commit="b825aaedd538a97d83ba1c0ae08bc9a2b04e7b6c",
             asset_sha256=(
-                "bea66ab56a71e5869d5e9ac6d66bb5f4e5151190dd387abe345fc88dc9f5eec2"
+                "a1992957b0e3b409cea7c570e2fedd64ebd29e95f0ea39635dc4f336325b6fbd"
             ),
         ),
         author="CeraLive <dev@ceralive.tv>",
@@ -1094,10 +1094,10 @@ SERIES: tuple[Patch, ...] = (
             "arm64: dts: rockchip: add RK3588 MPP encoder nodes"
         ),
         provenance=Island(
-            tag="v2026.9.0",
-            commit="dcda1a2218d9e52db2db2a0a809263d7d7e8831f",
+            tag="v2026.9.1",
+            commit="b825aaedd538a97d83ba1c0ae08bc9a2b04e7b6c",
             asset_sha256=(
-                "bea66ab56a71e5869d5e9ac6d66bb5f4e5151190dd387abe345fc88dc9f5eec2"
+                "a1992957b0e3b409cea7c570e2fedd64ebd29e95f0ea39635dc4f336325b6fbd"
             ),
         ),
         author="CeraLive <dev@ceralive.tv>",
@@ -1111,10 +1111,10 @@ SERIES: tuple[Patch, ...] = (
             "arm64: dts: rockchip: hand RK3588 decoders to MPP"
         ),
         provenance=Island(
-            tag="v2026.9.0",
-            commit="dcda1a2218d9e52db2db2a0a809263d7d7e8831f",
+            tag="v2026.9.1",
+            commit="b825aaedd538a97d83ba1c0ae08bc9a2b04e7b6c",
             asset_sha256=(
-                "bea66ab56a71e5869d5e9ac6d66bb5f4e5151190dd387abe345fc88dc9f5eec2"
+                "a1992957b0e3b409cea7c570e2fedd64ebd29e95f0ea39635dc4f336325b6fbd"
             ),
         ),
         author="CeraLive <dev@ceralive.tv>",
@@ -1128,10 +1128,10 @@ SERIES: tuple[Patch, ...] = (
             "arm64: dts: rockchip: add the RK3588 MPP JPEG decoder"
         ),
         provenance=Island(
-            tag="v2026.9.0",
-            commit="dcda1a2218d9e52db2db2a0a809263d7d7e8831f",
+            tag="v2026.9.1",
+            commit="b825aaedd538a97d83ba1c0ae08bc9a2b04e7b6c",
             asset_sha256=(
-                "bea66ab56a71e5869d5e9ac6d66bb5f4e5151190dd387abe345fc88dc9f5eec2"
+                "a1992957b0e3b409cea7c570e2fedd64ebd29e95f0ea39635dc4f336325b6fbd"
             ),
         ),
         author="CeraLive <dev@ceralive.tv>",

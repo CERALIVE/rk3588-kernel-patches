@@ -10,10 +10,10 @@ from tests import ROOT, load_script
 
 bs = load_script("build-series.py", "ceralive_build_series_island")
 
-RELEASE_TAG = "v2026.9.0"
-RELEASE_COMMIT = "dcda1a2218d9e52db2db2a0a809263d7d7e8831f"
+RELEASE_TAG = "v2026.9.1"
+RELEASE_COMMIT = "b825aaedd538a97d83ba1c0ae08bc9a2b04e7b6c"
 RELEASE_ASSET_SHA256 = (
-    "bea66ab56a71e5869d5e9ac6d66bb5f4e5151190dd387abe345fc88dc9f5eec2"
+    "a1992957b0e3b409cea7c570e2fedd64ebd29e95f0ea39635dc4f336325b6fbd"
 )
 SOURCE_FIXTURE = "0031-rk3588-media-island-drivers.patch"
 MERGED_MARKER_RE = re.compile(r"^commit [0-9a-f]{40} upstream\.$", re.MULTILINE)
@@ -104,7 +104,10 @@ class TestIslandProvenance(unittest.TestCase):
     def test_a_partial_release_update_is_refused(self) -> None:
         original = bs.SERIES
         first = island_members()[0]
-        changed = replace(first, provenance=replace(first.provenance, tag="v2026.9.1"))
+        # Derived, never literal: a hardcoded tag silently stops being a mutation
+        # the release it names ships, and the test then proves nothing.
+        other_tag = f"{RELEASE_TAG}-not-the-shipped-tag"
+        changed = replace(first, provenance=replace(first.provenance, tag=other_tag))
         try:
             bs.SERIES = tuple(
                 changed if patch.filename == first.filename else patch
