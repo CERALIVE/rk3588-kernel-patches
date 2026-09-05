@@ -1,0 +1,69 @@
+From lore-posting Mon Sep 17 00:00:00 2001
+From: Igor Paunovic <royalnet026@gmail.com>
+Date: Tue, 21 Jul 2026 08:41:15 +0200
+Subject: [PATCH 45/49] arm64: dts: rockchip: enable HDMI RX audio capture on Orange Pi 5 Plus
+
+Backport of unmerged v4 posting.
+
+[PATCH v4 4/4] arm64: dts: rockchip: enable HDMI RX audio capture on Orange Pi 5 Plus
+
+Replaces legacy 0005/0006/0017 with the explicit per-behavior
+decisions and first-party deltas in docs/UPSTREAM-STATUS.md.
+Imported by import-lore-series.py from the canonical thread.
+No upstream commit identity or new board evidence is claimed.
+
+Posted to lore on Tue, 21 Jul 2026 08:41:15 +0200 as v4:
+https://lore.kernel.org/r/20260721064115.64809-5-royalnet026@gmail.com
+Review state: Signed-off-by in the posting. Follow-up review is recorded in docs/EVAL-0005-AUDIO.md; second-cycle suspend silence remains open. ACR byte order is correct; explicit remove drain is absent.
+
+Canonical thread archive -- the only source an import may be taken
+from: https://lore.kernel.org/all/20260721064115.64809-5-royalnet026@gmail.com/t.mbox.gz
+  thread_compressed_sha256 e15583ec2ab99e673f7aecfc09abb6a1bf42169fe2f6d69fc3b99d5376ad8b91
+    (the gzip response bytes, exactly as served)
+  thread_mbox_sha256       54feb74cc46b5dec270cb4e5913819997f412ff800845c0ae8667759b21afbbd
+    (the mailbox those bytes decompress to)
+  canonical_patch_sha256   3dd74a8ee37dfbe2612c7f49f06ffdd4b0fa9b46159d1558fcf9f91ed6b69144
+    (this posting's canonical mail, archived at backports/lore/hdmirx-audio-v4/04.mbox)
+
+Backported into the CeraLive series for v7.2. The source of record is
+backports/0045-hdmirx-audio-v4-4.patch; patches/ is generated from it by
+scripts/build-series.py, and scripts/verify-payload-parity.py holds it to
+the same added/removed-line parity every other lane gets.
+
+NOT upstream: this posting has NOT been merged, so no commit id exists for
+it and none is claimed. This header deliberately carries no
+`commit <sha> upstream.` marker, no null object id and no parent SHA --
+there is no such identity to state, and stating one would be false
+provenance rather than a formatting shortcut. No Signed-off-by is added
+either: the DCO chain belongs to the author on the list.
+
+Retire this when the posting merges AND the pinned base absorbs it -- both,
+not either. Trigger and last-checked date: docs/UPSTREAM-STATUS.md.
+
+---
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dts b/arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dts
+index 9950d11..9f9a303 100644
+--- a/arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dts
+@@ -171,6 +171,10 @@
+ 	status = "okay";
+ };
+ 
++&hdmi_receiver_sound {
++	status = "okay";
++};
++
+ &hdptxphy0 {
+ 	status = "okay";
+ };
+@@ -247,6 +251,10 @@
+ 	status = "okay";
+ };
+ 
++&i2s7_8ch {
++	status = "okay";
++};
++
+ &led_blue_gpio {
+ 	gpios = <&gpio3 RK_PA6 GPIO_ACTIVE_HIGH>;
+ 	status = "okay";

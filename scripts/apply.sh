@@ -269,7 +269,7 @@ else
 	fail=1
 fi
 
-# 0005 registers the ASoC codec; 0006 is what turns it into an ALSA card. Assert
+# 0043 registers the codec; 0044/0045/0049 bind it on both boards. Assert
 # both halves, and assert them per board: enabling hdmi_receiver without also
 # enabling hdmirx_sound + i2s7_8ch is precisely the silent no-capture-card state
 # that shipped before, and it is invisible until someone runs arecord on hardware.
@@ -283,7 +283,7 @@ else
 	fail=1
 fi
 
-for label in hdmirx_sound hdmirx_codec_dai; do
+for label in hdmi_receiver_sound hdmiin_codec; do
 	if grep -q "${label}" "${DTS_DIR}/rk3588-extra.dtsi"; then
 		echo "  ok      dts node ${label}"
 	else
@@ -293,7 +293,7 @@ for label in hdmirx_sound hdmirx_codec_dai; do
 done
 
 if awk '/^\thdmi_receiver: /,/^\t};/' "${DTS_DIR}/rk3588-extra.dtsi" |
-	grep -q '#sound-dai-cells = <0>;'; then
+	grep -q '#sound-dai-cells = <1>;'; then
 	echo "  ok      hdmi_receiver is a sound-dai provider"
 else
 	echo "  MISSING #sound-dai-cells on hdmi_receiver" >&2
@@ -303,7 +303,7 @@ fi
 # The two CeraLive boards (ARMBIAN_BOARDS in kernel-pin.env) must enable both
 # halves. Other mainline boards are none of this series' business.
 for board in rk3588-rock-5b.dtsi rk3588-orangepi-5-plus.dts; do
-	for ref in hdmirx_sound i2s7_8ch; do
+	for ref in hdmi_receiver_sound i2s7_8ch; do
 		if grep -qE "^&${ref} \{" "${DTS_DIR}/${board}"; then
 			echo "  ok      ${board} enables &${ref}"
 		else
@@ -312,6 +312,8 @@ for board in rk3588-rock-5b.dtsi rk3588-orangepi-5-plus.dts; do
 		fi
 	done
 done
+
+python3 "${ROOT}/tests/test_hdmirx_audio_v4.py" --tree "."
 
 (( fail == 0 )) || exit 1
 

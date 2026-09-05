@@ -1,0 +1,134 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Andres Cera <andres.cera@hotmail.com>
+Date: Sat, 5 Sep 2026 14:00:00 +0000
+Subject: [PATCH 48/49] media: synopsys: hdmirx: preserve multichannel routing and rate validity
+
+Carry 0005 speaker override and channel changes; back off on invalid ACR.
+Reconciliation evidence: docs/UPSTREAM-STATUS.md.
+Code-only qualification; no new board evidence is claimed.
+
+First-party: authored by CeraLive against v7.2, with no upstream
+counterpart in rockchip-rk3588-mainline-patches. The source of record
+is ceralive/0048-hdmirx-audio-channel-routing.patch
+and patches/ is generated from it by scripts/build-series.py.
+scripts/verify-payload-parity.py holds it to the same
+added/removed-line parity the upstream lane gets.
+
+NOT upstream-bound: this targets the CeraLive device tree only and
+is not a submission to linux-media, linux-rockchip or the fork
+parent. No Signed-off-by is added, because a DCO assertion belongs
+to whoever actually submits it.
+
+---
+diff --git a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
+index df89e4614..5f7a7d4f1 100644
+--- a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
++++ b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
+@@ -154,6 +154,7 @@ struct snps_hdmirx_dev {
+ 	struct delayed_work audio_work;
+ 	u32 audio_clkrate;
+ 	u32 audio_fs;
++	u32 audio_channels;
+ 	int audio_pre_state;
+ 	bool audio_streaming;
+ 	bool audio_running;
+@@ -3147,6 +3148,22 @@ static int hdmirx_audio_set_fs(struct snps_hdmirx_dev *hdmirx_dev, u32 fs)
+ 	return 0;
+ }
+ 
++static u32 hdmirx_audio_channels(struct snps_hdmirx_dev *hdmirx_dev)
++{
++	hdmirx_readl(hdmirx_dev, PKTDEC_AUDIF_PH2_1);
++	return ((hdmirx_readl(hdmirx_dev, PKTDEC_AUDIF_PB3_0) >> 8) & 7) + 1;
++}
++
++static void hdmirx_audio_route(struct snps_hdmirx_dev *hdmirx_dev, u32 channels)
++{
++	hdmirx_update_bits(hdmirx_dev, AUDIO_PROC_CONFIG0,
++			   SPEAKER_ALLOC_OVR_EN | I2S_EN,
++			   (channels > 2 ? SPEAKER_ALLOC_OVR_EN : 0) | I2S_EN);
++	if (channels > 2)
++		hdmirx_writel(hdmirx_dev, AUDIO_PROC_CONFIG3, 0xffffffff);
++	hdmirx_dev->audio_channels = channels;
++}
++
+ static int hdmirx_audio_clk_adjust(struct snps_hdmirx_dev *hdmirx_dev,
+ 				   int total_offset, int single_offset)
+ {
+@@ -3201,7 +3218,7 @@ static int hdmirx_audio_setup(struct snps_hdmirx_dev *hdmirx_dev, u32 fs)
+ 	hdmirx_writel(hdmirx_dev, AUDIO_FIFO_MUTE_THR,
+ 		      AFIFO_THR_MUTE_LOW_QST(0x8) | AFIFO_THR_MUTE_HIGH_QST(0x178));
+ 
+-	hdmirx_update_bits(hdmirx_dev, AUDIO_PROC_CONFIG0, I2S_EN, I2S_EN);
++	hdmirx_audio_route(hdmirx_dev, hdmirx_audio_channels(hdmirx_dev));
+ 	hdmirx_update_bits(hdmirx_dev, GLOBAL_SWENABLE, AUDIO_ENABLE, AUDIO_ENABLE);
+ 
+ 	hdmirx_dev->audio_pre_state = 0;
+@@ -3236,17 +3253,20 @@ static void hdmirx_audio_work(struct work_struct *work)
+ 		container_of(to_delayed_work(work), struct snps_hdmirx_dev, audio_work);
+ 	unsigned long delay = 200;
+ 	int cur, total, single;
+-	u32 fifo, fs;
++	u32 fifo, fs, channels;
+ 
+ 	if (!READ_ONCE(hdmirx_dev->audio_running))
+ 		return;
+ 
+ 	fs = hdmirx_audio_fs(hdmirx_dev);
++	channels = hdmirx_audio_channels(hdmirx_dev);
+ 	fifo = hdmirx_readl(hdmirx_dev, AUDIO_FIFO_STATUS2);
+ 
+ 	if (fifo & (AFIFO_UNDERFLOW_ST | AFIFO_OVERFLOW_ST)) {
+ 		if (fs && hdmirx_audio_set_fs(hdmirx_dev, fs))
+ 			goto out;
++		if (fs)
++			hdmirx_audio_route(hdmirx_dev, channels);
+ 		hdmirx_audio_fifo_reinit(hdmirx_dev);
+ 		hdmirx_dev->audio_pre_state = 0;
+ 		goto out;
+@@ -3256,9 +3276,15 @@ static void hdmirx_audio_work(struct work_struct *work)
+ 	total = cur - HDMIRX_AUDIO_INIT_STATE;
+ 	single = cur - hdmirx_dev->audio_pre_state;
+ 
+-	if (fs && abs((int)fs - (int)hdmirx_dev->audio_fs) > 1000) {
++	if (!fs) {
++		delay = 1000;
++		goto out;
++	}
++	if (abs((int)fs - (int)hdmirx_dev->audio_fs) > 1000 ||
++	    channels != hdmirx_dev->audio_channels) {
+ 		if (hdmirx_audio_set_fs(hdmirx_dev, fs))
+ 			goto out;
++		hdmirx_audio_route(hdmirx_dev, channels);
+ 		hdmirx_audio_fifo_reinit(hdmirx_dev);
+ 		hdmirx_dev->audio_pre_state = 0;
+ 		goto out;
+diff --git a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.h b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.h
+index a99f54fd1..7724eeed1 100644
+--- a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.h
++++ b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.h
+@@ -199,6 +199,7 @@
+ #define AFIFO_OVERFLOW_ST			BIT(24)
+ 
+ #define AUDIO_PROC_CONFIG0			0x0480
++#define AUDIO_PROC_CONFIG3			0x048c
+ #define SPEAKER_ALLOC_OVR_EN			BIT(16)
+ #define I2S_BPCUV_EN				BIT(4)
+ #define SPDIF_EN				BIT(2)
+@@ -244,6 +245,8 @@
+ #define PKTDEC_AVIIF_PB19_16			0x1214
+ #define PKTDEC_AVIIF_PB23_20			0x1218
+ #define PKTDEC_AVIIF_PB27_24			0x121c
++#define PKTDEC_AUDIF_PH2_1			0x1240
++#define PKTDEC_AUDIF_PB3_0			0x1244
+ 
+ #define PKTFIFO_CONFIG				0x1500
+ #define PKTFIFO_STORE_FILT_CONFIG		0x1504
+@@ -379,6 +382,7 @@
+ #define AVPUNIT_1_INT_CLEAR			0x5058
+ #define DEFRAMER_VSYNC_THR_REACHED_CLEAR	BIT(1)
+ #define PKT_0_INT_STATUS			0x5080
++#define PKTDEC_AVIIF_CHG_IRQ			BIT(11)
+ #define PKTDEC_ACR_CHG_IRQ			BIT(3)
+ #define PKT_0_INT_MASK_N			0x5084
+ #define PKTDEC_ACR_CHG_MASK_N			BIT(3)

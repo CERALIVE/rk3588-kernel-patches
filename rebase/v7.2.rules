@@ -16,9 +16,4 @@
 #
 # Literal '\t' in a field is a TAB. Every anchor must match exactly once.
 
-# --- R1 -------------------------------------------------------------------
-# 0005 adds private audio members after `cec`. Mainline's `phy_rw_lock`, inserted
-# between `cec` and `stream_lock`, remains present at v7.2. Reintroducing it as
-# context keeps the patch's members at their authored location; this private,
-# unpacked structure is accessed by member name, so the placement is neutral.
-0005-rockchip-rk3588-hdmirx-audio.patch|insert-before|\tstruct mutex stream_lock; /* to lock video stream capture */|\tstruct mutex phy_rw_lock; /* to protect phy r/w configuration */
+# R1 belonged to retired 0005; the byte-preserved v4 import needs no re-anchor.

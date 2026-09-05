@@ -1,0 +1,78 @@
+From lore-posting Mon Sep 17 00:00:00 2001
+From: Igor Paunovic <royalnet026@gmail.com>
+Date: Tue, 21 Jul 2026 08:41:14 +0200
+Subject: [PATCH 44/49] arm64: dts: rockchip: add HDMI RX audio on RK3588
+
+Backport of unmerged v4 posting.
+
+[PATCH v4 3/4] arm64: dts: rockchip: add HDMI RX audio on RK3588
+
+Replaces legacy 0005/0006/0017 with the explicit per-behavior
+decisions and first-party deltas in docs/UPSTREAM-STATUS.md.
+Imported by import-lore-series.py from the canonical thread.
+No upstream commit identity or new board evidence is claimed.
+
+Posted to lore on Tue, 21 Jul 2026 08:41:14 +0200 as v4:
+https://lore.kernel.org/r/20260721064115.64809-4-royalnet026@gmail.com
+Review state: Signed-off-by in the posting. Follow-up review is recorded in docs/EVAL-0005-AUDIO.md; second-cycle suspend silence remains open. ACR byte order is correct; explicit remove drain is absent.
+
+Canonical thread archive -- the only source an import may be taken
+from: https://lore.kernel.org/all/20260721064115.64809-4-royalnet026@gmail.com/t.mbox.gz
+  thread_compressed_sha256 e15583ec2ab99e673f7aecfc09abb6a1bf42169fe2f6d69fc3b99d5376ad8b91
+    (the gzip response bytes, exactly as served)
+  thread_mbox_sha256       54feb74cc46b5dec270cb4e5913819997f412ff800845c0ae8667759b21afbbd
+    (the mailbox those bytes decompress to)
+  canonical_patch_sha256   0d5af3cd3ad6c2edcd89ff0ef4f16ff43335ec1c0f444ed132ebdde65af44de4
+    (this posting's canonical mail, archived at backports/lore/hdmirx-audio-v4/03.mbox)
+
+Backported into the CeraLive series for v7.2. The source of record is
+backports/0044-hdmirx-audio-v4-3.patch; patches/ is generated from it by
+scripts/build-series.py, and scripts/verify-payload-parity.py holds it to
+the same added/removed-line parity every other lane gets.
+
+NOT upstream: this posting has NOT been merged, so no commit id exists for
+it and none is claimed. This header deliberately carries no
+`commit <sha> upstream.` marker, no null object id and no parent SHA --
+there is no such identity to state, and stating one would be false
+provenance rather than a formatting shortcut. No Signed-off-by is added
+either: the DCO chain belongs to the author on the list.
+
+Retire this when the posting merges AND the pinned base absorbs it -- both,
+not either. Trigger and last-checked date: docs/UPSTREAM-STATUS.md.
+
+---
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588-extra.dtsi b/arch/arm64/boot/dts/rockchip/rk3588-extra.dtsi
+index a264001..e0dce15 100644
+--- a/arch/arm64/boot/dts/rockchip/rk3588-extra.dtsi
++++ b/arch/arm64/boot/dts/rockchip/rk3588-extra.dtsi
+@@ -23,6 +23,23 @@
+ 		};
+ 	};
+ 
++	hdmi_receiver_sound: hdmi-receiver-sound {
++		compatible = "simple-audio-card";
++		simple-audio-card,format = "i2s";
++		simple-audio-card,name = "RK3588 HDMI-IN";
++		simple-audio-card,bitclock-master = <&hdmiin_codec>;
++		simple-audio-card,frame-master = <&hdmiin_codec>;
++		status = "disabled";
++
++		hdmiin_codec: simple-audio-card,codec {
++			sound-dai = <&hdmi_receiver 0>;
++		};
++
++		simple-audio-card,cpu {
++			sound-dai = <&i2s7_8ch>;
++		};
++	};
++
+ 	reserved-memory {
+ 		#address-cells = <2>;
+ 		#size-cells = <2>;
+@@ -338,5 +355,6 @@
+ 		reset-names = "axi", "apb", "ref", "biu";
+ 		rockchip,grf = <&sys_grf>;
+ 		rockchip,vo1-grf = <&vo1_grf>;
++		#sound-dai-cells = <1>;
+ 		status = "disabled";
+ 	};

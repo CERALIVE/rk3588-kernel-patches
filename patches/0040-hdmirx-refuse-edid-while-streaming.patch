@@ -1,0 +1,40 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Andres Cera <andres.cera@hotmail.com>
+Date: Sat, 5 Sep 2026 12:00:00 +0000
+Subject: [PATCH 40/49] media: synopsys: hdmirx: refuse S_EDID while streaming
+
+EDID writes trigger HPD renegotiation and controller teardown.
+Reject them before any state or hardware mutation while the capture
+queue is streaming, including zero-block requests that clear EDID.
+Both vdev->lock and the vb2 queue lock use stream->vlock, so the
+check and write are serialized with STREAMON and STREAMOFF.
+Idle writes retain the existing validation and renegotiation path.
+Intended for upstream submission; retire when the base absorbs it.
+
+First-party: authored by CeraLive against v7.2, with no upstream
+counterpart in rockchip-rk3588-mainline-patches. The source of record
+is ceralive/0040-hdmirx-refuse-edid-while-streaming.patch
+and patches/ is generated from it by scripts/build-series.py.
+scripts/verify-payload-parity.py holds it to the same
+added/removed-line parity the upstream lane gets.
+
+NOT upstream-bound: this targets the CeraLive device tree only and
+is not a submission to linux-media, linux-rockchip or the fork
+parent. No Signed-off-by is added, because a DCO assertion belongs
+to whoever actually submits it.
+
+---
+diff --git a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
+--- a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
++++ b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
+@@ -1265,6 +1265,10 @@ static int hdmirx_set_edid(struct file *file, void *fh, struct v4l2_edid *edid)
+ 	u16 phys_addr;
+ 	int err;
+ 
++	/* The video-device and queue locks serialize this with STREAMON/OFF. */
++	if (vb2_is_streaming(&stream->buf_queue))
++		return -EBUSY;
++
+ 	if (edid->pad)
+ 		return -EINVAL;
+ 

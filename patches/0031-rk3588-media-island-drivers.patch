@@ -1,7 +1,7 @@
 From island-release Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Wed, 2 Sep 2026 00:00:00 +0000
-Subject: [PATCH 31/39] video: rockchip: add the CeraLive RK3588 media island
+Subject: [PATCH 31/49] video: rockchip: add the CeraLive RK3588 media island
 
 The Rockchip MPP service with its three compiled clients (RKVENC2, RKVDEC2, JPGDEC), the multi_rga 2D engine driver, and the UAPI headers they publish.
 
@@ -18,7 +18,7 @@ Release asset rk3588-media-island-v2026.9.2.mbox.tar
   member_sha256 bc01229b723e2eb0e1f40b366562c0f56325b332831cd5468b50f3d84a85fd3d
 
 island/0031-rk3588-media-island-drivers.patch is that member byte-for-byte -- the mail
-header above is this repository's own, so the N/39 ordinal is ours and
+header above is this repository's own, so the N/49 ordinal is ours and
 the message is the release's. scripts/verify-island-provenance.py
 re-fetches the asset, checks asset_sha256 and byte-compares every
 member, independently of scripts/build-series.py.

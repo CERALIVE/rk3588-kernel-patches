@@ -84,6 +84,9 @@ upstream, superseded, or scoped out.
 
 | Patch | Lane | Ordinal | Retired | Kernel tag | Reason |
 |-------|------|---------|---------|------------|--------|
+| `0005-rockchip-rk3588-hdmirx-audio.patch` | `upstream` | 5 | 2026-09-05 | `v7.2` | Replaced by unmerged audio v4 `0042`–`0045` and deltas `0046`–`0049`; per-behavior decisions in UPSTREAM-STATUS.md |
+| `0006-rk3588-hdmirx-audio-sound-card.patch` | `ceralive` | 6 | 2026-09-05 | `v7.2` | Shared v4 card replaces incompatible zero-cell wiring; `0049` preserves Rock family enablement |
+| `0017-hdmirx-audio-lifecycle-and-clock-errors.patch` | `ceralive` | 17 | 2026-09-05 | `v7.2` | Clock and lifetime hardening re-expressed against v4 by `0046`–`0048`; old test controls remain historical |
 | `0007-iommu-rockchip-disable-fetch-dte-time-limit.patch` | `backports` | 7 | 2026-08-26 | `v7.2` | Landed upstream — 8d4346ecd495 in v7.2 |
 | `0023-rkvenc-worker-task-lifetime.patch` | `ceralive` | 23 | 2026-08-12 | `v7.1.7` | Folded into `0021` — the worker use-after-free half. See `docs/UPSTREAM-STATUS.md` § retired ordinals |
 | `0024-rkvenc-secondary-core-iommu-domain-lifetime.patch` | `ceralive` | 24 | 2026-08-12 | `v7.1.7` | Folded into `0021` — the secondary-core NULL-domain half. See `docs/UPSTREAM-STATUS.md` § retired ordinals |

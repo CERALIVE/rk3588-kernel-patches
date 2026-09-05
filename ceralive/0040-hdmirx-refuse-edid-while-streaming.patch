@@ -1,0 +1,14 @@
+diff --git a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
+--- a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
++++ b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
+@@ -1265,6 +1265,10 @@ static int hdmirx_set_edid(struct file *file, void *fh, struct v4l2_edid *edid)
+ 	u16 phys_addr;
+ 	int err;
+ 
++	/* The video-device and queue locks serialize this with STREAMON/OFF. */
++	if (vb2_is_streaming(&stream->buf_queue))
++		return -EBUSY;
++
+ 	if (edid->pad)
+ 		return -EINVAL;
+ 

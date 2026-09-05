@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Andres Cera <andres.cera@hotmail.com>
 Date: Sun, 9 Aug 2026 12:00:00 -0500
-Subject: [PATCH 9/39] dma-buf: heaps: add a system-uncached heap
+Subject: [PATCH 9/49] dma-buf: heaps: add a system-uncached heap
 
 *** VALIDATED on Rock 5B+ (2026-08-09) -- UNVALIDATED on Orange Pi 5+. ***
 /dev/dma_heap/system-uncached was confirmed a genuine second heap (minor
@@ -97,14 +97,16 @@ pipeline's verify-kernel-config.sh gate prove the heap survived olddefconfig
 into the shipped kernel instead of merely proving its parent did.
 
 First-party: authored by CeraLive against v7.2, with no upstream
-counterpart in rockchip-rk3588-mainline-patches. The source of record is
-ceralive/0009-dma-buf-heaps-add-system-uncached-dma-heap.patch; patches/ is generated from it by
-scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the
-same added/removed-line parity the upstream lane gets.
+counterpart in rockchip-rk3588-mainline-patches. The source of record
+is ceralive/0009-dma-buf-heaps-add-system-uncached-dma-heap.patch
+and patches/ is generated from it by scripts/build-series.py.
+scripts/verify-payload-parity.py holds it to the same
+added/removed-line parity the upstream lane gets.
 
-NOT upstream-bound: this targets the CeraLive device tree only and is not a
-submission to linux-media, linux-rockchip or the fork parent. No Signed-off-by
-is added, because a DCO assertion belongs to whoever actually submits it.
+NOT upstream-bound: this targets the CeraLive device tree only and
+is not a submission to linux-media, linux-rockchip or the fork
+parent. No Signed-off-by is added, because a DCO assertion belongs
+to whoever actually submits it.
 
 ---
 diff --git a/drivers/dma-buf/heaps/Kconfig b/drivers/dma-buf/heaps/Kconfig

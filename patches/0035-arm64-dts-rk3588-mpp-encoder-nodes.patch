@@ -1,7 +1,7 @@
 From island-release Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Wed, 2 Sep 2026 00:00:00 +0000
-Subject: [PATCH 35/39] arm64: dts: rockchip: add RK3588 MPP encoder nodes
+Subject: [PATCH 35/49] arm64: dts: rockchip: add RK3588 MPP encoder nodes
 
 Re-express the VEPU580 device-tree hunk carried by
 CERALIVE/rk3588-kernel-patches 0001 against the pinned Linux v7.2
@@ -23,7 +23,7 @@ Release asset rk3588-media-island-v2026.9.2.mbox.tar
   member_sha256 40779bd2ac4d2ea3a04e12649c7dcda89655e1b04f6b1cdc188bce7cdf0e9e01
 
 island/0035-arm64-dts-rk3588-mpp-encoder-nodes.patch is that member byte-for-byte -- the mail
-header above is this repository's own, so the N/39 ordinal is ours and
+header above is this repository's own, so the N/49 ordinal is ours and
 the message is the release's. scripts/verify-island-provenance.py
 re-fetches the asset, checks asset_sha256 and byte-compares every
 member, independently of scripts/build-series.py.

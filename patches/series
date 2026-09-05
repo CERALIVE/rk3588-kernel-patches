@@ -1,17 +1,20 @@
 # git-am order for the CeraLive RK3588 series.
 # Upstream numbering is preserved verbatim -- 0004 was never published,
 # so the gap is intentional. Do not renumber to close it.
-# First-party (ceralive/): 0006, 0009, 0017, 0018, 0026, 0027, 0028, 0029, 0030.
-# Backports (backports/): 0010, 0011, 0012 -- 0007 is a merged commit, the rest are unmerged lore postings.
+# First-party (ceralive/): 0009, 0018, 0026, 0027, 0028, 0029, 0030, 0040, 0041, 0046, 0047, 0048, 0049.
+# Backports (backports/): 0010, 0011, 0012, 0042, 0043, 0044, 0045 -- 0007 is a merged commit, the rest are unmerged lore postings.
 # All of them continue the same counter.
 # Target kernel: v7.2 (8d3ae59288f1e7d58d76558a6ee96d533bc5019f)
 # Retired slot 1: 0001-rockchip-rk3588-vepu580-encoder-support-v3.patch -- see retired/REGISTRY.md
+# Retired slot 5: 0005-rockchip-rk3588-hdmirx-audio.patch -- see retired/REGISTRY.md
+# Retired slot 6: 0006-rk3588-hdmirx-audio-sound-card.patch -- see retired/REGISTRY.md
 # Retired slot 7: 0007-iommu-rockchip-disable-fetch-dte-time-limit.patch -- see retired/REGISTRY.md
 # Retired slot 8: 0008-rkvenc-set-dma-max-segment-size.patch -- see retired/REGISTRY.md
 # Retired slot 13: 0013-rkvenc-ceralive-test-instrumentation.patch -- see retired/REGISTRY.md
 # Retired slot 14: 0014-rkvenc-teardown-and-service-ccu-unwind.patch -- see retired/REGISTRY.md
 # Retired slot 15: 0015-rkvenc-resource-error-observability.patch -- see retired/REGISTRY.md
 # Retired slot 16: 0016-rkvenc-ioctl-bounds.patch -- see retired/REGISTRY.md
+# Retired slot 17: 0017-hdmirx-audio-lifecycle-and-clock-errors.patch -- see retired/REGISTRY.md
 # Retired slot 19: 0019-rkvenc-worker-lock-context-and-dma-buf-api.patch -- see retired/REGISTRY.md
 # Retired slot 20: 0020-rkvenc-service-survives-a-single-core-unbind.patch -- see retired/REGISTRY.md
 # Retired slot 21: 0021-rkvenc-balanced-hw-run-teardown.patch -- see retired/REGISTRY.md
@@ -21,13 +24,10 @@
 # Retired slot 25: 0025-rkvenc-service-node-teardown-lifetime.patch -- see retired/REGISTRY.md
 0002-rockchip-rk3588-hdmirx-edid-fix-v1.patch
 0003-rockchip-rk3588-hdmirx-plugout-fix-v1.patch
-0005-rockchip-rk3588-hdmirx-audio.patch
-0006-rk3588-hdmirx-audio-sound-card.patch
 0009-dma-buf-heaps-add-system-uncached-dma-heap.patch
 0010-phy-rockchip-naneng-combphy-force-rterm-det-rdy.patch
 0011-dw-hdmi-qp-acr-n-cts-helper.patch
 0012-dw-hdmi-qp-audio-eopnotsupp.patch
-0017-hdmirx-audio-lifecycle-and-clock-errors.patch
 0018-dma-buf-heaps-truthful-partial-registration.patch
 0026-hdmirx-register-lock-hardirq-context.patch
 0027-hdmirx-phy-retry-hardening.patch
@@ -43,3 +43,13 @@
 0037-arm64-dts-rk3588-mpp-jpegd-node.patch
 0038-arm64-dts-rk3588-rga3-vendor-compat.patch
 0039-arm64-dts-rk3588-rga2-vendor-compat.patch
+0040-hdmirx-refuse-edid-while-streaming.patch
+0041-hdmirx-avi-colorimetry.patch
+0042-hdmirx-audio-v4-1.patch
+0043-hdmirx-audio-v4-2.patch
+0044-hdmirx-audio-v4-3.patch
+0045-hdmirx-audio-v4-4.patch
+0046-hdmirx-audio-clock-errors-and-rates.patch
+0047-hdmirx-audio-worker-lifetime.patch
+0048-hdmirx-audio-channel-routing.patch
+0049-rk3588-hdmirx-audio-enable.patch

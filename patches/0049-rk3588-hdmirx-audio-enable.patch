@@ -1,0 +1,53 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Andres Cera <andres.cera@hotmail.com>
+Date: Sat, 5 Sep 2026 14:00:00 +0000
+Subject: [PATCH 49/49] arm64: dts: rockchip: preserve Rock HDMI input audio and codec dependency
+
+Enable the v4 shared card on the Rock family; retain codec Kconfig closure.
+Reconciliation evidence: docs/UPSTREAM-STATUS.md.
+Code-only qualification; no new board evidence is claimed.
+
+First-party: authored by CeraLive against v7.2, with no upstream
+counterpart in rockchip-rk3588-mainline-patches. The source of record
+is ceralive/0049-rk3588-hdmirx-audio-enable.patch
+and patches/ is generated from it by scripts/build-series.py.
+scripts/verify-payload-parity.py holds it to the same
+added/removed-line parity the upstream lane gets.
+
+NOT upstream-bound: this targets the CeraLive device tree only and
+is not a submission to linux-media, linux-rockchip or the fork
+parent. No Signed-off-by is added, because a DCO assertion belongs
+to whoever actually submits it.
+
+---
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588-rock-5b.dtsi b/arch/arm64/boot/dts/rockchip/rk3588-rock-5b.dtsi
+index e5c474e4d..695e23e3c 100644
+--- a/arch/arm64/boot/dts/rockchip/rk3588-rock-5b.dtsi
++++ b/arch/arm64/boot/dts/rockchip/rk3588-rock-5b.dtsi
+@@ -48,6 +48,14 @@ &hdmi_receiver {
+ 	status = "okay";
+ };
+ 
++&hdmi_receiver_sound {
++	status = "okay";
++};
++
++&i2s7_8ch {
++	status = "okay";
++};
++
+ &pinctrl {
+ 	hdmirx {
+ 		hdmirx_hpd: hdmirx-5v-detection {
+diff --git a/drivers/media/platform/synopsys/hdmirx/Kconfig b/drivers/media/platform/synopsys/hdmirx/Kconfig
+index 4321f985f..9dd17f0ea 100644
+--- a/drivers/media/platform/synopsys/hdmirx/Kconfig
++++ b/drivers/media/platform/synopsys/hdmirx/Kconfig
+@@ -9,6 +9,7 @@ config VIDEO_SYNOPSYS_HDMIRX
+ 	select VIDEOBUF2_DMA_CONTIG
+ 	select CEC_CORE
+ 	select HDMI
++	select SND_SOC_HDMI_CODEC if SND_SOC
+ 	help
+ 	  Support for Synopsys HDMI HDMI RX Controller.
+ 	  This driver supports HDMI 2.0 version.

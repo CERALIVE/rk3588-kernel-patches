@@ -1,5 +1,30 @@
 # Rebase ledger — CeraLive target `v7.1.7` → `v7.2`
 
+## Audio-stack adaptation on the same base — 2026-09-05
+
+The kernel pin remains unchanged. Audio v4 replaces `0005`/`0006`/`0017`;
+their files are archived, with decisions in UPSTREAM-STATUS.md. The obsolete
+R1 rule for 0005 is removed. All four canonical v4 payloads apply without a
+context re-anchor after the retained series.
+
+The first full git-am gate exposed canonical extraction's stripped final blank
+context line in v4 3/4. The source bytes stay untouched; the generator now repairs
+only a one-context-line deficit in the final lore hunk's counts. The old/new
+counts change from 6/7 to 5/6, with no added/removed payload change. A permanent
+mailbox parse regression test covers the actual 0044 output.
+
+`0026` is first-party and its **runtime payload is preserved**. Its first hunk
+added a raw-lock line inside 0017's lock-order comment; that comment no longer
+exists, so the comment-only hunk is removed. Its initializer hunk's three context
+lines now name `phy_rw_lock`, `stream_lock`, and `work_lock` instead of
+`work_lock`, `audio_lock`, and `audio_work_armed`. Every `raw_spinlock_t`,
+`guard(raw_spinlock_irqsave)`, and `raw_spin_lock_init` change remains identical.
+This is a comment/context adaptation to the new audio stack, not a weakened
+hardirq fix. `0048` supplies 0005's former AVI-change IRQ constant so `0041`
+continues to compile without changing that member's payload.
+
+The original base-bump ledger follows; its counts describe that earlier bump.
+
 This ledger records the move of the CeraLive RK3588 series from `v7.1.7` to
 `v7.2`. The lane-scoped conflict law in `AGENTS.md` and `README.md` was amended
 before any patch content changed.

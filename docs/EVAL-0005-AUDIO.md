@@ -1,6 +1,11 @@
 # Evaluation — `0005`+`0006` HDMI-RX audio vs the upstream "HDMI Input Audio" PATCHv4
 
-**Verdict: KEEP `0005` and `0006`. Do not adopt PATCHv4 — yet.**
+**Historical verdict, superseded 2026-09-05.** The audio v4 import and explicit
+per-behavior decisions now live in [UPSTREAM-STATUS.md](UPSTREAM-STATUS.md#hdmi-rx-audio-v4-reconciliation--2026-09-05).
+`0005`, `0006` and `0017` are archived byte-unchanged under `retired/`; old
+source-lane links and adoption constraints below describe the evaluation date,
+not the current series. In particular, unmerged lore provenance is now supported.
+The original KEEP analysis follows as historical evidence, not an instruction.
 
 Unlike [`EVAL-0002-EDID.md`](EVAL-0002-EDID.md), this candidate is *real*. It is a
 four-patch series, cleanly applicable to our base, carrying `Reviewed-by` from
