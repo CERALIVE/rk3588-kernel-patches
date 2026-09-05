@@ -55,7 +55,9 @@ rk3588-kernel-patches/
 │   ├── UPSTREAM-STATUS.md     # per-patch upstream status + retire-on-merge triggers
 │   ├── BOARD-QUALIFICATION.md # the hardware checklist + its Run log — runs 1 and 2 executed
 │   ├── EVAL-0002-EDID.md      # verdict: keep 0002; the 7.2-rc1 fix is already in the base
-│   ├── EVAL-0005-AUDIO.md     # historical KEEP verdict; superseded by the v4 reconciliation ledger
+│   ├── EVAL-0005-AUDIO.md      # historical KEEP verdict; superseded by the v4 reconciliation ledger
+│   ├── AUDIO-V4-VALIDATION.md # what the v4 migration gate ran, and what it does not claim
+│   ├── EDID-STREAMING-GUARD.md # deferred board procedure for 0040
 │   ├── PROVENANCE.md          # licence/provenance audit incl. the MIT-claim caveat
 │   ├── PREFLIGHT.md           # how the Armbian bleedingedge -> 7.2 mapping was derived
 │   ├── REBASE-v7.2.md         # hunk-by-hunk rebase ledger — CURRENT base; a verdict per ordinal, 0009 + 0018 revised, 0007 retired
@@ -80,8 +82,10 @@ rk3588-kernel-patches/
 | Why `0002` was kept instead of taking the upstream EDID fix | [`docs/EVAL-0002-EDID.md`](docs/EVAL-0002-EDID.md) |
 | Why `0005`+`0006` were kept instead of taking the lore HDMI-audio series | [`docs/EVAL-0005-AUDIO.md`](docs/EVAL-0005-AUDIO.md) |
 | Stop carrying a patch | **Never `git rm` it.** Move it to `retired/` and add a row — see [`retired/REGISTRY.md`](retired/REGISTRY.md) |
-| Why HDMI-RX audio needs a DT patch at all | [`docs/PROVENANCE.md`](docs/PROVENANCE.md) §8 and `patches/0006-*`'s own mail header |
-| Why the rkvenc DMA segment-size fix exists, and why the IOVA guardrail is left alone | [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) § `0008` and `patches/0008-*`'s own mail header |
+| Why HDMI-RX audio needs a DT patch at all | [`docs/PROVENANCE.md`](docs/PROVENANCE.md) §8 and the archived `retired/0006-*`'s own mail header — the live wiring is `0044` + `0049` |
+| How the audio v4 migration was gated, and what it does NOT prove | [`docs/AUDIO-V4-VALIDATION.md`](docs/AUDIO-V4-VALIDATION.md) |
+| Board procedure for the `0040` EDID streaming guard | [`docs/EDID-STREAMING-GUARD.md`](docs/EDID-STREAMING-GUARD.md) |
+| Why the rkvenc DMA segment-size fix existed, and why the IOVA guardrail was left alone | [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) § `0008` and the archived `retired/0008-*`'s own mail header; the live intent is island source |
 | Check whether Armbian moved `edge` | `scripts/preflight.sh --head` |
 | Understand the `bleedingedge` → 7.2 derivation | [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md) |
 | Apply the series | `scripts/apply.sh` — see [`README.md`](README.md) |
@@ -153,7 +157,7 @@ put first-party, backported, or island content in `upstream/`.**
 verified against its release asset.** Every member carries an `Island(...)`
 provenance variant naming the immutable tag, source-repository commit, and asset
 SHA-256. `scripts/verify-island-provenance.py` downloads that asset (or reads a
-cached copy), verifies its digest, and byte-compares all seven members without
+cached copy), verifies its digest, and byte-compares all nine members without
 importing `build-series.py`. Island patches are never hand-edited or re-anchored;
 a base conflict requires a new island release.
 

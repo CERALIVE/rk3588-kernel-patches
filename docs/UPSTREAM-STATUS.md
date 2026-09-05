@@ -2,8 +2,10 @@
 
 **Base pin at last check:** `v7.2` — see [`kernel-pin.env`](../kernel-pin.env).
 **Last full sweep:** 2026-08-26, at the `v7.2` base. **Rows added since:** `0027`
-(2026-08-13), `0028`–`0030` (2026-08-27), and the island release members
-`0031`–`0037` (2026-09-03).
+(2026-08-13), `0028`–`0030` (2026-08-27), the nine island release members
+`0031`–`0039` (2026-09-03), and `0040`–`0049` — the EDID streaming guard, AVI
+colorimetry, and the HDMI-RX audio v4 backport plus its four first-party deltas
+(2026-09-05, PR #16 / `d95a630`).
 **Previous full sweep:** 2026-08-08, at the `v7.1.7` base.
 **Row-consistency re-check:** 2026-08-09 — every import and every evaluation from
 this cycle has a row, and each row's verdict matches the series on disk. No
