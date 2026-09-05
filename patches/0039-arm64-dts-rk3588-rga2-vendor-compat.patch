@@ -1,7 +1,7 @@
 From island-release Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Wed, 2 Sep 2026 00:00:00 +0000
-Subject: [PATCH 39/40] arm64: dts: rockchip: give RK3588 RGA2 ownership to multi_rga
+Subject: [PATCH 39/41] arm64: dts: rockchip: give RK3588 RGA2 ownership to multi_rga
 
 Switch RGA2 to the multi_rga driver's core-specific compatible. The node has
 one owner and can return to mainline rockchip-rga by reverting this patch
@@ -20,7 +20,7 @@ Release asset rk3588-media-island-v2026.9.2.mbox.tar
   member_sha256 0e7c68fc00884d164b1dea3f889820d84d578f8bb1f7774285ec8a3f2136bc59
 
 island/0039-arm64-dts-rk3588-rga2-vendor-compat.patch is that member byte-for-byte -- the mail
-header above is this repository's own, so the N/40 ordinal is ours and
+header above is this repository's own, so the N/41 ordinal is ours and
 the message is the release's. scripts/verify-island-provenance.py
 re-fetches the asset, checks asset_sha256 and byte-compares every
 member, independently of scripts/build-series.py.

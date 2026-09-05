@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Andres Cera <andres.cera@hotmail.com>
 Date: Sun, 10 Aug 2026 13:00:00 -0500
-Subject: [PATCH 17/40] media: synopsys: hdmirx: fix the audio work and clock lifecycle under lockdep
+Subject: [PATCH 17/41] media: synopsys: hdmirx: fix the audio work and clock lifecycle under lockdep
 
 MOTIVATION. hdmi-codec invokes ->hook_plugged_cb() under the ASoC
 card mutex, and the installed callback reports a jack under the
@@ -44,14 +44,16 @@ demand; harness: tests/hdmirx-audio-fault-qa.sh under lockdep. See
 docs/BOARD-QUALIFICATION.md.
 
 First-party: authored by CeraLive against v7.2, with no upstream
-counterpart in rockchip-rk3588-mainline-patches. The source of record is
-ceralive/0017-hdmirx-audio-lifecycle-and-clock-errors.patch; patches/ is generated from it by
-scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the
-same added/removed-line parity the upstream lane gets.
+counterpart in rockchip-rk3588-mainline-patches. The source of record
+is ceralive/0017-hdmirx-audio-lifecycle-and-clock-errors.patch
+and patches/ is generated from it by scripts/build-series.py.
+scripts/verify-payload-parity.py holds it to the same
+added/removed-line parity the upstream lane gets.
 
-NOT upstream-bound: this targets the CeraLive device tree only and is not a
-submission to linux-media, linux-rockchip or the fork parent. No Signed-off-by
-is added, because a DCO assertion belongs to whoever actually submits it.
+NOT upstream-bound: this targets the CeraLive device tree only and
+is not a submission to linux-media, linux-rockchip or the fork
+parent. No Signed-off-by is added, because a DCO assertion belongs
+to whoever actually submits it.
 
 ---
 diff --git a/drivers/media/platform/synopsys/hdmirx/Makefile b/drivers/media/platform/synopsys/hdmirx/Makefile

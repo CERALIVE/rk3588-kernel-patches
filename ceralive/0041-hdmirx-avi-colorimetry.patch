@@ -1,0 +1,280 @@
+diff --git a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
+--- a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
++++ b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
+@@ -137,6 +137,17 @@ struct hdmirx_stream {
+ 	u32 irq_stat;
+ };
+ 
++/*
++ * The colorimetry the connected source is asking for, kept as one value so a
++ * change is a single comparison instead of four.
++ */
++struct hdmirx_colorimetry {
++	enum v4l2_colorspace colorspace;
++	enum v4l2_ycbcr_encoding ycbcr_enc;
++	enum v4l2_xfer_func xfer_func;
++	enum v4l2_quantization quantization;
++};
++
+ struct snps_hdmirx_dev {
+ 	struct device *dev;
+ 	struct hdmirx_stream stream;
+@@ -214,6 +225,7 @@ struct snps_hdmirx_dev {
+ 	u32 edid_blocks_written;
+ 	u32 cur_fmt_fourcc;
+ 	u32 color_depth;
++	struct hdmirx_colorimetry colorimetry;
+ 	/*
+ 	 * RAW, and it has to be. Every MMIO access in this driver funnels
+ 	 * through the four accessors below, and TWO of this device's three
+@@ -1707,11 +1719,197 @@ static void hdmirx_read_avi_infoframe(struct snps_hdmirx_dev *hdmirx_dev,
+ 	}
+ }
+ 
++/*
++ * Translate the colorimetry an AVI InfoFrame declares into the V4L2 fields that
++ * describe a captured buffer. The Rockchip BSP driver rk_hdmirx.c is the
++ * behavioural reference for the values both drivers handle.
++ *
++ * @c:		C1:C0, colorimetry
++ * @ec:		EC2:EC0, extended colorimetry, meaningful only when @c is 3
++ * @q:		Q1:Q0, RGB quantization range
++ * @yq:		YQ1:YQ0, YCC quantization range
++ * @is_rgb:	the InfoFrame's own pixel encoding is RGB rather than YCbCr
++ * @height:	active lines, which is what picks 601 over 709 when @c says nothing
++ *
++ * Pure by construction: everything it reads is an argument, so the whole table
++ * is exercisable without a receiver. A colorimetry value this driver does not
++ * know falls back to the no-data row rather than leaving a field unset, because
++ * an out-of-range enum reaching userspace is worse than an honest default.
++ */
++static struct hdmirx_colorimetry
++hdmirx_avi_colorimetry(u8 c, u8 ec, u8 q, u8 yq, bool is_rgb,
++		       unsigned int height)
++{
++	struct hdmirx_colorimetry res;
++
++	/* CTA-861 "no data": the SDR default for this encoding and line count. */
++	if (is_rgb) {
++		res.colorspace = V4L2_COLORSPACE_SRGB;
++		res.ycbcr_enc = V4L2_YCBCR_ENC_DEFAULT;
++		res.xfer_func = V4L2_XFER_FUNC_SRGB;
++	} else if (height <= 576) {
++		res.colorspace = V4L2_COLORSPACE_SMPTE170M;
++		res.ycbcr_enc = V4L2_YCBCR_ENC_601;
++		res.xfer_func = V4L2_XFER_FUNC_DEFAULT;
++	} else {
++		res.colorspace = V4L2_COLORSPACE_REC709;
++		res.ycbcr_enc = V4L2_YCBCR_ENC_709;
++		res.xfer_func = V4L2_XFER_FUNC_DEFAULT;
++	}
++
++	switch (c) {
++	case HDMI_COLORIMETRY_ITU_601:
++		res.colorspace = V4L2_COLORSPACE_SMPTE170M;
++		res.ycbcr_enc = V4L2_YCBCR_ENC_601;
++		res.xfer_func = V4L2_XFER_FUNC_709;
++		break;
++	case HDMI_COLORIMETRY_ITU_709:
++		res.colorspace = V4L2_COLORSPACE_REC709;
++		res.ycbcr_enc = V4L2_YCBCR_ENC_709;
++		res.xfer_func = V4L2_XFER_FUNC_709;
++		break;
++	case HDMI_COLORIMETRY_EXTENDED:
++		switch (ec) {
++		case HDMI_EXTENDED_COLORIMETRY_XV_YCC_601:
++			res.colorspace = V4L2_COLORSPACE_SMPTE170M;
++			res.ycbcr_enc = V4L2_YCBCR_ENC_XV601;
++			res.xfer_func = V4L2_XFER_FUNC_709;
++			break;
++		case HDMI_EXTENDED_COLORIMETRY_XV_YCC_709:
++			res.colorspace = V4L2_COLORSPACE_REC709;
++			res.ycbcr_enc = V4L2_YCBCR_ENC_XV709;
++			res.xfer_func = V4L2_XFER_FUNC_709;
++			break;
++		case HDMI_EXTENDED_COLORIMETRY_S_YCC_601:
++			res.colorspace = V4L2_COLORSPACE_SRGB;
++			res.ycbcr_enc = V4L2_YCBCR_ENC_601;
++			res.xfer_func = V4L2_XFER_FUNC_SRGB;
++			break;
++		case HDMI_EXTENDED_COLORIMETRY_OPYCC_601:
++			res.colorspace = V4L2_COLORSPACE_OPRGB;
++			res.ycbcr_enc = V4L2_YCBCR_ENC_601;
++			res.xfer_func = V4L2_XFER_FUNC_OPRGB;
++			break;
++		case HDMI_EXTENDED_COLORIMETRY_OPRGB:
++			res.colorspace = V4L2_COLORSPACE_OPRGB;
++			res.ycbcr_enc = V4L2_YCBCR_ENC_DEFAULT;
++			res.xfer_func = V4L2_XFER_FUNC_OPRGB;
++			break;
++		/*
++		 * Both BT.2020 rows keep the 709 transfer function on purpose.
++		 * This receiver has no HDR path -- there is no dynamic-range
++		 * InfoFrame parsing and no PQ/HLG plumbing -- so claiming an
++		 * SMPTE 2084 or HLG transfer would describe a picture the
++		 * hardware never produces. The wider primaries are real; the
++		 * transfer curve stays SDR until an HDR path exists to back it.
++		 */
++		case HDMI_EXTENDED_COLORIMETRY_BT2020_CONST_LUM:
++			res.colorspace = V4L2_COLORSPACE_BT2020;
++			res.ycbcr_enc = V4L2_YCBCR_ENC_BT2020_CONST_LUM;
++			res.xfer_func = V4L2_XFER_FUNC_709;
++			break;
++		case HDMI_EXTENDED_COLORIMETRY_BT2020:
++			res.colorspace = V4L2_COLORSPACE_BT2020;
++			res.ycbcr_enc = V4L2_YCBCR_ENC_BT2020;
++			res.xfer_func = V4L2_XFER_FUNC_709;
++			break;
++		case HDMI_EXTENDED_COLORIMETRY_RESERVED:
++			/*
++			 * EC=7 defers to the additional-colorimetry extension,
++			 * whose only RGB gamut is DCI-P3. There is no YCbCr
++			 * reading of it that this driver can honour, so that
++			 * half keeps the no-data row.
++			 */
++			if (is_rgb)
++				res.colorspace = V4L2_COLORSPACE_DCI_P3;
++			break;
++		default:
++			break;
++		}
++		break;
++	default:
++		break;
++	}
++
++	/* Y'CbCr encoding is meaningless for an RGB buffer. */
++	if (is_rgb)
++		res.ycbcr_enc = V4L2_YCBCR_ENC_DEFAULT;
++
++	if (is_rgb) {
++		switch (q) {
++		case HDMI_QUANTIZATION_RANGE_LIMITED:
++			res.quantization = V4L2_QUANTIZATION_LIM_RANGE;
++			break;
++		case HDMI_QUANTIZATION_RANGE_FULL:
++			res.quantization = V4L2_QUANTIZATION_FULL_RANGE;
++			break;
++		default:
++			res.quantization = V4L2_QUANTIZATION_DEFAULT;
++			break;
++		}
++	} else {
++		switch (yq) {
++		case HDMI_YCC_QUANTIZATION_RANGE_LIMITED:
++			res.quantization = V4L2_QUANTIZATION_LIM_RANGE;
++			break;
++		case HDMI_YCC_QUANTIZATION_RANGE_FULL:
++			res.quantization = V4L2_QUANTIZATION_FULL_RANGE;
++			break;
++		default:
++			res.quantization = V4L2_QUANTIZATION_DEFAULT;
++			break;
++		}
++	}
++
++	return res;
++}
++
++/*
++ * A DVI source sends no AVI InfoFrame at all, which CTA-861 defines as
++ * full-range RGB. Derived from the RGB no-data row so the two cannot drift.
++ */
++static struct hdmirx_colorimetry hdmirx_dvi_colorimetry(void)
++{
++	struct hdmirx_colorimetry res;
++
++	res = hdmirx_avi_colorimetry(HDMI_COLORIMETRY_NONE, 0, 0, 0, true, 0);
++	res.quantization = V4L2_QUANTIZATION_FULL_RANGE;
++
++	return res;
++}
++
++static void hdmirx_set_colorimetry(struct snps_hdmirx_dev *hdmirx_dev,
++				   struct hdmirx_colorimetry colorimetry)
++{
++	struct hdmirx_stream *stream = &hdmirx_dev->stream;
++	static const struct v4l2_event ev_src_chg = {
++		.type = V4L2_EVENT_SOURCE_CHANGE,
++		.u.src_change.changes = V4L2_EVENT_SRC_CH_RESOLUTION,
++	};
++
++	if (!memcmp(&hdmirx_dev->colorimetry, &colorimetry,
++		    sizeof(colorimetry)))
++		return;
++
++	hdmirx_dev->colorimetry = colorimetry;
++
++	/*
++	 * A source that changes only its colorimetry produces no resolution
++	 * change, so an application waiting on SOURCE_CHANGE would never
++	 * re-read the format and would keep rendering with the old matrix.
++	 * Only a real change while streaming is worth an event: an idle
++	 * client reads the new value from G_FMT when it opens the stream.
++	 */
++	if (vb2_is_streaming(&stream->buf_queue))
++		v4l2_event_queue(&stream->vdev, &ev_src_chg);
++}
++
+ static void hdmirx_get_avi_infoframe(struct snps_hdmirx_dev *hdmirx_dev)
+ {
+ 	struct v4l2_device *v4l2_dev = &hdmirx_dev->v4l2_dev;
+ 	union hdmi_infoframe frame = {};
+ 	u8 aviif[3 + 7 * 4];
++	bool is_rgb;
+ 	int err;
+ 
+ 	hdmirx_read_avi_infoframe(hdmirx_dev, aviif);
+@@ -1719,6 +1917,7 @@ static void hdmirx_get_avi_infoframe(struct snps_hdmirx_dev *hdmirx_dev)
+ 	err = hdmi_infoframe_unpack(&frame, aviif, sizeof(aviif));
+ 	if (err) {
+ 		v4l2_err(v4l2_dev, "failed to unpack AVI infoframe\n");
++		hdmirx_set_colorimetry(hdmirx_dev, hdmirx_dvi_colorimetry());
+ 		return;
+ 	}
+ 
+@@ -1730,6 +1929,21 @@ static void hdmirx_get_avi_infoframe(struct snps_hdmirx_dev *hdmirx_dev)
+ 	else
+ 		v4l2_ctrl_s_ctrl(hdmirx_dev->content_type,
+ 				 V4L2_DV_IT_CONTENT_TYPE_NO_ITC);
++
++	/*
++	 * The InfoFrame's own Y field, not the detected pixel format: CTA-861
++	 * keys Q against YQ on it, so reading the packet through anything else
++	 * would pick the quantization field the source did not fill in.
++	 */
++	is_rgb = frame.avi.colorspace == HDMI_COLORSPACE_RGB;
++
++	hdmirx_set_colorimetry(hdmirx_dev,
++			       hdmirx_avi_colorimetry(frame.avi.colorimetry,
++						      frame.avi.extended_colorimetry,
++						      frame.avi.quantization_range,
++						      frame.avi.ycc_quantization_range,
++						      is_rgb,
++						      hdmirx_dev->timings.bt.height));
+ }
+ 
+ static ssize_t
+@@ -1885,9 +2099,10 @@ static void hdmirx_set_fmt(struct hdmirx_stream *stream,
+ 	pixm->width = bt->width;
+ 	pixm->height = bt->height;
+ 	pixm->num_planes = finfo->mem_planes;
+-	pixm->quantization = V4L2_QUANTIZATION_DEFAULT;
+-	pixm->colorspace = V4L2_COLORSPACE_SRGB;
+-	pixm->ycbcr_enc = V4L2_YCBCR_ENC_DEFAULT;
++	pixm->quantization = hdmirx_dev->colorimetry.quantization;
++	pixm->colorspace = hdmirx_dev->colorimetry.colorspace;
++	pixm->ycbcr_enc = hdmirx_dev->colorimetry.ycbcr_enc;
++	pixm->xfer_func = hdmirx_dev->colorimetry.xfer_func;
+ 
+ 	if (bt->interlaced == V4L2_DV_INTERLACED)
+ 		pixm->field = V4L2_FIELD_INTERLACED_TB;
+@@ -3432,6 +3647,8 @@ static int hdmirx_probe(struct platform_device *pdev)
+ 
+ 	hdmirx_dev->cur_fmt_fourcc = V4L2_PIX_FMT_BGR24;
+ 	hdmirx_dev->timings = cea640x480;
++	hdmirx_dev->colorimetry = hdmirx_avi_colorimetry(HDMI_COLORIMETRY_NONE,
++							 0, 0, 0, true, 0);
+ 
+ 	hdmirx_enable(dev);
+ 

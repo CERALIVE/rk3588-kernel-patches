@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Andres Cera <andres.cera@hotmail.com>
 Date: Thu, 27 Aug 2026 16:00:00 +0000
-Subject: [PATCH 30/40] arm64: dts: rockchip: orange pi 5 plus: advertise dual-role power in the Type-C PDOs
+Subject: [PATCH 30/41] arm64: dts: rockchip: orange pi 5 plus: advertise dual-role power in the Type-C PDOs
 
 MOTIVATION. A live readback on an Orange Pi 5 Plus on 2026-08-27
 found dual_role_power=0 on both source-capabilities and
@@ -41,14 +41,16 @@ power-role, data-role, connector or FUSB302 status, voltage/current
 values, or any other PDO flag on the Orange Pi.
 
 First-party: authored by CeraLive against v7.2, with no upstream
-counterpart in rockchip-rk3588-mainline-patches. The source of record is
-ceralive/0030-rk3588-orangepi-5-plus-typec-dual-role-power.patch; patches/ is generated from it by
-scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the
-same added/removed-line parity the upstream lane gets.
+counterpart in rockchip-rk3588-mainline-patches. The source of record
+is ceralive/0030-rk3588-orangepi-5-plus-typec-dual-role-power.patch
+and patches/ is generated from it by scripts/build-series.py.
+scripts/verify-payload-parity.py holds it to the same
+added/removed-line parity the upstream lane gets.
 
-NOT upstream-bound: this targets the CeraLive device tree only and is not a
-submission to linux-media, linux-rockchip or the fork parent. No Signed-off-by
-is added, because a DCO assertion belongs to whoever actually submits it.
+NOT upstream-bound: this targets the CeraLive device tree only and
+is not a submission to linux-media, linux-rockchip or the fork
+parent. No Signed-off-by is added, because a DCO assertion belongs
+to whoever actually submits it.
 
 ---
 diff --git a/arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dts b/arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dts

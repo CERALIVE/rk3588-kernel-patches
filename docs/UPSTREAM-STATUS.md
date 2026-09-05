@@ -178,6 +178,7 @@ are enforced in `scripts/build-series.py` and independently byte-verified by
 | `0038` RGA3 DT ownership | `island/` | `first-party-no-upstream` | Mainline provides a production-capable multi-core RGA driver | 2026-09-04 | From `rk3588-media-island v2026.9.2`; owns RGA3 core0 and core1 |
 | `0039` RGA2 DT ownership | `island/` | `first-party-no-upstream` | Mainline provides a production-capable RGA2 driver | 2026-09-04 | From `rk3588-media-island v2026.9.2`; owns RGA2 |
 | `0040` HDMI-RX streaming EDID guard | `ceralive/` | `first-party-no-upstream` | Equivalent guard merges and the pinned base absorbs it | 2026-09-05 | Send upstream; rejects writes and clears before mutation; shared `stream->vlock` serializes ioctls; board gate deferred, see `EDID-STREAMING-GUARD.md` |
+| `0041` HDMI-RX AVI colorimetry on the capture format | `ceralive/` | `first-party-no-upstream` | The base reports source colorimetry instead of a hardcoded sRGB | 2026-09-05 | **Send upstream.** `hdmirx_set_fmt()` hardcoded sRGB/DEFAULT; the AVI InfoFrame's C, EC, Q and YQ were unpacked and discarded. Mapping is one pure function, unit-tested row by row in `tests/test_hdmirx_avi_colorimetry.py`; `rk_hdmirx.c` is the behavioural reference, no vendor code copied. Timing and format selection untouched; board gate deferred |
 <!-- current-series: end -->
 
 ## Historical pre-island member detail

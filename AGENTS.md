@@ -7,8 +7,8 @@ Holds the **mainline-track RK3588 kernel patch series** for CeraLive: the
 three backported **unmerged lore postings**, and board Type-C policy patches —
 assembled as one `git am` mailbox series pinned to an exact kernel tag.
 
-The base is **`v7.2`**; the series applies clean. **25 members are active across
-40 slots** — `0004` was never published, and fourteen retired ordinals stay
+The base is **`v7.2`**; the series applies clean. **26 members are active across
+41 slots** — `0004` was never published, and fourteen retired ordinals stay
 burned. Board evidence quoted anywhere in this repo was measured at the previous
 `v7.1.7` base and is historical here.
 
@@ -98,6 +98,25 @@ zero-block clearing, returns `-EBUSY` while the vb2 queue streams. The video and
 queue locks share `stream->vlock`, serializing this with STREAMON/OFF. Idle
 writes remain unchanged. Board evidence is deferred; procedure:
 [`docs/EDID-STREAMING-GUARD.md`](docs/EDID-STREAMING-GUARD.md).
+
+**`0041` makes the capture format tell the truth about colour, and its table is
+a PURE function on purpose.** `hdmirx_set_fmt()` hardcoded `V4L2_COLORSPACE_SRGB`
+with default encoding and quantization, so a BT.709 limited-range 1080p source
+and a full-range sRGB desktop produced identical format metadata; the AVI
+InfoFrame's `C`, `EC`, `Q` and `YQ` were unpacked for the RGB-range control and
+then discarded. `0041` maps them in one function that reads nothing but its
+arguments, which is what makes every CTA-861 row assertable without a receiver —
+`tests/test_hdmirx_avi_colorimetry.py` lifts that function out of the source-lane
+patch verbatim, compiles it against the real uapi V4L2 enums, and checks every
+row plus both unknown-value fallbacks and the DVI no-InfoFrame row. Three things
+are deliberate and should not be "fixed": an unknown `C`/`EC` falls back to the
+CTA-861 no-data row rather than leaving an enum unset; both BT.2020 rows keep a
+709 transfer function because this receiver has no HDR path at all, so a PQ or
+HLG claim would be a lie; and the extra `V4L2_EVENT_SOURCE_CHANGE` fires only
+when the stored tuple actually changes AND the queue is streaming, because a
+colorimetry-only change carries no resolution change for an application to
+notice. Rockchip's `rk_hdmirx.c` is the behavioural reference; no vendor code is
+copied. Board evidence is deferred — this is code and unit tests only.
 
 **`patches/` is generated. Editing it by hand is a bug, and CI catches it.**
 `scripts/build-series.py --check` regenerates from `upstream/` + `ceralive/` into a
@@ -243,7 +262,8 @@ backported, and island patches continue the same counter. The nine island member
 begin at the actual next ordinal, `0031`, and end at `0039`; no retired slot was
 reused and `0004` remains visible. Ten standalone-rkvenc members plus the earlier
 `0007` and `0023`–`0025` retirements leave fourteen burned slots. With the `0040`
-EDID guard, that yields **25 active members across 40 slots**.
+EDID guard and the `0041` AVI colorimetry report, that yields **26 active
+members across 41 slots**.
 `SERIES_TOTAL` is the slot ceiling, never the
 member count, and retirement never shrinks it.
 
@@ -445,7 +465,7 @@ defconfig, and a 30-minute job to prove something the image pipeline proves bett
   lore fetch — Anubis answers `Mozilla/5.0` with an HTTP 200 challenge page, so
   the spoof is what breaks it, not what gets you through
 - Don't renumber to close a retired ordinal's slot, and don't read `SERIES_TOTAL`
-  as a member count — it is 40 slots holding 25 members
+  as a member count — it is 41 slots holding 26 members
 - Don't rename, alias, symlink or `mknod` the `system-uncached` heap — the name is
   a userspace ABI and an alias is a corruption trap, not a workaround
 - Don't tick anything in `docs/BOARD-QUALIFICATION.md` without a pasted transcript,

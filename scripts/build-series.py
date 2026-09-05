@@ -114,9 +114,10 @@ ISLAND_TAG_RE = re.compile(r"^v[0-9]{4}\.[0-9]+\.[0-9]+$")
 # everything else into ceralive/.
 #
 # 30 slots existed before the island lane; the current release adds 9 members at
-# 0031-0039; the EDID guard adds 0040. Retiring ten members
-# out of those first 30 slots does NOT reduce it: an N/39 subject counts slots.
-SERIES_TOTAL = 40
+# 0031-0039; the EDID guard adds 0040 and the AVI colorimetry report 0041.
+# Retiring ten members out of those first 30 slots does NOT reduce it: an N/41
+# subject counts slots.
+SERIES_TOTAL = 41
 ISLAND_ORDINAL_OFFSET = 30
 
 DS_STORE_RE = re.compile(r"^Binary files .*\.DS_Store .* differ$")
@@ -1186,6 +1187,39 @@ SERIES: tuple[Patch, ...] = (
             "Intended for upstream submission; retire when the base absorbs it.",
         ),
     ),
+    Patch(
+        filename="0041-hdmirx-avi-colorimetry.patch",
+        ordinal=41,
+        subject=(
+            "media: synopsys: hdmirx: report AVI colorimetry on the capture "
+            "format"
+        ),
+        provenance=NULL_OID,
+        author="Andres Cera <andres.cera@hotmail.com>",
+        date="Sat, 5 Sep 2026 13:00:00 +0000",
+        origin=CERALIVE,
+        rationale=(
+            "hdmirx_set_fmt() hardcoded sRGB with default encoding and",
+            "quantization, so every capture claimed sRGB no matter what the",
+            "source signalled, and a consumer had no way to tell BT.709 from",
+            "BT.601 or limited range from full. The AVI InfoFrame was already",
+            "unpacked for RGB range and IT content, so its C, EC, Q and YQ",
+            "fields were read and thrown away.",
+            "Map them in one pure function and store the result, which the",
+            "capture format now reports. Unknown colorimetry falls back to the",
+            "CTA-861 no-data row rather than leaving an enum unset, and a DVI",
+            "source with no InfoFrame at all takes the full-range RGB row.",
+            "Both BT.2020 rows keep a 709 transfer function: this receiver has",
+            "no HDR path, so a PQ or HLG claim would not be true.",
+            "A colorimetry change with no resolution change is invisible to an",
+            "application waiting on SOURCE_CHANGE, so the driver's existing",
+            "event is queued when the stored tuple actually changes while the",
+            "queue streams. Timing and format selection are untouched.",
+            "Rockchip's BSP driver rk_hdmirx.c is the behavioural reference for",
+            "the mapping; no vendor code is copied.",
+            "Intended for upstream submission; retire when the base absorbs it.",
+        ),
+    ),
 )
 
 
@@ -1982,10 +2016,11 @@ def build_patch(patch: Patch, rules: list[Rule], pin: dict[str, str]) -> str:
             *patch.rationale,
             "",
             f"First-party: authored by CeraLive against {tag}, with no upstream",
-            f"counterpart in {upstream_repo.rsplit('/', 1)[-1]}. The source of record is",
-            f"{patch.origin}/{patch.filename}; patches/ is generated from it by",
-            "scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the",
-            "same added/removed-line parity the upstream lane gets.",
+            f"counterpart in {upstream_repo.rsplit('/', 1)[-1]}. The source of record",
+            f"is {patch.origin}/{patch.filename}",
+            "and patches/ is generated from it by scripts/build-series.py.",
+            "scripts/verify-payload-parity.py holds it to the same",
+            "added/removed-line parity the upstream lane gets.",
             "",
         ]
 
@@ -2052,9 +2087,10 @@ def build_patch(patch: Patch, rules: list[Rule], pin: dict[str, str]) -> str:
         ]
     else:
         header += [
-            "NOT upstream-bound: this targets the CeraLive device tree only and is not a",
-            "submission to linux-media, linux-rockchip or the fork parent. No Signed-off-by",
-            "is added, because a DCO assertion belongs to whoever actually submits it.",
+            "NOT upstream-bound: this targets the CeraLive device tree only and",
+            "is not a submission to linux-media, linux-rockchip or the fork",
+            "parent. No Signed-off-by is added, because a DCO assertion belongs",
+            "to whoever actually submits it.",
         ]
 
     header += [

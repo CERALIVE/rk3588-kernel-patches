@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Andres Cera <andres.cera@hotmail.com>
 Date: Thu, 13 Aug 2026 23:30:00 -0500
-Subject: [PATCH 27/40] media: synopsys: hdmirx: stop trusting an SCDC bank the source never wrote
+Subject: [PATCH 27/41] media: synopsys: hdmirx: stop trusting an SCDC bank the source never wrote
 
 MOTIVATION. A Rock 5B+ will not lock a Sony FX3 sending
 3840x2160@59.94p over HDMI 2.0. tx_5v_power_present() reads 1
@@ -114,14 +114,16 @@ against a source that DOES write SCDC. See
 docs/UPSTREAM-STATUS.md and docs/BOARD-QUALIFICATION.md.
 
 First-party: authored by CeraLive against v7.2, with no upstream
-counterpart in rockchip-rk3588-mainline-patches. The source of record is
-ceralive/0027-hdmirx-phy-retry-hardening.patch; patches/ is generated from it by
-scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the
-same added/removed-line parity the upstream lane gets.
+counterpart in rockchip-rk3588-mainline-patches. The source of record
+is ceralive/0027-hdmirx-phy-retry-hardening.patch
+and patches/ is generated from it by scripts/build-series.py.
+scripts/verify-payload-parity.py holds it to the same
+added/removed-line parity the upstream lane gets.
 
-NOT upstream-bound: this targets the CeraLive device tree only and is not a
-submission to linux-media, linux-rockchip or the fork parent. No Signed-off-by
-is added, because a DCO assertion belongs to whoever actually submits it.
+NOT upstream-bound: this targets the CeraLive device tree only and
+is not a submission to linux-media, linux-rockchip or the fork
+parent. No Signed-off-by is added, because a DCO assertion belongs
+to whoever actually submits it.
 
 ---
 diff --git a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c

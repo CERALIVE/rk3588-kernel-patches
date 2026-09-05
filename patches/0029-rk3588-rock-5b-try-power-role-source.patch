@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Andres Cera <andres.cera@hotmail.com>
 Date: Thu, 27 Aug 2026 15:00:00 +0000
-Subject: [PATCH 29/40] arm64: dts: rockchip: rock 5b+: prefer the source power role on Type-C
+Subject: [PATCH 29/41] arm64: dts: rockchip: rock 5b+: prefer the source power role on Type-C
 
 MOTIVATION. A direct same-camera, same-policy A/B comparison on
 2026-08-27 isolated the remaining charging delta to the boards'
@@ -47,14 +47,16 @@ the preference is reliable; this change proves only that the intended
 one-line DTS amendment applies cleanly to the pinned edge tree.
 
 First-party: authored by CeraLive against v7.2, with no upstream
-counterpart in rockchip-rk3588-mainline-patches. The source of record is
-ceralive/0029-rk3588-rock-5b-try-power-role-source.patch; patches/ is generated from it by
-scripts/build-series.py, and scripts/verify-payload-parity.py holds it to the
-same added/removed-line parity the upstream lane gets.
+counterpart in rockchip-rk3588-mainline-patches. The source of record
+is ceralive/0029-rk3588-rock-5b-try-power-role-source.patch
+and patches/ is generated from it by scripts/build-series.py.
+scripts/verify-payload-parity.py holds it to the same
+added/removed-line parity the upstream lane gets.
 
-NOT upstream-bound: this targets the CeraLive device tree only and is not a
-submission to linux-media, linux-rockchip or the fork parent. No Signed-off-by
-is added, because a DCO assertion belongs to whoever actually submits it.
+NOT upstream-bound: this targets the CeraLive device tree only and
+is not a submission to linux-media, linux-rockchip or the fork
+parent. No Signed-off-by is added, because a DCO assertion belongs
+to whoever actually submits it.
 
 ---
 diff --git a/arch/arm64/boot/dts/rockchip/rk3588-rock-5b-plus.dts b/arch/arm64/boot/dts/rockchip/rk3588-rock-5b-plus.dts

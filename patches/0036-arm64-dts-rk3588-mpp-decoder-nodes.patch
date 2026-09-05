@@ -1,7 +1,7 @@
 From island-release Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Wed, 2 Sep 2026 00:00:00 +0000
-Subject: [PATCH 36/40] arm64: dts: rockchip: hand RK3588 decoders to MPP
+Subject: [PATCH 36/41] arm64: dts: rockchip: hand RK3588 decoders to MPP
 
 Use the sole decoder compatible matched by the imported mpp_rkvdec2 driver and
 add the vendor CCU/task metadata.  Linux v7.2's physical decoder addresses are
@@ -27,7 +27,7 @@ Release asset rk3588-media-island-v2026.9.2.mbox.tar
   member_sha256 1705d3d8c4e1f7a6fe10a8ed5188e4d17cfdfcacdcfd8aa333c2faa92516e67f
 
 island/0036-arm64-dts-rk3588-mpp-decoder-nodes.patch is that member byte-for-byte -- the mail
-header above is this repository's own, so the N/40 ordinal is ours and
+header above is this repository's own, so the N/41 ordinal is ours and
 the message is the release's. scripts/verify-island-provenance.py
 re-fetches the asset, checks asset_sha256 and byte-compares every
 member, independently of scripts/build-series.py.

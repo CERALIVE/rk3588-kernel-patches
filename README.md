@@ -11,18 +11,25 @@ imported at `e13a311` (2026-07-01) with full history and authorship preserved.
 | **Target kernel** | `v7.2` (`8d3ae59288f1e7d58d76558a6ee96d533bc5019f`) |
 | **Why that kernel** | Armbian rk3588 `bleedingedge` → `KERNEL_MAJOR_MINOR=7.2` — derived in [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md). Armbian itself still points that branch at `tag:v7.2-rc7`; we pin the **final** release deliberately. |
 | **Boards** | Radxa Rock 5B+, Orange Pi 5+ (both `BOARDFAMILY=rockchip-rk3588`) |
-| **Status** | **All 24 active members across 39 slots `git am` clean and every post-apply assertion passes on `v7.2`.** The published `rk3588-media-island v2026.9.2` release supplies the MPP encoder/decoder/JPEG driver source, multi_rga mainline port, and in-tree MPP/RGA device-tree integration through nine byte-verified members; it adds the island's job instrumentation, the three fault fixes its reliability drill found, fail-closed RGA validation, and the atomic RGA3/RGA2 ownership flip. The image pipeline uses this series for the shipped, permanent mainline 7.2 production kernel. Board results quoted here from the previous `v7.1.7` base are historical. |
+| **Status** | **All 26 active members across 41 slots `git am` clean and every post-apply assertion passes on `v7.2`.** The published `rk3588-media-island v2026.9.2` release supplies the MPP encoder/decoder/JPEG driver source, multi_rga mainline port, and in-tree MPP/RGA device-tree integration through nine byte-verified members; it adds the island's job instrumentation, the three fault fixes its reliability drill found, fail-closed RGA validation, and the atomic RGA3/RGA2 ownership flip. The image pipeline uses this series for the shipped, permanent mainline 7.2 production kernel. Board results quoted here from the previous `v7.1.7` base are historical. |
 
 ## What's in the series
 
 New member `0040` refuses EDID writes and clears with `-EBUSY` while capture
 streams, before any HPD or EDID mutation. Idle writes remain unchanged.
-The series now contains 25 active members across 40 slots. Hardware acceptance
-is deferred to the [EDID guard board procedure](docs/EDID-STREAMING-GUARD.md).
+Hardware acceptance is deferred to the
+[EDID guard board procedure](docs/EDID-STREAMING-GUARD.md).
+
+New member `0041` stops the capture format claiming sRGB for every source. The
+AVI InfoFrame's colorimetry, extended colorimetry and both quantization fields
+were already unpacked and thrown away; they are now mapped to V4L2 by one pure
+function whose every table row is asserted in
+[`tests/test_hdmirx_avi_colorimetry.py`](tests/test_hdmirx_avi_colorimetry.py).
+The series now contains 26 active members across 41 slots.
 
 Upstream's numbering is preserved verbatim, gap included. First-party,
-backported, and island patches continue the same counter. 25 members are active
-across 40 slots: `0004` was never published, and fourteen retired ordinals stay
+backported, and island patches continue the same counter. 26 members are active
+across 41 slots: `0004` was never published, and fourteen retired ordinals stay
 burned.
 
 | | Patch | Source | What it does |
@@ -59,6 +66,7 @@ burned.
 | `0038` | RGA3 DT ownership | `island/` | Hands RGA3 core0/core1 to multi_rga with sole `rockchip,rga3_core0` / `rockchip,rga3_core1` compatibles. |
 | `0039` | RGA2 DT ownership | `island/` | Hands RGA2 to multi_rga with sole `rockchip,rga2_core0` compatible. |
 | `0040` | streaming EDID guard | `ceralive/` | Refuses S_EDID writes and clears while capture streams, before mutation. |
+| `0041` | AVI colorimetry on the capture format | `ceralive/` | Reports the source's colorimetry, encoding, transfer function and quantization instead of a hardcoded sRGB. The mapping is one pure function, asserted row by row off-hardware. |
 
 Which of these have an upstream counterpart, how far along it is, and what would
 have to be true before a patch can be dropped, is tracked per patch in

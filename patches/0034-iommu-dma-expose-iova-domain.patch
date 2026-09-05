@@ -1,7 +1,7 @@
 From island-release Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Wed, 2 Sep 2026 00:00:00 +0000
-Subject: [PATCH 34/40] iommu: expose media IOVA allocation helpers
+Subject: [PATCH 34/41] iommu: expose media IOVA allocation helpers
 
 Manifest-selected integration hunks replayed from the pinned 6.18 series.
 They are re-anchored to the pinned v7.2 tree in the CeraLive port commits.
@@ -20,7 +20,7 @@ Release asset rk3588-media-island-v2026.9.2.mbox.tar
   member_sha256 b2f2892fa79d5069a6323acd93587ba3e14f009a3e2141b84a5fc0e16f3b48b7
 
 island/0034-iommu-dma-expose-iova-domain.patch is that member byte-for-byte -- the mail
-header above is this repository's own, so the N/40 ordinal is ours and
+header above is this repository's own, so the N/41 ordinal is ours and
 the message is the release's. scripts/verify-island-provenance.py
 re-fetches the asset, checks asset_sha256 and byte-compares every
 member, independently of scripts/build-series.py.

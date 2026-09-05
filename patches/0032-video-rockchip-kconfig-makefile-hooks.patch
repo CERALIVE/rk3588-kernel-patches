@@ -1,7 +1,7 @@
 From island-release Mon Sep 17 00:00:00 2001
 From: CeraLive <dev@ceralive.tv>
 Date: Wed, 2 Sep 2026 00:00:00 +0000
-Subject: [PATCH 32/40] video: rockchip: hook the MPP and multi_rga Kconfig and Makefiles
+Subject: [PATCH 32/41] video: rockchip: hook the MPP and multi_rga Kconfig and Makefiles
 
 Manifest-selected integration hunks replayed from the pinned 6.18 series.
 They are re-anchored to the pinned v7.2 tree in the CeraLive port commits.
@@ -19,7 +19,7 @@ Release asset rk3588-media-island-v2026.9.2.mbox.tar
   member_sha256 f82b7918a5f6c212f076de492f47d5f9674aa2f99e58ed2039f6e5a96477efec
 
 island/0032-video-rockchip-kconfig-makefile-hooks.patch is that member byte-for-byte -- the mail
-header above is this repository's own, so the N/40 ordinal is ours and
+header above is this repository's own, so the N/41 ordinal is ours and
 the message is the release's. scripts/verify-island-provenance.py
 re-fetches the asset, checks asset_sha256 and byte-compares every
 member, independently of scripts/build-series.py.
