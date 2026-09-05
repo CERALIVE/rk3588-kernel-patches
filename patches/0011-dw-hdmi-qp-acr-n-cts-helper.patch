@@ -1,7 +1,7 @@
 From lore-posting Mon Sep 17 00:00:00 2001
 From: Simon Wright <simon@symple.nz>
 Date: Thu, 21 May 2026 19:36:47 +1200
-Subject: [PATCH 11/39] drm/bridge: dw-hdmi-qp: use drm_hdmi_acr_get_n_cts() for audio N/CTS
+Subject: [PATCH 11/40] drm/bridge: dw-hdmi-qp: use drm_hdmi_acr_get_n_cts() for audio N/CTS
 
 Backport of unmerged v3 posting.
 

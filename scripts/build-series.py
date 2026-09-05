@@ -114,9 +114,9 @@ ISLAND_TAG_RE = re.compile(r"^v[0-9]{4}\.[0-9]+\.[0-9]+$")
 # everything else into ceralive/.
 #
 # 30 slots existed before the island lane; the current release adds 9 members at
-# 0031-0039, so the highest slot -- and therefore this number -- is 39. Retiring ten members
+# 0031-0039; the EDID guard adds 0040. Retiring ten members
 # out of those first 30 slots does NOT reduce it: an N/39 subject counts slots.
-SERIES_TOTAL = 39
+SERIES_TOTAL = 40
 ISLAND_ORDINAL_OFFSET = 30
 
 DS_STORE_RE = re.compile(r"^Binary files .*\.DS_Store .* differ$")
@@ -1167,6 +1167,24 @@ SERIES: tuple[Patch, ...] = (
         author="CeraLive <dev@ceralive.tv>",
         date="Wed, 2 Sep 2026 00:00:00 +0000",
         origin=ISLAND,
+    ),
+    Patch(
+        filename="0040-hdmirx-refuse-edid-while-streaming.patch",
+        ordinal=40,
+        subject="media: synopsys: hdmirx: refuse S_EDID while streaming",
+        provenance=NULL_OID,
+        author="Andres Cera <andres.cera@hotmail.com>",
+        date="Sat, 5 Sep 2026 12:00:00 +0000",
+        origin=CERALIVE,
+        rationale=(
+            "EDID writes trigger HPD renegotiation and controller teardown.",
+            "Reject them before any state or hardware mutation while the capture",
+            "queue is streaming, including zero-block requests that clear EDID.",
+            "Both vdev->lock and the vb2 queue lock use stream->vlock, so the",
+            "check and write are serialized with STREAMON and STREAMOFF.",
+            "Idle writes retain the existing validation and renegotiation path.",
+            "Intended for upstream submission; retire when the base absorbs it.",
+        ),
     ),
 )
 

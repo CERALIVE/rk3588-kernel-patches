@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Andres Cera <andres.cera@hotmail.com>
 Date: Wed, 12 Aug 2026 01:10:00 -0500
-Subject: [PATCH 26/39] media: synopsys: hdmirx: make the register lock safe for its hardirq callers
+Subject: [PATCH 26/40] media: synopsys: hdmirx: make the register lock safe for its hardirq callers
 
 MOTIVATION. A Rock 5B+ with a real HDMI source attached prints
 'BUG: Invalid wait context' out of the CEC hardirq before a

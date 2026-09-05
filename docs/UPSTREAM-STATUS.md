@@ -177,6 +177,7 @@ are enforced in `scripts/build-series.py` and independently byte-verified by
 | `0037` MPP JPEG decoder DT node | `island/` | `first-party-no-upstream` | Mainline provides the required JPEG decode path | 2026-09-04 | From `rk3588-media-island v2026.9.2` |
 | `0038` RGA3 DT ownership | `island/` | `first-party-no-upstream` | Mainline provides a production-capable multi-core RGA driver | 2026-09-04 | From `rk3588-media-island v2026.9.2`; owns RGA3 core0 and core1 |
 | `0039` RGA2 DT ownership | `island/` | `first-party-no-upstream` | Mainline provides a production-capable RGA2 driver | 2026-09-04 | From `rk3588-media-island v2026.9.2`; owns RGA2 |
+| `0040` HDMI-RX streaming EDID guard | `ceralive/` | `first-party-no-upstream` | Equivalent guard merges and the pinned base absorbs it | 2026-09-05 | Send upstream; rejects writes and clears before mutation; shared `stream->vlock` serializes ioctls; board gate deferred, see `EDID-STREAMING-GUARD.md` |
 <!-- current-series: end -->
 
 ## Historical pre-island member detail

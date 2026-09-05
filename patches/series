@@ -1,7 +1,7 @@
 # git-am order for the CeraLive RK3588 series.
 # Upstream numbering is preserved verbatim -- 0004 was never published,
 # so the gap is intentional. Do not renumber to close it.
-# First-party (ceralive/): 0006, 0009, 0017, 0018, 0026, 0027, 0028, 0029, 0030.
+# First-party (ceralive/): 0006, 0009, 0017, 0018, 0026, 0027, 0028, 0029, 0030, 0040.
 # Backports (backports/): 0010, 0011, 0012 -- 0007 is a merged commit, the rest are unmerged lore postings.
 # All of them continue the same counter.
 # Target kernel: v7.2 (8d3ae59288f1e7d58d76558a6ee96d533bc5019f)
@@ -43,3 +43,4 @@
 0037-arm64-dts-rk3588-mpp-jpegd-node.patch
 0038-arm64-dts-rk3588-rga3-vendor-compat.patch
 0039-arm64-dts-rk3588-rga2-vendor-compat.patch
+0040-hdmirx-refuse-edid-while-streaming.patch

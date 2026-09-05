@@ -15,9 +15,14 @@ imported at `e13a311` (2026-07-01) with full history and authorship preserved.
 
 ## What's in the series
 
+New member `0040` refuses EDID writes and clears with `-EBUSY` while capture
+streams, before any HPD or EDID mutation. Idle writes remain unchanged.
+The series now contains 25 active members across 40 slots. Hardware acceptance
+is deferred to the [EDID guard board procedure](docs/EDID-STREAMING-GUARD.md).
+
 Upstream's numbering is preserved verbatim, gap included. First-party,
-backported, and island patches continue the same counter. 24 members are active
-across 39 slots: `0004` was never published, and fourteen retired ordinals stay
+backported, and island patches continue the same counter. 25 members are active
+across 40 slots: `0004` was never published, and fourteen retired ordinals stay
 burned.
 
 | | Patch | Source | What it does |
@@ -53,6 +58,7 @@ burned.
 | `0037` | MPP JPEG decoder DT node | `island/` | Adds the island-owned `jpegd` client and IOMMU in-tree. |
 | `0038` | RGA3 DT ownership | `island/` | Hands RGA3 core0/core1 to multi_rga with sole `rockchip,rga3_core0` / `rockchip,rga3_core1` compatibles. |
 | `0039` | RGA2 DT ownership | `island/` | Hands RGA2 to multi_rga with sole `rockchip,rga2_core0` compatible. |
+| `0040` | streaming EDID guard | `ceralive/` | Refuses S_EDID writes and clears while capture streams, before mutation. |
 
 Which of these have an upstream counterpart, how far along it is, and what would
 have to be true before a patch can be dropped, is tracked per patch in
