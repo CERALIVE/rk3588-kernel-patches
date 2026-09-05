@@ -313,7 +313,7 @@ for board in rk3588-rock-5b.dtsi rk3588-orangepi-5-plus.dts; do
 	done
 done
 
-python3 "${ROOT}/tests/test_hdmirx_audio_v4.py" --tree "${TREE}"
+python3 "${ROOT}/tests/test_hdmirx_audio_v4.py" --tree "."
 
 (( fail == 0 )) || exit 1
 
