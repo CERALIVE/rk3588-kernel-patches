@@ -11,7 +11,7 @@ imported at `e13a311` (2026-07-01) with full history and authorship preserved.
 | **Target kernel** | `v7.2` (`8d3ae59288f1e7d58d76558a6ee96d533bc5019f`) |
 | **Why that kernel** | Armbian rk3588 `bleedingedge` → `KERNEL_MAJOR_MINOR=7.2` — derived in [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md). Armbian itself still points that branch at `tag:v7.2-rc7`; we pin the **final** release deliberately. |
 | **Boards** | Radxa Rock 5B+, Orange Pi 5+ (both `BOARDFAMILY=rockchip-rk3588`) |
-| **Status** | **All 26 active members across 41 slots `git am` clean and every post-apply assertion passes on `v7.2`.** The published `rk3588-media-island v2026.9.2` release supplies the MPP encoder/decoder/JPEG driver source, multi_rga mainline port, and in-tree MPP/RGA device-tree integration through nine byte-verified members; it adds the island's job instrumentation, the three fault fixes its reliability drill found, fail-closed RGA validation, and the atomic RGA3/RGA2 ownership flip. The image pipeline uses this series for the shipped, permanent mainline 7.2 production kernel. Board results quoted here from the previous `v7.1.7` base are historical. |
+| **Status** | **31 active members across 49 slots**, gated by `scripts/apply.sh` on `v7.2`. Nine byte-verified members carry `rk3588-media-island v2026.9.2`. HDMI-RX audio now uses unmerged upstream v4 plus four first-party deltas. This audio migration is code-only: no new image or board evidence is claimed. |
 
 ## What's in the series
 
@@ -25,11 +25,18 @@ AVI InfoFrame's colorimetry, extended colorimetry and both quantization fields
 were already unpacked and thrown away; they are now mapped to V4L2 by one pure
 function whose every table row is asserted in
 [`tests/test_hdmirx_avi_colorimetry.py`](tests/test_hdmirx_avi_colorimetry.py).
-The series now contains 26 active members across 41 slots.
+Members `0042`–`0045` import HDMI-RX audio v4, byte-preserved with canonical
+lore provenance. `0046`–`0049` preserve clock-error handling, safe worker
+teardown, multichannel routing and Rock 5B+ enablement. The shared ALSA card is
+named exactly **`RK3588 HDMI-IN`**. The v4 second-suspend-cycle silence remains
+unfixed; jack notifications and idle pre-lock polling are deliberately retired.
+See the [per-behavior ledger](docs/UPSTREAM-STATUS.md#hdmi-rx-audio-v4-reconciliation--2026-09-05)
+for the behavior trade-offs and evidence. The series now has 31 active members
+across 49 slots.
 
 Upstream's numbering is preserved verbatim, gap included. First-party,
-backported, and island patches continue the same counter. 26 members are active
-across 41 slots: `0004` was never published, and fourteen retired ordinals stay
+backported, and island patches continue the same counter. 31 members are active
+across 49 slots: `0004` was never published, and seventeen retired ordinals stay
 burned.
 
 | | Patch | Source | What it does |
@@ -38,8 +45,8 @@ burned.
 | `0002` | hdmirx EDID fix (v1) | `upstream/` | Makes a written EDID actually visible to the HDMI source. |
 | `0003` | hdmirx plugout fix (v1) | `upstream/` | Fixes a buffer overflow on repeated HDMI-RX replug. |
 | *0004* | — | — | **Never published upstream.** The gap is intentional; do not renumber to close it. |
-| `0005` | hdmirx audio | `upstream/` | The driver half of HDMI-RX audio capture: registers an ASoC `hdmi-audio-codec` under `hdmi_receiver@fdee0000` and drives the receiver's audio FIFO, ACR-derived sample rate and recovered clock. Adds no device tree. |
-| `0006` | hdmirx audio sound card | `ceralive/` | The device-tree half. Without it `0005`'s codec is bound but ALSA never instantiates a card, so HDMI-IN audio cannot be captured at all. |
+| *0005* | retired hdmirx audio | `retired/` | Replaced by v4 plus explicit behavior deltas; Ross Cawston's source remains byte-unchanged. |
+| *0006* | retired hdmirx audio sound card | `retired/` | Replaced by v4 shared one-cell DAI card plus Rock enablement in 0049. |
 | *0007* | — | — | **Retired ordinal.** Was a `backports/` backport of mainline `8d4346ecd495`, the IOMMU `MMU_AUTO_GATING` fix. That commit is in the `v7.2` base, so carrying it twice is what the retirement avoids — the fix is still there, it just is not ours any more. Slot burned like `0004`'s: [`docs/UPSTREAM-STATUS.md` § retired ordinals](docs/UPSTREAM-STATUS.md#retired-ordinals-0007-0023-0024-0025); the archived file: [`retired/REGISTRY.md`](retired/REGISTRY.md). |
 | *0008* | retired rkvenc DMA max segment size | `retired/` | Historical standalone-rkvenc fix; intent is re-expressed and tested in the island. |
 | `0009` | `system-uncached` dma-heap | `ceralive/` | Registers the exact heap name Rockchip MPP userspace requires. Its v7.1.7 board validation is historical at this v7.2 base. |
@@ -47,7 +54,7 @@ burned.
 | `0011` | dw-hdmi-qp N/CTS helper | `backports/` | **Unmerged lore posting** (standalone `PATCHv3`, Simon Wright, `Reviewed-by`+`Tested-by`). Drops dw-hdmi-qp's private audio N/CTS table, which disagrees with the shared helper at several TMDS rates, for `drm_hdmi_acr_get_n_cts()`. |
 | `0012` | dw-hdmi-qp audio `-EOPNOTSUPP` | `backports/` | **Unmerged lore posting** (`PATCHv1`, Detlev Casanova, two independent `Tested-by`). Stops the audio hooks returning `-ENODEV` with no mode set, which ASoC logs as a fault — hundreds of lines on an idle board, in the same dmesg buffer `0005`/`0006` are diagnosed from. |
 | *0013–0016* | retired rkvenc instrumentation and hardening | `retired/` | Historical standalone-rkvenc intents, re-expressed as island source plus permanent fault and boundary tests. |
-| `0017` | HDMI-RX audio lifecycle | `ceralive/` | Four defects in `0005`'s audio path: an ineffective `cancel_delayed_work()` against a self-rescheduling worker, an ASoC-card/`work_lock`/DAPM lock cycle, discarded `clk_set_rate()` returns, and a 768 kHz rate CEA-861 cannot produce. |
+| *0017* | retired HDMI-RX audio lifecycle | `retired/` | Clock/rate and lifecycle intents reworked against v4 by 0046–0048. Historical fault controls remain in the archive. |
 | `0018` | truthful dma-heap partial registration | `ceralive/` | Not a defect fix. `dma_heap_add()` has no removal counterpart at this base, so a failed second registration leaves the first heap live for the boot. This says so instead of hiding it, and adds an injection seam so the failure is reachable from KUnit. **No atomicity is claimed.** |
 | *0019–0022* | retired rkvenc concurrency, lifecycle and UAPI hardening | `retired/` | Historical board-found standalone-rkvenc fixes; the island fault campaign maps each intent to imported or CeraLive source and mutation evidence. |
 | *0023*–*0025* | — | — | **Retired ordinals.** Carried while the `0021` lifecycle defects were being discovered one at a time, then folded into `0021`. The slots are burned like `0004`'s and `0007`'s, not renumbered. What each one individually documented: [`docs/UPSTREAM-STATUS.md` § retired ordinals](docs/UPSTREAM-STATUS.md#retired-ordinals-0007-0023-0024-0025); the archived files: [`retired/REGISTRY.md`](retired/REGISTRY.md). |
@@ -72,17 +79,26 @@ Which of these have an upstream counterpart, how far along it is, and what would
 have to be true before a patch can be dropped, is tracked per patch in
 [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md).
 
+| Member | Source | Audio migration role |
+|---|---|---|
+| `0042` | `backports/` | v4 1/4: DAI binding |
+| `0043` | `backports/` | v4 2/4: capture-only codec, ACR recovery, FIFO worker and suspend handling |
+| `0044` | `backports/` | v4 3/4: shared RK3588 HDMI-IN card |
+| `0045` | `backports/` | v4 4/4: Orange Pi enablement |
+| `0046` | `ceralive/` | Clock-error propagation and LPCM rate validation |
+| `0047` | `ceralive/` | Disarm/drain before EDID, cable-pull and removal |
+| `0048` | `ceralive/` | Channel routing, invalid-rate backoff and retained AVI IRQ definition |
+| `0049` | `ceralive/` | Rock family enablement and codec Kconfig closure |
+
 Where an upstream counterpart was evaluated as a replacement and the answer was
 written down, the verdict gets its own document. So far:
 
 - [`docs/EVAL-0002-EDID.md`](docs/EVAL-0002-EDID.md) — keeps `0002`, and explains
   why the 7.2-rc1 EDID fix is not a substitute for it (it is already in the base,
   and it fixes something else).
-- [`docs/EVAL-0005-AUDIO.md`](docs/EVAL-0005-AUDIO.md) — keeps `0005`+`0006`
-  against a fully-reviewed lore HDMI-audio series that *does* apply cleanly. It is
-  declined because it drops multichannel handling, jack reporting and cable-pull
-  teardown, and because its device-tree half enables the sound card on Orange Pi 5
-  Plus only, which would silently leave Rock 5B+ with no capture card.
+- [`docs/EVAL-0005-AUDIO.md`](docs/EVAL-0005-AUDIO.md) — historical KEEP verdict;
+  superseded by the audio v4 reconciliation ledger. The trade-offs it identified
+  are now explicitly retired, reworked or retained, never silently assumed fixed.
 
 Historical board evidence remains in [`docs/BOARD-QUALIFICATION.md`](docs/BOARD-QUALIFICATION.md)
 with its measured kernel base. The island release has its own source, CI, and board
@@ -273,12 +289,10 @@ that the set of added and removed lines in `patches/` is byte-identical to the
 patch's source lane, and it runs in CI. If a rebase rule ever overstepped, that
 check fails.
 
-**The retained first-party patches answer gaps upstream does not.** `0006` adds the
-device-tree sound card that turns upstream's `0005` HDMI-RX audio codec into a
-capturable ALSA card — without it the codec binds but `/proc/asound/cards` shows
-no HDMI-RX capture card, because nothing in the tree binds the codec to a DAI.
-`0006` adds `#sound-dai-cells` to `hdmi_receiver`, an `hdmirx-sound`
-`simple-audio-card`, and enables it plus `i2s7_8ch` on both boards.
+**The retained first-party patches answer gaps upstream does not.** `0049` enables
+v4's shared HDMI-IN card and `i2s7_8ch` on the Rock family, which upstream 4/4
+does not cover. The old 0006 two-board wiring is archived, not co-applied with
+the incompatible one-cell binding.
 
 The historical standalone-rkvenc `0008` and its associated hardening patches are
 archived byte-unchanged in `retired/`. Their intent is re-expressed in maintained
@@ -338,13 +352,13 @@ questions.
 
 ## Credits
 
-The retired `0001` plus active `0002`, `0003` and `0005` are the work of **Ross Cawston**
+The retired `0001` and `0005` plus active `0002` and `0003` are the work of **Ross Cawston**
 ([`rcawston`](https://github.com/rcawston)), ported from Rockchip's BSP MPP
 driver, and are carried here byte-for-byte. This fork contributes packaging,
 pinning, auditing, and CI.
 
-`0006` and `0009` are retained first-party CeraLive work with no upstream
-counterpart. The retired `0008` remains archived with its credit intact. `0006`
+`0009` is retained first-party CeraLive work. `0006` and `0008` remain archived
+with their credit intact. The historical `0006`
 is a device-tree change modelled on the Rockchip BSP's own
 `hdmiin-sound` wiring (`rockchip,cpu = <&i2s7_8ch>`, receiver as clock master),
 expressed with mainline's `simple-audio-card` instead of the BSP's `rockchip,hdmi`
@@ -373,3 +387,7 @@ no commit id, because none exists. Each one's canonical mail is archived beside 
 in `backports/lore/`, so the digest in its header can be recomputed offline. They
 were imported by `scripts/import-lore-series.py` from the canonical lore thread
 archive; none was transcribed by hand.
+
+`0042`–`0045` are Igor Paunovic's unmerged v4 HDMI-RX audio postings, imported
+through that same canonical-mail pipeline. `0046`–`0049` are CeraLive deltas,
+not edits to the upstream payload.

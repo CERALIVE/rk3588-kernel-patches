@@ -4,11 +4,11 @@
 
 Holds the **mainline-track RK3588 kernel patch series** for CeraLive: the
 `rk3588-media-island` release series, HDMI-RX fixes, a `system-uncached` dma-heap,
-three backported **unmerged lore postings**, and board Type-C policy patches —
+seven backported **unmerged lore postings**, and board Type-C policy patches —
 assembled as one `git am` mailbox series pinned to an exact kernel tag.
 
-The base is **`v7.2`**; the series applies clean. **26 members are active across
-41 slots** — `0004` was never published, and fourteen retired ordinals stay
+The base is **`v7.2`**. **31 members are active across
+49 slots** — `0004` was never published, and seventeen retired ordinals stay
 burned. Board evidence quoted anywhere in this repo was measured at the previous
 `v7.1.7` base and is historical here.
 
@@ -55,7 +55,7 @@ rk3588-kernel-patches/
 │   ├── UPSTREAM-STATUS.md     # per-patch upstream status + retire-on-merge triggers
 │   ├── BOARD-QUALIFICATION.md # the hardware checklist + its Run log — runs 1 and 2 executed
 │   ├── EVAL-0002-EDID.md      # verdict: keep 0002; the 7.2-rc1 fix is already in the base
-│   ├── EVAL-0005-AUDIO.md     # verdict: keep 0005+0006; the lore v4 series drops Rock 5B+
+│   ├── EVAL-0005-AUDIO.md     # historical KEEP verdict; superseded by the v4 reconciliation ledger
 │   ├── PROVENANCE.md          # licence/provenance audit incl. the MIT-claim caveat
 │   ├── PREFLIGHT.md           # how the Armbian bleedingedge -> 7.2 mapping was derived
 │   ├── REBASE-v7.2.md         # hunk-by-hunk rebase ledger — CURRENT base; a verdict per ordinal, 0009 + 0018 revised, 0007 retired
@@ -92,6 +92,20 @@ rk3588-kernel-patches/
 | Why not the `sfqr0414` fork | [`README.md`](README.md) → "Why not the `sfqr0414` fork" |
 
 ## KEY FACTS
+
+**HDMI-RX audio now uses v4 plus explicit deltas (`0042`–`0049`).** Canonical
+mail and diff bodies are byte-preserved; `0005`, `0006`, and `0017` are archived.
+The ACR byte-order concern does not survive v4, but remove-time work draining and
+clock-error handling do. `0046`–`0048` rework those gaps plus multichannel routing
+and invalid-rate backoff. `0049` preserves Rock family card enablement and codec
+Kconfig closure. Required ALSA card name: **`RK3588 HDMI-IN`**. Jack notification
+and idle pre-lock polling are deliberately retired; second-suspend-cycle silence
+is a kept limitation. Read the [per-behavior ledger](docs/UPSTREAM-STATUS.md#hdmi-rx-audio-v4-reconciliation--2026-09-05)
+before claiming parity or hardware qualification. `0026` loses only its obsolete
+0017 comment/context; its raw-lock runtime fix survives. Never restore a codec
+callback inside the audio worker: synchronous drains rely on its taking no
+control mutex and calling no ASoC code. `apply.sh` executes the audio helper tests
+against its applied tree as well as checking both boards' shared-card wiring.
 
 **`0040` guards EDID renegotiation at the ioctl boundary.** `S_EDID`, including
 zero-block clearing, returns `-EBUSY` while the vb2 queue streams. The video and
@@ -262,12 +276,12 @@ backported, and island patches continue the same counter. The nine island member
 begin at the actual next ordinal, `0031`, and end at `0039`; no retired slot was
 reused and `0004` remains visible. Ten standalone-rkvenc members plus the earlier
 `0007` and `0023`–`0025` retirements leave fourteen burned slots. With the `0040`
-EDID guard and the `0041` AVI colorimetry report, that yields **26 active
-members across 41 slots**.
+EDID guard, `0041` AVI colorimetry, and audio v4 migration (`0042`–`0049`, retiring
+`0005`/`0006`/`0017`), that yields **31 active members across 49 slots**.
 `SERIES_TOTAL` is the slot ceiling, never the
 member count, and retirement never shrinks it.
 
-**`0005` is driver-only; `0006` is what makes HDMI-RX audio reachable.** Upstream's
+**Historical pairing, now archived: `0005` was driver-only and `0006` made audio reachable.** Upstream's
 `0005` registers an ASoC `hdmi-audio-codec` child under `hdmi_receiver@fdee0000`
 and drives the receiver's audio FIFO/ACR/clock, but touches no device tree, and
 ALSA does not create a card for a bare codec. On a Rock 5B+ running only `0001`–
@@ -278,8 +292,7 @@ shows no HDMI-RX capture card at all. `0006` supplies the three missing DT facts
 all of them post-apply, per board, because the failure mode is silent — everything
 probes, nothing errors, there is simply no capture device.
 
-**The upstream HDMI-audio series does NOT supersede `0006` — it would break the
-pairing.** A real, fully-reviewed lore series
+**Historical evaluation, superseded by the v4-plus-deltas decision above.** A real, fully-reviewed lore series
 (<https://lore.kernel.org/r/20260721064115.64809-1-royalnet026@gmail.com>,
 `[PATCH v4 0/4]`, Igor Paunovic) does what `0005` does and carries its own DT
 patches, but its 4/4 enables the card on Orange Pi 5 Plus **only** — Rock 5B+
@@ -288,7 +301,8 @@ disagree on cell arity (`#sound-dai-cells = <0>` vs `<1>`) and cannot coexist.
 Adoptable mechanically — all four patches apply clean — but declined: it also
 drops multichannel handling, jack reporting and `hdmirx_plugout()` teardown.
 Full six-criteria verdict: [`docs/EVAL-0005-AUDIO.md`](docs/EVAL-0005-AUDIO.md).
-Re-open only when the series is *merged* and Rock 5B+ is covered.
+That was the old KEEP decision; current adoption explicitly supplies Rock coverage
+and records every remaining behavior trade-off in UPSTREAM-STATUS.md.
 
 **The standalone rkvenc lineage is historical and retired, not deleted.** `0001`,
 `0008`, `0013`–`0016`, and `0019`–`0022` moved byte-unchanged into `retired/` when
@@ -465,7 +479,7 @@ defconfig, and a 30-minute job to prove something the image pipeline proves bett
   lore fetch — Anubis answers `Mozilla/5.0` with an HTTP 200 challenge page, so
   the spoof is what breaks it, not what gets you through
 - Don't renumber to close a retired ordinal's slot, and don't read `SERIES_TOTAL`
-  as a member count — it is 41 slots holding 26 members
+  as a member count — it is 49 slots holding 31 members
 - Don't rename, alias, symlink or `mknod` the `system-uncached` heap — the name is
   a userspace ABI and an alias is a corruption trap, not a workaround
 - Don't tick anything in `docs/BOARD-QUALIFICATION.md` without a pasted transcript,

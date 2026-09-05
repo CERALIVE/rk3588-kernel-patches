@@ -143,7 +143,7 @@ a verified row from a skipped one.
 
 ## Current series members
 
-The active series now has 24 members across 39 slots. Ten standalone-rkvenc
+The active series now has 31 members across 49 slots. Ten standalone-rkvenc
 members moved byte-unchanged to `retired/` after `rk3588-media-island v2026.9.0`
 re-expressed their intent as maintained source and permanent tests. The nine
 island rows name the release components; their exact tag, commit and asset digest
@@ -155,15 +155,12 @@ are enforced in `scripts/build-series.py` and independently byte-verified by
 |---|---|---|---|---|---|
 | `0002` hdmirx EDID fix | `upstream/` | `merged@7.2-rc1` counterpart, but orthogonal | Hardware proves the upstream HPD hold fully replaces this mechanism | 2026-08-26 | Active; see the detailed historical analysis below |
 | `0003` hdmirx plugout fix | `upstream/` | `fork-carried-no-upstream` | Mainline absorbs the same plugout fix | 2026-08-26 | Active |
-| `0005` hdmirx audio | `upstream/` | `sent-v4` counterpart | Counterpart merges, reaches the base, preserves features, and covers both boards | 2026-08-26 | Active with `0006` |
-| `0006` hdmirx audio sound card | `ceralive/` | `first-party-no-upstream` | Upstream provides the sound card on both supported boards | 2026-08-26 | Active with `0005` |
 | `0009` system-uncached dma-heap | `ceralive/` | `first-party-no-upstream` | Mainline supplies the exact heap ABI or userspace no longer requires it | 2026-08-26 | Active; v7.1.7 board evidence is historical |
 | `0010` naneng-combphy RTERM erratum | `backports/` | `sent-v1` | Posting merges and the pinned base absorbs it | 2026-08-26 | Active unmerged lore posting |
 | `0011` dw-hdmi-qp N/CTS helper | `backports/` | `sent-v3` | Posting merges and the pinned base absorbs it | 2026-08-26 | Active unmerged lore posting |
 | `0012` dw-hdmi-qp audio EOPNOTSUPP | `backports/` | `sent-v1` | Posting merges and the pinned base absorbs it | 2026-08-26 | Active unmerged lore posting |
-| `0017` HDMI-RX audio lifecycle | `ceralive/` | `first-party-no-upstream` | Retire with `0005` when its full condition fires | 2026-08-26 | Active; historical board status remains below |
 | `0018` truthful dma-heap partial registration | `ceralive/` | `first-party-no-upstream` | A real dma-heap removal API permits unwind | 2026-08-26 | Active |
-| `0026` hdmirx hardirq lock context | `ceralive/` | `first-party-no-upstream` | Mainline makes the lock raw or leaves hardirq context | 2026-08-26 | Active |
+| `0026` hdmirx hardirq lock context | `ceralive/` | `first-party-no-upstream` | Mainline makes the lock raw or leaves hardirq context | 2026-09-05 | Active; obsolete 0017 comment/context removed, every raw-lock operation preserved |
 | `0027` hdmirx SCDC ratio recovery | `ceralive/` | `first-party-no-upstream` | Mainline distinguishes absent SCDC data or adds equivalent recovery | 2026-08-26 | Active |
 | `0028` Rock 5B+ dual-role-power PDOs | `ceralive/` | `first-party-no-upstream` | Mainline carries equivalent fixed-PDO capability | 2026-08-27 | Active |
 | `0029` Rock 5B+ Try.SRC preference | `ceralive/` | `first-party-no-upstream` | Mainline carries equivalent source preference | 2026-08-27 | Active |
@@ -179,7 +176,68 @@ are enforced in `scripts/build-series.py` and independently byte-verified by
 | `0039` RGA2 DT ownership | `island/` | `first-party-no-upstream` | Mainline provides a production-capable RGA2 driver | 2026-09-04 | From `rk3588-media-island v2026.9.2`; owns RGA2 |
 | `0040` HDMI-RX streaming EDID guard | `ceralive/` | `first-party-no-upstream` | Equivalent guard merges and the pinned base absorbs it | 2026-09-05 | Send upstream; rejects writes and clears before mutation; shared `stream->vlock` serializes ioctls; board gate deferred, see `EDID-STREAMING-GUARD.md` |
 | `0041` HDMI-RX AVI colorimetry on the capture format | `ceralive/` | `first-party-no-upstream` | The base reports source colorimetry instead of a hardcoded sRGB | 2026-09-05 | **Send upstream.** `hdmirx_set_fmt()` hardcoded sRGB/DEFAULT; the AVI InfoFrame's C, EC, Q and YQ were unpacked and discarded. Mapping is one pure function, unit-tested row by row in `tests/test_hdmirx_avi_colorimetry.py`; `rk_hdmirx.c` is the behavioural reference, no vendor code copied. Timing and format selection untouched; board gate deferred |
+| `0042` HDMI-RX audio DAI binding | `backports/` | `sent-v4` | Posting merges and the base absorbs it | 2026-09-05 | Canonical v4 1/4; one sound DAI cell |
+| `0043` HDMI-RX audio capture | `backports/` | `sent-v4` | Posting merges and the base absorbs it | 2026-09-05 | Canonical v4 2/4; see behavior ledger below |
+| `0044` RK3588 shared HDMI-IN card | `backports/` | `sent-v4` | Posting merges and the base absorbs it | 2026-09-05 | Canonical v4 3/4; RK3588 HDMI-IN |
+| `0045` Orange Pi HDMI-IN enable | `backports/` | `sent-v4` | Posting merges and the base absorbs it | 2026-09-05 | Canonical v4 4/4 |
+| `0046` HDMI-RX audio clock errors and rates | `ceralive/` | `first-party-no-upstream` | Upstream checks every audio clock result and limits this LPCM path | 2026-09-05 | Reworks 0017's clock/rate intent |
+| `0047` HDMI-RX audio worker lifetime | `ceralive/` | `first-party-no-upstream` | Upstream drains before EDID/link/device teardown | 2026-09-05 | Serialized control; no ASoC callback from the worker |
+| `0048` HDMI-RX channel routing | `ceralive/` | `first-party-no-upstream` | Upstream preserves multichannel routing and invalid-rate backoff | 2026-09-05 | Reworks 0005's speaker override; preserves 0041's IRQ definition |
+| `0049` Rock HDMI-IN enable and codec dependency | `ceralive/` | `first-party-no-upstream` | Upstream covers Rock family and codec dependency | 2026-09-05 | Same shared card as Orange Pi |
 <!-- current-series: end -->
+
+## HDMI-RX audio v4 reconciliation — 2026-09-05
+
+**Code migration, not board qualification.** `0005`, `0006` and `0017` are
+archived byte-unchanged. The canonical four-posting v4 series occupies
+`0042`–`0045`; `0046`–`0049` are first-party deltas. This supersedes the
+historical KEEP verdict in EVAL-0005-AUDIO.md and the historical detail below.
+The upstream series is still an **unmerged posting**, not a mainline commit.
+
+`scripts/import-lore-series.py` fetched the canonical thread again. Both domains
+match the earlier fetch: compressed SHA-256
+`e15583ec2ab99e673f7aecfc09abb6a1bf42169fe2f6d69fc3b99d5376ad8b91`,
+decompressed SHA-256
+`54feb74cc46b5dec270cb4e5913819997f412ff800845c0ae8667759b21afbbd`.
+Canonical mail is in `backports/lore/hdmirx-audio-v4/01.mbox` through `04.mbox`;
+the actual diff bodies are byte-preserved in `backports/0042-*` through
+`0045-*`. The generator only supplies mailbox framing and recounts hunks,
+including 3/4's trailing context line omitted by canonical extraction.
+
+In the table, **v4 2/4** means [the canonical driver posting][audio-v4-driver]
+and its local diff `backports/0043-hdmirx-audio-v4-2.patch`. Legacy function
+references mean the byte-preserved files in `retired/`. RETIRE can mean either
+supersession or an explicitly stated behavior removal; it never implies that
+missing upstream behavior exists. No new hardware result is claimed.
+
+| Behavior | Decision | Evidence and resulting behavior |
+|---|---|---|
+| ACR N/CTS extraction and byte order | **RETIRE** | v4 2/4 `hdmirx_audio_fs()` reads PH2_1 to latch, then uses `swab32(acr_pb3_0) & 0xfffff` and `(swab32(acr_pb7_4) & 0x0fffff00) >> 8`. These equal 0005's explicit PB1–3/PB4–6 masks. The v3 byte-order concern is **not a surviving defect**: v4 explicitly documents unconditional reversal after `readl()`. Tests recover 48 kHz and 44.1 kHz from distinct N/CTS vectors, plus CTS=0. |
+| FIFO underflow/overflow recovery | **RETIRE** | v4 2/4 `hdmirx_audio_work()` tests `AFIFO_UNDERFLOW_ST \| AFIFO_OVERFLOW_ST`, adopts a recovered fs and calls `hdmirx_audio_fifo_reinit()` (CONTROL=1, 200–210 us, CONTROL=0), resetting `audio_pre_state`. Same mechanism as 0005; 0017 explicitly did not replace FIFO recovery. Clock refusal handling is separately reworked below. |
+| Channel handling / speaker override | **REWORK-AS-DELTA** | **0005 was not stereo-only:** `max_i2s_channels = 8`, `hdmirx_audio_ch()` reads the Audio InfoFrame, and `hdmirx_enable_audio_output()` sets `SPEAKER_ALLOC_OVR_EN` plus CONFIG3=0xffffffff above stereo. v4 advertises 8 but only sets `I2S_EN`. `0048` restores detection, channel-change recovery and override clearing on return to stereo. Eight-channel runtime quality remains unmeasured. |
+| ASoC jack notification | **RETIRE** | 0005 implements `hook_plugged_cb`; v4 2/4's codec ops contain only `hw_params` and `audio_shutdown`. This migration deliberately retains v4's **lack of jack notification**, not a claim of supersession. No callback executes from the FIFO worker, eliminating the old card/work-lock/DAPM cycle. Consumers must not infer cable presence from an ALSA jack event. |
+| Cable-pull audio state | **REWORK-AS-DELTA** | v4 2/4 never touches `hdmirx_plugout()`; 0005 cancels asynchronously and clears `audio_present`. `0047` calls `hdmirx_audio_link(false)` even before the plugged early-return: drain, mark link unavailable and disable AUDIO_ENABLE. Capture intent survives, and plugin reinitializes/rearms only an active capture. Opens without a ready link return `-ENOLINK`. |
+| EDID/HPD cancel/drain ordering | **REWORK-AS-DELTA** | 0017 separates disarm and drain because its worker calls ASoC; it does not drain inside S_EDID's work-lock critical section. v4 has no EDID/HPD protection. `0047` serializes control with `audio_lock`, disarms `audio_running` and synchronously drains **before** S_EDID disables interrupts or mutates HPD, including zero-block clearing. The worker takes neither mutex and calls no codec callback, so draining under `work_lock -> audio_lock` cannot reproduce the former ASoC cycle. `0040`'s earlier streaming refusal remains intact. |
+| `clk_set_rate()` errors | **REWORK-AS-DELTA** | v4 ignores the return in setup, both worker rate changes, and ppm steering, then publishes fictional rates. `0046` makes setup/set-fs return the clock error, propagates it from hw_params/resume, and preserves recorded fs/clock on failure; ppm failures log and retain the real prior rate. Unit tests inject `-EIO` and assert no state publication. |
+| 768 kHz rejection | **REWORK-AS-DELTA** | v4's `hdmirx_supported_fs[]` includes `768000`; 0017 removes it. `0046` removes it from closest-rate recovery and rejects zero, non-exact and >192 kHz setup inputs before clock calls. The reason is this **LPCM path does not implement HBR**, not the old overbroad statement that HDMI can never carry 768 kHz transport. |
+| Delayed-work lifetime on remove | **REWORK-AS-DELTA** | v4 2/4 `hdmirx_remove()` only adds `platform_device_unregister(audio_pdev)`; no explicit audio drain exists there. Its shutdown/hw_params drains do **not** prove remove safety. `0047` publishes `audio_removing`, disarms/drains before codec unregister, and prevents concurrent callbacks or hotplug work from rearming. The v3 removal-lifetime concern is **not fixed by an explicit v4 remove drain**. |
+| Suspend/resume | **KEEP-ON-TOP** | Keep v4's cancellation before clock gating and full audio setup on resume, with `0046` error propagation and `0047` serialized suspension state. Cover letter: “a second suspend/resume cycle in the same boot can leave the audio datapath silent until reboot”. **KEPT limitation**, not fixed or tested here. |
+| Shared DT and Rock enablement | **REWORK-AS-DELTA** | v4 1/4 declares one DAI cell; 3/4 creates `hdmi_receiver_sound`, codec `hdmi_receiver 0`, and exact name **`RK3588 HDMI-IN`**; 4/4 enables Orange Pi only. `0049` enables that same shared card and `i2s7_8ch` in `rk3588-rock-5b.dtsi`, inherited by Rock 5B+ (also preserving 0006's Rock 5B/5T reach). Incompatible zero-cell wiring is retired. v4 owns fs×128 locally; its card omits the old `mclk-fs` property. |
+| Pre-capture clock tracking | **RETIRE** | 0005 starts its worker in plugin; v4 starts in hw_params and stops in shutdown. Retain v4's stream-scoped worker instead of restoring idle polling. Initial capture may start before ACR settles; this is a documented behavior trade, not a pre-lock guarantee. |
+| Invalid ACR / rate-validity backoff | **REWORK-AS-DELTA** | 0005's `!is_validfs()` selects a 1 s delay; v4 can continue ppm steering with fs=0. `0048` restores `if (!fs) { delay = 1000; goto out; }` before normal drift correction. v4's initial hw_params fallback to the requested rate, then 48 kHz, remains; measured recovery is not mislabeled as that fallback. |
+| Codec dependency / capture-only direction | **REWORK-AS-DELTA** | 0005 selects SND_SOC_HDMI_CODEC but registers playback directions. v4 correctly sets both `no_*_playback` flags and refuses S/PDIF, but changes no Kconfig. `0049` restores `select SND_SOC_HDMI_CODEC if SND_SOC` without forcing ASoC on video-only configurations. |
+| `0011` HDMI-QP N/CTS cleanup/fix v3 | **KEEP-ON-TOP** | The comparable v3 is **already 0011**, not an earlier HDMI-RX revision: `backports/lore/U5/01.mbox`, Message-ID `86fcf349-0a7a-4618-9001-612371b0f71b@symple.nz`, deletes TX-private tables and calls `drm_hdmi_acr_get_n_cts()`. Its v3 changelog explicitly replaces the earlier inline CTS fallback with the shared helper. No duplicate import. |
+| `0012` HDMI-QP no-mode audio hooks | **KEEP-ON-TOP** | `backports/0012-*` changes `dw_hdmi_qp_audio_enable/prepare()` to return `-EOPNOTSUPP` with no TMDS mode; v4 edits the **RX** media driver, not this DRM **TX** bridge. Both 0011/0012 remain their existing **unmerged backports**, not first-party patches. |
+
+`0026`'s runtime raw-spinlock fix is unchanged. The one added line inside
+0017's now-absent lock-order comment is removed, and its init hunk is re-anchored
+to the three surviving mutex initializers. No imported payload is rewritten.
+`0048` also restores `PKTDEC_AVIIF_CHG_IRQ`, formerly provided by 0005 and used
+by 0041. The old 0017 fault-control files remain in its archive; the new
+off-hardware tests execute the actual rate/drain/routing helpers with fake MMIO
+and clock failure, and apply.sh runs them again against its applied tree.
+
+[audio-v4-driver]: https://lore.kernel.org/r/20260721064115.64809-3-royalnet026@gmail.com
 
 ## Historical pre-island member detail
 

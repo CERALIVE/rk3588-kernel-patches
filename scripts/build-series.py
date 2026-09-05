@@ -117,7 +117,7 @@ ISLAND_TAG_RE = re.compile(r"^v[0-9]{4}\.[0-9]+\.[0-9]+$")
 # 0031-0039; the EDID guard adds 0040 and the AVI colorimetry report 0041.
 # Retiring ten members out of those first 30 slots does NOT reduce it: an N/41
 # subject counts slots.
-SERIES_TOTAL = 41
+SERIES_TOTAL = 49
 ISLAND_ORDINAL_OFFSET = 30
 
 DS_STORE_RE = re.compile(r"^Binary files .*\.DS_Store .* differ$")
@@ -223,62 +223,6 @@ SERIES: tuple[Patch, ...] = (
         provenance="90b3a5c579ffb0ac164e4cea7163228a864ef0c4",
         author="Ross Cawston <rcawston@users.noreply.github.com>",
         date="Mon, 9 Feb 2026 14:35:17 -0800",
-    ),
-    Patch(
-        filename="0005-rockchip-rk3588-hdmirx-audio.patch",
-        ordinal=5,
-        subject="media: synopsys: hdmirx: add HDMI-RX audio capture support",
-        provenance="e13a311d8ee5e8ed92ec3d4a57c21f766c61d660",
-        author="Ross Cawston <rcawston@users.noreply.github.com>",
-        date="Wed, 1 Jul 2026 14:19:29 -0700",
-    ),
-    Patch(
-        filename="0006-rk3588-hdmirx-audio-sound-card.patch",
-        ordinal=6,
-        subject="arm64: dts: rockchip: rk3588: bind the HDMI-RX audio codec to a sound card",
-        provenance=NULL_OID,
-        author="Andres Cera <andres.cera@hotmail.com>",
-        date="Sun, 2 Aug 2026 12:00:00 -0500",
-        origin=CERALIVE,
-        rationale=(
-            "0005 gives snps_hdmirx its driver-side audio half: it registers an ASoC",
-            "hdmi-audio-codec child device under hdmi_receiver@fdee0000 and drives the",
-            "receiver's audio FIFO, ACR-derived sample rate and recovered audio clock.",
-            "It touches no device tree, and ALSA does not instantiate a card for a bare",
-            "codec. On a Rock 5B+ running the full series the codec device is bound with",
-            "no cable attached --",
-            "",
-            "  /sys/devices/platform/fdee0000.hdmi_receiver/hdmi-audio-codec.7.auto",
-            "",
-            "-- while /proc/asound/cards lists only the USB dongle, the onboard es8316",
-            "and hdmi0/hdmi1, which are the two HDMI *transmitters*. There is no",
-            "hdmirx-sound node, so HDMI-IN embedded audio cannot be captured at all.",
-            "",
-            "Three DT facts are missing, all of them here:",
-            "",
-            "  1. hdmi_receiver has no #sound-dai-cells, so it cannot be named as a DAI",
-            "     provider. simple-audio-card resolves sound-dai through",
-            "     of_parse_phandle_with_args(..., \"#sound-dai-cells\", ...), and ASoC's",
-            "     soc_component_to_node() falls back to a component's parent of_node --",
-            "     which is exactly how &hdmi0 already stands in for its own",
-            "     hdmi-audio-codec child. With zero cells the first DAI is selected,",
-            "     i2s-hifi, since hdmi_codec_probe() registers i2s before spdif.",
-            "  2. There is no card node binding that codec to a CPU DAI.",
-            "  3. i2s7_8ch -- the capture-only I2S the RK3588 receiver feeds, per the",
-            "     Rockchip BSP's own hdmiin-sound wiring -- is left disabled on both",
-            "     boards.",
-            "",
-            "Add the card as a disabled-by-default simple-audio-card next to the existing",
-            "hdmi0/hdmi1 ones and enable it, with i2s7_8ch, on the two boards that already",
-            "enable hdmi_receiver: rk3588-rock-5b.dtsi (Rock 5B, 5B+, 5T) and",
-            "rk3588-orangepi-5-plus.dts.",
-            "",
-            "The receiver recovers its audio clock from the incoming stream, so the codec",
-            "is bitclock and frame master and i2s7_8ch runs as consumer; mclk-fs = 128",
-            "matches the BSP and the fs*128 rate 0005 programs on the \"audio\" clock.",
-            "i2s7_8ch declares only a \"rx\" DMA, so rockchip_i2s_tdm_init_dai() marks it",
-            "capture-only and the link resolves to a single capture stream.",
-        ),
     ),
     Patch(
         filename="0009-dma-buf-heaps-add-system-uncached-dma-heap.patch",
@@ -551,59 +495,6 @@ SERIES: tuple[Patch, ...] = (
                 "N/CTS table, this one the audio enable/prepare hooks -- and applying",
                 "0011 then this one was verified clean in that order.",
             ),
-        ),
-    ),
-    Patch(
-        filename="0017-hdmirx-audio-lifecycle-and-clock-errors.patch",
-        ordinal=17,
-        subject=(
-            "media: synopsys: hdmirx: fix the audio work and clock lifecycle "
-            "under lockdep"
-        ),
-        provenance=NULL_OID,
-        author="Andres Cera <andres.cera@hotmail.com>",
-        date="Sun, 10 Aug 2026 13:00:00 -0500",
-        origin=CERALIVE,
-        rationale=(
-            "MOTIVATION. hdmi-codec invokes ->hook_plugged_cb() under the ASoC",
-            "card mutex, and the installed callback reports a jack under the",
-            "card's DAPM locks -- so any path holding work_lock that calls into",
-            "the codec closes a cycle (card -> work_lock -> DAPM), the same",
-            "shape that already deadlocked the CeraLive vendor series, firing",
-            "only when audio is present. Separately, hdmirx_plugout()'s",
-            "cancel_delayed_work() does not wait for a running worker, and the",
-            "worker unconditionally reschedules itself, so audio work kept",
-            "polling and reporting present after every plugout.",
-            "",
-            "BEHAVIOUR. A synchronous cancel of delayed_work_audio is never",
-            "performed under work_lock (enforced via",
-            "lockdep_assert_not_held()); hook_plugged_cb() publishes the",
-            "callback under the lock and invokes it with the lock dropped. An",
-            "explicit armed gate replaces the ineffective async cancel: the",
-            "worker checks it on entry and before re-arming, with a separate",
-            "synchronous drain each caller makes after dropping work_lock.",
-            "clk_set_rate() returns are now propagated instead of discarded, so",
-            "a refused rate no longer updates audio_state as if it had taken.",
-            "768000 is removed from supported_fs (CEA-861 tops out at 192 kHz;",
-            "its only effect was letting a garbage ACR-derived frequency pass",
-            "is_validfs()). audio_state's clock rate and audio_present move",
-            "under a dedicated leaf lock, published before the codec callback",
-            "rather than after.",
-            "",
-            "NON-GOALS. Does not add a synchronous cancel under work_lock --",
-            "that path is exactly what the lock order forbids. Does not touch",
-            "the audio FIFO/ACR sample-rate recovery logic 0005 owns.",
-            "",
-            "PROVENANCE. First-party CeraLive fix to the imported 0005 audio",
-            "path; no upstream counterpart -- the PATCHv4 counterpart to 0005",
-            "does not carry this audio worker at all.",
-            "",
-            "EVIDENCE POINTER. Source-verified and build-clean; hardware",
-            "validation pending. Lock order enumerated from v7.1.7's own",
-            "sound/soc/codecs/hdmi-codec.c. Two 0013-gated controls",
-            "(delay_worker_ms, fail_clk_set_rate_once) force the races on",
-            "demand; harness: tests/hdmirx-audio-fault-qa.sh under lockdep. See",
-            "docs/BOARD-QUALIFICATION.md.",
         ),
     ),
     Patch(
@@ -1220,6 +1111,78 @@ SERIES: tuple[Patch, ...] = (
             "Intended for upstream submission; retire when the base absorbs it.",
         ),
     ),
+)
+
+
+SERIES += tuple(
+    Patch(
+        filename=f"{41 + sequence:04d}-hdmirx-audio-v4-{sequence}.patch",
+        ordinal=41 + sequence,
+        subject=subject,
+        provenance=LORE_POSTING,
+        author="Igor Paunovic <royalnet026@gmail.com>",
+        date=f"Tue, 21 Jul 2026 08:41:{11 + sequence} +0200",
+        origin=BACKPORTS,
+        lore=LorePosting(
+            lore_msgid=f"20260721064115.64809-{sequence + 1}-royalnet026@gmail.com",
+            revision="v4",
+            posted_date=f"Tue, 21 Jul 2026 08:41:{11 + sequence} +0200",
+            upstream_subject=f"[PATCH v4 {sequence}/4] {subject}",
+            thread_compressed_sha256="e15583ec2ab99e673f7aecfc09abb6a1bf42169fe2f6d69fc3b99d5376ad8b91",
+            thread_mbox_sha256="54feb74cc46b5dec270cb4e5913819997f412ff800845c0ae8667759b21afbbd",
+            canonical_patch_sha256=digest,
+            canonical_mail=f"backports/lore/hdmirx-audio-v4/{sequence:02d}.mbox",
+            review_state=(
+                "Signed-off-by in the posting. Follow-up review is recorded in "
+                "docs/EVAL-0005-AUDIO.md; second-cycle suspend silence remains open. "
+                "ACR byte order is correct; explicit remove drain is absent."
+            ),
+            note=(
+                "Replaces legacy 0005/0006/0017 with the explicit per-behavior",
+                "decisions and first-party deltas in docs/UPSTREAM-STATUS.md.",
+                "Imported by import-lore-series.py from the canonical thread.",
+                "No upstream commit identity or new board evidence is claimed.",
+            ),
+        ),
+    )
+    for sequence, subject, digest in (
+        (1, "dt-bindings: media: snps,dw-hdmi-rx: add #sound-dai-cells",
+         "c7d70a9ee87e89686f39a8fe781c6bc8b4cc6fab9a9541f5734056a1f2b759df"),
+        (2, "media: synopsys: hdmirx: add HDMI audio capture support",
+         "eb5cce68daa6c43dcceed6aedbcce5a7231ca0865f72f9032cffe3b134aceee0"),
+        (3, "arm64: dts: rockchip: add HDMI RX audio on RK3588",
+         "0d5af3cd3ad6c2edcd89ff0ef4f16ff43335ec1c0f444ed132ebdde65af44de4"),
+        (4, "arm64: dts: rockchip: enable HDMI RX audio capture on Orange Pi 5 Plus",
+         "3dd74a8ee37dfbe2612c7f49f06ffdd4b0fa9b46159d1558fcf9f91ed6b69144"),
+    )
+)
+
+SERIES += tuple(
+    Patch(
+        filename=f"{ordinal:04d}-{slug}.patch",
+        ordinal=ordinal,
+        subject=subject,
+        provenance=NULL_OID,
+        author="Andres Cera <andres.cera@hotmail.com>",
+        date="Sat, 5 Sep 2026 14:00:00 +0000",
+        origin=CERALIVE,
+        rationale=(rationale, "Reconciliation evidence: docs/UPSTREAM-STATUS.md.",
+                   "Code-only qualification; no new board evidence is claimed."),
+    )
+    for ordinal, slug, subject, rationale in (
+        (46, "hdmirx-audio-clock-errors-and-rates",
+         "media: synopsys: hdmirx: propagate audio clock errors and validate LPCM rates",
+         "Keep recorded rates unchanged on clock failure; refuse unsupported HBR rates."),
+        (47, "hdmirx-audio-worker-lifetime",
+         "media: synopsys: hdmirx: drain audio work before link and device teardown",
+         "Serialize control paths; disarm and drain before HPD, clocks or codec removal."),
+        (48, "hdmirx-audio-channel-routing",
+         "media: synopsys: hdmirx: preserve multichannel routing and rate validity",
+         "Carry 0005 speaker override and channel changes; back off on invalid ACR."),
+        (49, "rk3588-hdmirx-audio-enable",
+         "arm64: dts: rockchip: preserve Rock HDMI input audio and codec dependency",
+         "Enable the v4 shared card on the Rock family; retain codec Kconfig closure."),
+    )
 )
 
 
@@ -1903,6 +1866,23 @@ def build_patch(patch: Patch, rules: list[Rule], pin: dict[str, str]) -> str:
         )
     for rule in applied:
         body = apply_rule(body, rule)
+
+    if patch.lore is not None:
+        # Canonical mail strips trailing whitespace, including a final empty
+        # context line. Repair only that one-line count deficit, never payload.
+        for index in range(len(body) - 1, -1, -1):
+            match = HUNK_RE.match(body[index])
+            if match is None:
+                continue
+            tail = body[index + 1:]
+            old_count = sum(line.startswith((" ", "-")) for line in tail)
+            new_count = sum(line.startswith((" ", "+")) for line in tail)
+            if (int(match[2] or 1) == old_count + 1 and
+                    int(match[4] or 1) == new_count + 1):
+                body[index] = (
+                    f"@@ -{match[1]},{old_count} +{match[3]},{new_count} @@{match[5]}"
+                )
+            break
 
     upstream_repo = pin["UPSTREAM_PATCHES_REPO"]
     upstream_rev = pin["UPSTREAM_PATCHES_REV"]

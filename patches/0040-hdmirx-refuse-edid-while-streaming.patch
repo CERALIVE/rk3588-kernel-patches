@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Andres Cera <andres.cera@hotmail.com>
 Date: Sat, 5 Sep 2026 12:00:00 +0000
-Subject: [PATCH 40/41] media: synopsys: hdmirx: refuse S_EDID while streaming
+Subject: [PATCH 40/49] media: synopsys: hdmirx: refuse S_EDID while streaming
 
 EDID writes trigger HPD renegotiation and controller teardown.
 Reject them before any state or hardware mutation while the capture

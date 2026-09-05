@@ -1,0 +1,51 @@
+Message-ID: <20260721064115.64809-5-royalnet026@gmail.com>
+Subject: [PATCH v4 4/4] arm64: dts: rockchip: enable HDMI RX audio capture on Orange Pi 5 Plus
+Date: Tue, 21 Jul 2026 08:41:15 +0200
+
+Enable the shared HDMI RX sound card and the i2s7_8ch interface it
+uses. Together with the audio capture support in the snps_hdmirx
+driver this exposes a capture-only ALSA card fed by the HDMI input.
+
+Tested on the Orange Pi 5 Plus with multiple HDMI sources: capture
+follows the source sample rate and stays in sync via the FIFO-level
+clock tracking in the driver.
+
+Signed-off-by: Igor Paunovic <royalnet026@gmail.com>
+---
+Changes in v4:
+- only enable the shared hdmi_receiver_sound card and i2s7_8ch, now
+  that the card definition lives in rk3588-extra.dtsi (Sebastian
+  Reichel)
+
+New in v3.
+ arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dts | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dts b/arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dts
+index 9950d11..9f9a303 100644
+--- a/arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dts
++++ b/arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dts
+@@ -171,6 +171,10 @@
+ 	status = "okay";
+ };
+ 
++&hdmi_receiver_sound {
++	status = "okay";
++};
++
+ &hdptxphy0 {
+ 	status = "okay";
+ };
+@@ -247,6 +251,10 @@
+ 	status = "okay";
+ };
+ 
++&i2s7_8ch {
++	status = "okay";
++};
++
+ &led_blue_gpio {
+ 	gpios = <&gpio3 RK_PA6 GPIO_ACTIVE_HIGH>;
+ 	status = "okay";
+-- 
+2.53.0

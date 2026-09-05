@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Andres Cera <andres.cera@hotmail.com>
 Date: Sat, 5 Sep 2026 13:00:00 +0000
-Subject: [PATCH 41/41] media: synopsys: hdmirx: report AVI colorimetry on the capture format
+Subject: [PATCH 41/49] media: synopsys: hdmirx: report AVI colorimetry on the capture format
 
 hdmirx_set_fmt() hardcoded sRGB with default encoding and
 quantization, so every capture claimed sRGB no matter what the

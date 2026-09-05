@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Andres Cera <andres.cera@hotmail.com>
 Date: Thu, 27 Aug 2026 15:00:00 +0000
-Subject: [PATCH 29/41] arm64: dts: rockchip: rock 5b+: prefer the source power role on Type-C
+Subject: [PATCH 29/49] arm64: dts: rockchip: rock 5b+: prefer the source power role on Type-C
 
 MOTIVATION. A direct same-camera, same-policy A/B comparison on
 2026-08-27 isolated the remaining charging delta to the boards'

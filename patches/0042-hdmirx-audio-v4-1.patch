@@ -1,0 +1,79 @@
+From lore-posting Mon Sep 17 00:00:00 2001
+From: Igor Paunovic <royalnet026@gmail.com>
+Date: Tue, 21 Jul 2026 08:41:12 +0200
+Subject: [PATCH 42/49] dt-bindings: media: snps,dw-hdmi-rx: add #sound-dai-cells
+
+Backport of unmerged v4 posting.
+
+[PATCH v4 1/4] dt-bindings: media: snps,dw-hdmi-rx: add #sound-dai-cells
+
+Replaces legacy 0005/0006/0017 with the explicit per-behavior
+decisions and first-party deltas in docs/UPSTREAM-STATUS.md.
+Imported by import-lore-series.py from the canonical thread.
+No upstream commit identity or new board evidence is claimed.
+
+Posted to lore on Tue, 21 Jul 2026 08:41:12 +0200 as v4:
+https://lore.kernel.org/r/20260721064115.64809-2-royalnet026@gmail.com
+Review state: Signed-off-by in the posting. Follow-up review is recorded in docs/EVAL-0005-AUDIO.md; second-cycle suspend silence remains open. ACR byte order is correct; explicit remove drain is absent.
+
+Canonical thread archive -- the only source an import may be taken
+from: https://lore.kernel.org/all/20260721064115.64809-2-royalnet026@gmail.com/t.mbox.gz
+  thread_compressed_sha256 e15583ec2ab99e673f7aecfc09abb6a1bf42169fe2f6d69fc3b99d5376ad8b91
+    (the gzip response bytes, exactly as served)
+  thread_mbox_sha256       54feb74cc46b5dec270cb4e5913819997f412ff800845c0ae8667759b21afbbd
+    (the mailbox those bytes decompress to)
+  canonical_patch_sha256   c7d70a9ee87e89686f39a8fe781c6bc8b4cc6fab9a9541f5734056a1f2b759df
+    (this posting's canonical mail, archived at backports/lore/hdmirx-audio-v4/01.mbox)
+
+Backported into the CeraLive series for v7.2. The source of record is
+backports/0042-hdmirx-audio-v4-1.patch; patches/ is generated from it by
+scripts/build-series.py, and scripts/verify-payload-parity.py holds it to
+the same added/removed-line parity every other lane gets.
+
+NOT upstream: this posting has NOT been merged, so no commit id exists for
+it and none is claimed. This header deliberately carries no
+`commit <sha> upstream.` marker, no null object id and no parent SHA --
+there is no such identity to state, and stating one would be false
+provenance rather than a formatting shortcut. No Signed-off-by is added
+either: the DCO chain belongs to the author on the list.
+
+Retire this when the posting merges AND the pinned base absorbs it -- both,
+not either. Trigger and last-checked date: docs/UPSTREAM-STATUS.md.
+
+---
+diff --git a/Documentation/devicetree/bindings/media/snps,dw-hdmi-rx.yaml b/Documentation/devicetree/bindings/media/snps,dw-hdmi-rx.yaml
+index b7f6c87..b80660d 100644
+--- a/Documentation/devicetree/bindings/media/snps,dw-hdmi-rx.yaml
++++ b/Documentation/devicetree/bindings/media/snps,dw-hdmi-rx.yaml
+@@ -78,6 +78,13 @@ properties:
+       The phandle of the syscon node for the Video Output GRF register
+       to enable EDID transfer through SDAIN and SCLIN.
+ 
++  "#sound-dai-cells":
++    const: 1
++    description:
++      The HDMI RX controller has two digital audio interfaces, one for
++      I2S and one for S/PDIF. The DAI cell selects the interface, 0 for
++      I2S and 1 for S/PDIF.
++
+ required:
+   - compatible
+   - reg
+@@ -90,7 +97,10 @@ required:
+   - pinctrl-0
+   - hpd-gpios
+ 
+-additionalProperties: false
++allOf:
++  - $ref: /schemas/sound/dai-common.yaml#
++
++unevaluatedProperties: false
+ 
+ examples:
+   - |
+@@ -129,4 +139,5 @@ examples:
+       pinctrl-0 = <&hdmim1_rx_cec &hdmim1_rx_hpdin &hdmim1_rx_scl &hdmim1_rx_sda &hdmirx_5v_detection>;
+       pinctrl-names = "default";
+       hpd-gpios = <&gpio1 22 GPIO_ACTIVE_LOW>;
++      #sound-dai-cells = <1>;
+     };

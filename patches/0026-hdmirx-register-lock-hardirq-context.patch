@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Andres Cera <andres.cera@hotmail.com>
 Date: Wed, 12 Aug 2026 01:10:00 -0500
-Subject: [PATCH 26/41] media: synopsys: hdmirx: make the register lock safe for its hardirq callers
+Subject: [PATCH 26/49] media: synopsys: hdmirx: make the register lock safe for its hardirq callers
 
 MOTIVATION. A Rock 5B+ with a real HDMI source attached prints
 'BUG: Invalid wait context' out of the CEC hardirq before a
@@ -93,14 +93,6 @@ to whoever actually submits it.
 diff --git a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
 --- a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
 +++ b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
-@@ -163,6 +163,7 @@ struct snps_hdmirx_dev {
- 	 *
- 	 *   work_lock  -> audio_lock          (hotplug disarms the audio work)
- 	 *   audio_lock -> nothing             (leaf; never sleeps, never calls out)
-+	 *   rst_lock   -> nothing             (leaf; raw, entered from hardirq)
- 	 *
- 	 * The ASoC codec locks are deliberately OUTSIDE both. hdmi-codec invokes
- 	 * ->hook_plugged_cb() from its component probe/remove, i.e. under the
 @@ -205,7 +206,19 @@ struct snps_hdmirx_dev {
  	u32 edid_blocks_written;
  	u32 cur_fmt_fourcc;
@@ -157,9 +149,9 @@ diff --git a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c b/drivers/medi
  	val = readl(hdmirx_dev->regs + reg) & ~mask;
  	val |= (data & mask);
 @@ -3333,7 +3346,7 @@ static int hdmirx_probe(struct platform_device *pdev)
+ 	mutex_init(&hdmirx_dev->phy_rw_lock);
+ 	mutex_init(&hdmirx_dev->stream_lock);
  	mutex_init(&hdmirx_dev->work_lock);
- 	spin_lock_init(&hdmirx_dev->audio_lock);
- 	hdmirx_dev->audio_work_armed = false;
 -	spin_lock_init(&hdmirx_dev->rst_lock);
 +	raw_spin_lock_init(&hdmirx_dev->rst_lock);
  
