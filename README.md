@@ -139,6 +139,10 @@ recorded per patch in [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md).
 
 ## Apply the series
 
+Requires Python 3, Git and a host C compiler named `cc` for the extracted-helper
+tests. This does not compile a kernel. Latest audio migration gate results and
+their limits: [AUDIO-V4-VALIDATION.md](docs/AUDIO-V4-VALIDATION.md).
+
 Everything below is executed verbatim by CI on every push and pull request, so it
 cannot silently rot.
 
