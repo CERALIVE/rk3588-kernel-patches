@@ -315,5 +315,13 @@ class TestUnfetchableCanonicalArchive(unittest.TestCase):
         self.assertFalse((self.tmp / "lane").exists())
 
 
+class NonVacuityProbe(unittest.TestCase):
+    """Deliberately failing test. Proves the CI summary job reports RED when a
+    `python3 -m unittest` case fails. Never merged."""
+
+    def test_the_summary_job_must_go_red_on_a_failing_unit_test(self) -> None:
+        self.assertEqual(1, 2)
+
+
 if __name__ == "__main__":
     unittest.main()
