@@ -7,8 +7,8 @@ previous investigation. This page shows the derivation so it can be re-checked.
 Re-run it yourself at any time:
 
 ```bash
-scripts/preflight.sh          # against the pinned ARMBIAN_BUILD_REV
-scripts/preflight.sh --head   # against armbian/build's current main
+scripts/preflight.sh          # report the recorded Armbian mapping
+scripts/preflight.sh --head   # report armbian/build's current mapping
 ```
 
 The `--head` form reports how the selected Armbian alias resolves today. That
@@ -85,9 +85,10 @@ covers both.
 | `config/boards/orangepi5-plus.conf` | `rockchip-rk3588` | `current,edge,vendor` |
 
 **Neither lists `bleedingedge`, and that is fine** — see the section above. The
-`BOARDFAMILY` value *is* gating, because the whole derivation below hangs off it.
+The `BOARDFAMILY` value is recorded provenance for the mapping below; it is not
+part of CeraLive's gate.
 
-### The derivation chain (four files, in order)
+### The recorded Armbian mapping (informational)
 
 **1. `config/sources/families/rockchip-rk3588.conf`**
 
@@ -100,10 +101,9 @@ source "${BASH_SOURCE%/*}/include/rockchip64_common.inc"
 Its own `case $BRANCH` then handles **only `legacy` and `vendor`**. There is no
 `bleedingedge)` arm. This is the step that is easy to get wrong: reading this
 file alone suggests the branch is unsupported, when in fact it simply keeps
-whatever the include already set. `scripts/preflight.sh` asserts the absence of a
-`bleedingedge)` case so that a future Armbian change here cannot silently
-invalidate the chain. (The `edge` derivation this replaced had the identical
-trap.)
+whatever the include already set. This explains the historical mapping recorded
+in `kernel-pin.env`; it is not a gate. Armbian changes cannot invalidate
+CeraLive's sovereign pin.
 
 **2. `config/sources/families/include/rockchip64_common.inc`**
 
@@ -119,10 +119,9 @@ For context, the neighbouring arms are `current` → `6.18` and `edge` → `7.1`
 
 `LINUXCONFIG` is an **interpolation, not a literal** — the branch name is spliced
 in, so it resolves to `linux-rockchip64-bleedingedge` and hence
-`config/kernel/linux-rockchip64-bleedingedge.config`. `preflight.sh` expands
-`$BRANCH` the way Armbian would rather than string-matching the raw line, then
-separately confirms that config file actually **exists** at the pinned revision —
-a derived name that names no file would otherwise be a silent failure downstream.
+`config/kernel/linux-rockchip64-bleedingedge.config`. These values are retained
+as provenance for the patch-directory choice; they are not asserted by
+CeraLive's preflight, and Armbian mapping failures are informational.
 
 **3. `config/sources/mainline-kernel.conf.sh` — the branch**
 
@@ -164,8 +163,8 @@ function mainline_kernel_decide_version__750_use_torvalds_for_7.2-rc7() {
 That redirect is an emergency hook for a tag kernel.org had not yet mirrored, and
 it **no longer describes reality** — `v7.2-rc7` resolves on linux-stable today
 (checked 2026-08-26). It is recorded anyway, because it is what the pinned
-revision *does*, and `preflight.sh` asserts both halves so an Armbian edit to
-either is caught rather than silently absorbed.
+revision *does*. Armbian edits to either value are reported as observations and
+never invalidate this pin.
 
 ---
 

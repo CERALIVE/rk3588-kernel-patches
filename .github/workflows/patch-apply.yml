@@ -106,6 +106,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: test sovereign preflight scenarios
+        run: tests/test_preflight_sovereign_pin.sh
+
       - name: validate the sovereign kernel pin and report Armbian mapping
         run: scripts/preflight.sh
 
