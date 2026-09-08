@@ -22,6 +22,64 @@ permissions:
   contents: read
 
 jobs:
+  # Change detection. A documentation-only pull request has nothing for the
+  # gates below to prove, so they skip rather than run to a vacuous green.
+  #
+  # The gating is a JOB-LEVEL `if:`, never a trigger-level `paths:`/
+  # `paths-ignore:`. A trigger filter stops the workflow from starting at all,
+  # and a required check that never reports blocks a merge instead of passing
+  # it — which is what the always-run summary job at the bottom exists to avoid.
+  #
+  # TWO filter steps, and the split is load-bearing. `code` is an EXCLUSION list
+  # ("every changed file is NOT documentation") and therefore carries
+  # `predicate-quantifier: 'every'`. `kernel` is a POSITIVE OR list naming the
+  # inputs the ~2 GB kernel clone actually depends on, so it must keep the
+  # default `some`. The quantifier is a property of the STEP, not of a filter:
+  # putting both in one step under `every` would turn the positive list into an
+  # AND that no single file can satisfy, and the expensive lane would never run.
+  changes:
+    name: Change detection
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      # Both filters run on pull requests only. On a push, the weekly schedule
+      # or a manual dispatch the steps are skipped and the fallbacks keep both
+      # outputs true, so those events keep their full coverage.
+      code: ${{ steps.filter.outputs.code || 'true' }}
+      kernel: ${{ steps.kernel-filter.outputs.kernel || 'true' }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect non-documentation changes
+        id: filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v4
+        with:
+          predicate-quantifier: 'every'
+          filters: |
+            code:
+              - '!**/*.md'
+              - '!docs/**'
+              - '!LICENSE*'
+              - '!.github/ISSUE_TEMPLATE/**'
+              - '!.github/PULL_REQUEST_TEMPLATE.md'
+
+      - name: Detect changes the kernel clone depends on
+        id: kernel-filter
+        if: github.event_name == 'pull_request'
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            kernel:
+              - 'patches/**'
+              - 'scripts/**'
+              - 'kernel-pin.env'
+              - '.github/**'
+
   # Cheap and fast: does patches/ still match what the converter produces from
   # upstream/ + ceralive/, and does it still change nothing those sources did not
   # already change? Runs first so a hand-edited series fails in seconds rather
@@ -29,6 +87,8 @@ jobs:
   series-integrity:
     name: series integrity
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     steps:
       - uses: actions/checkout@v7
 
@@ -82,6 +142,8 @@ jobs:
   pin:
     name: resolve kernel pin
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     outputs:
       tags: ${{ steps.read.outputs.tags }}
     steps:
@@ -102,6 +164,8 @@ jobs:
   preflight:
     name: armbian pin preflight
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     continue-on-error: ${{ github.event_name == 'schedule' }}
     steps:
       - uses: actions/checkout@v7
@@ -121,7 +185,10 @@ jobs:
   # instruction is a red build.
   apply:
     name: git am against ${{ matrix.tag }}
-    needs: [series-integrity, pin]
+    needs: [changes, series-integrity, pin]
+    # The ~2 GB kernel clone runs only when an input it actually depends on
+    # moved. This is the POSITIVE `some` filter, not the `every` exclusion one.
+    if: needs.changes.outputs.kernel == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -186,3 +253,34 @@ jobs:
           git -C .work/linux checkout -f "${{ steps.pin.outputs.tag }}"
           git -C .work/linux reset --hard "${{ steps.pin.outputs.tag }}"
           git -C .work/linux clean -fdxq
+
+  # The one check a branch-protection rule can require. It runs on every event,
+  # including a docs-only pull request where every gate above skipped, and goes
+  # red whenever a dependency failed or was cancelled. A SKIPPED dependency is a
+  # pass — that is the whole point of the gating above.
+  patch-apply-summary:
+    name: patch-apply summary
+    if: always()
+    needs:
+      - changes
+      - series-integrity
+      - pin
+      - preflight
+      - apply
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any dependency failed or was cancelled
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          set -euo pipefail
+          echo "dependency results: ${RESULTS}"
+          for result in ${RESULTS}; do
+            case "${result}" in
+              failure|cancelled)
+                echo "::error::a required job reported '${result}'"
+                exit 1
+                ;;
+            esac
+          done
+          echo "every dependency succeeded or was skipped"
