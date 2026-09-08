@@ -1,4 +1,4 @@
-# Preflight — how the Armbian rk3588 `bleedingedge` kernel was resolved
+# Preflight — sovereign pin checks and Armbian mapping observations
 
 Everything in [`kernel-pin.env`](../kernel-pin.env) was **read out of Armbian's
 own configuration at a recorded revision**, not copied from a wiki or from a
@@ -7,12 +7,37 @@ previous investigation. This page shows the derivation so it can be re-checked.
 Re-run it yourself at any time:
 
 ```bash
-scripts/preflight.sh          # against the pinned ARMBIAN_BUILD_REV
-scripts/preflight.sh --head   # against armbian/build's current main
+scripts/preflight.sh          # report the recorded Armbian mapping
+scripts/preflight.sh --head   # report armbian/build's current mapping
 ```
 
-The `--head` form is the one that answers *"has Armbian moved `bleedingedge`
-since this was pinned?"*, and it is what CI runs on a schedule.
+The `--head` form reports how the selected Armbian alias resolves today. That
+comparison is informational on every trigger. Armbian may move `edge`,
+`bleedingedge`, or any future alias without affecting this gate.
+
+## What blocks preflight
+
+CeraLive's kernel version is a sovereign, hardware-validated decision. The
+preflight fails only when the local pin is broken: `KERNEL_TAG`,
+`KERNEL_COMMIT`, and `KERNEL_PATCHDIR` disagree; the pinned commit cannot be
+resolved from `KERNELSOURCE`; or the separate `scripts/apply.sh` gate cannot
+verify and apply the patch series to that pinned commit. Armbian mapping
+fetches, alias changes, missing branch arms, and board-menu differences are
+printed as `info` and never change the exit status.
+
+The weekly workflow retains its existing non-blocking schedule treatment, but
+push and pull-request runs now receive the same informational-only Armbian
+comparison. Repair local pin failures; do not change the pin merely to follow
+an upstream distro alias.
+
+## Future direction
+
+Future work may support multiple concurrently-pinned kernel versions and move
+toward a self-managed kernel release/versioning scheme independent of any
+upstream distro branch. The intended model is similar to `librga` and
+`gstreamer-rockchip`: cut an upstream-style project release against an
+explicitly pinned commit. This note is documentation only; this repository
+still has one v7.2 pin.
 
 ---
 
@@ -60,9 +85,10 @@ covers both.
 | `config/boards/orangepi5-plus.conf` | `rockchip-rk3588` | `current,edge,vendor` |
 
 **Neither lists `bleedingedge`, and that is fine** — see the section above. The
-`BOARDFAMILY` value *is* gating, because the whole derivation below hangs off it.
+The `BOARDFAMILY` value is recorded provenance for the mapping below; it is not
+part of CeraLive's gate.
 
-### The derivation chain (four files, in order)
+### The recorded Armbian mapping (informational)
 
 **1. `config/sources/families/rockchip-rk3588.conf`**
 
@@ -75,10 +101,9 @@ source "${BASH_SOURCE%/*}/include/rockchip64_common.inc"
 Its own `case $BRANCH` then handles **only `legacy` and `vendor`**. There is no
 `bleedingedge)` arm. This is the step that is easy to get wrong: reading this
 file alone suggests the branch is unsupported, when in fact it simply keeps
-whatever the include already set. `scripts/preflight.sh` asserts the absence of a
-`bleedingedge)` case so that a future Armbian change here cannot silently
-invalidate the chain. (The `edge` derivation this replaced had the identical
-trap.)
+whatever the include already set. This explains the historical mapping recorded
+in `kernel-pin.env`; it is not a gate. Armbian changes cannot invalidate
+CeraLive's sovereign pin.
 
 **2. `config/sources/families/include/rockchip64_common.inc`**
 
@@ -94,10 +119,9 @@ For context, the neighbouring arms are `current` → `6.18` and `edge` → `7.1`
 
 `LINUXCONFIG` is an **interpolation, not a literal** — the branch name is spliced
 in, so it resolves to `linux-rockchip64-bleedingedge` and hence
-`config/kernel/linux-rockchip64-bleedingedge.config`. `preflight.sh` expands
-`$BRANCH` the way Armbian would rather than string-matching the raw line, then
-separately confirms that config file actually **exists** at the pinned revision —
-a derived name that names no file would otherwise be a silent failure downstream.
+`config/kernel/linux-rockchip64-bleedingedge.config`. These values are retained
+as provenance for the patch-directory choice; they are not asserted by
+CeraLive's preflight, and Armbian mapping failures are informational.
 
 **3. `config/sources/mainline-kernel.conf.sh` — the branch**
 
@@ -139,8 +163,8 @@ function mainline_kernel_decide_version__750_use_torvalds_for_7.2-rc7() {
 That redirect is an emergency hook for a tag kernel.org had not yet mirrored, and
 it **no longer describes reality** — `v7.2-rc7` resolves on linux-stable today
 (checked 2026-08-26). It is recorded anyway, because it is what the pinned
-revision *does*, and `preflight.sh` asserts both halves so an Armbian edit to
-either is caught rather than silently absorbed.
+revision *does*. Armbian edits to either value are reported as observations and
+never invalidate this pin.
 
 ---
 
@@ -214,35 +238,19 @@ from anything else.
 
 ---
 
-## What `preflight.sh` gates, and what it only prints
+## Gate summary
 
-| Check | Gating? |
+| Check | Result |
 |---|---|
-| board → `BOARDFAMILY` | **yes** |
-| board `KERNEL_TARGET` | no — printed as `info` |
-| family config has no `bleedingedge)` arm of its own | **yes** |
-| `KERNEL_MAJOR_MINOR` on the branch arm | **yes** |
-| `LINUXFAMILY` on the branch arm | **yes** |
-| `LINUXCONFIG`, with `$BRANCH` expanded | **yes** |
-| the resolved config file exists at the revision | **yes** |
-| `KERNELBRANCH`, against the **explicit** 7.2 arm | **yes** |
-| `KERNELSOURCE`, against the hook keyed on that branch | **yes** |
-| this repo's own `KERNEL_TAG` / `KERNEL_COMMIT` | no — printed; `apply.sh` proves it |
+| `KERNEL_TAG` / `KERNEL_COMMIT` / `KERNEL_PATCHDIR` consistency | blocking |
+| `KERNEL_TAG` resolution to `KERNEL_COMMIT` from `KERNELSOURCE` | blocking |
+| patch-series verification and application | blocking in `scripts/apply.sh` |
+| selected Armbian alias and mapping | informational only |
+| Armbian board menu and branch movement | informational only |
 
-### The `KERNELBRANCH` comparison was reworked for this base
-
-Worth knowing if you are reading a `git blame` here. While this repo tracked
-`edge` → `7.1`, `preflight.sh` compared `KERNELBRANCH_ARMBIAN` against the
-**rolling default** and treated the appearance of an explicit arm as drift —
-correct then, because `7.1` has no arm and an arm appearing would have changed
-the resolution entirely.
-
-That logic is exactly wrong for `7.2`, which resolves *through* an explicit arm:
-it would have compared the pin against a default that never runs and reported
-permanent, unfixable drift. The script now reads the explicit arm **first** and
-falls back to the rolling default only when there genuinely is no arm for this
-`MAJOR.MINOR`, so both shapes are handled and a future 7.2 rollover to a final
-tag will register as ordinary drift rather than as a broken check.
+The selected alias comes from `ARMBIAN_BRANCH` in `kernel-pin.env`; it is not
+hardcoded into the gate. Clearing the Armbian observation fields disables that
+optional report without changing the sovereign pin checks.
 
 ---
 
