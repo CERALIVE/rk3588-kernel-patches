@@ -1,4 +1,4 @@
-# Preflight — how the Armbian rk3588 `bleedingedge` kernel was resolved
+# Preflight — sovereign pin checks and Armbian mapping observations
 
 Everything in [`kernel-pin.env`](../kernel-pin.env) was **read out of Armbian's
 own configuration at a recorded revision**, not copied from a wiki or from a
@@ -11,8 +11,33 @@ scripts/preflight.sh          # against the pinned ARMBIAN_BUILD_REV
 scripts/preflight.sh --head   # against armbian/build's current main
 ```
 
-The `--head` form is the one that answers *"has Armbian moved `bleedingedge`
-since this was pinned?"*, and it is what CI runs on a schedule.
+The `--head` form reports how the selected Armbian alias resolves today. That
+comparison is informational on every trigger. Armbian may move `edge`,
+`bleedingedge`, or any future alias without affecting this gate.
+
+## What blocks preflight
+
+CeraLive's kernel version is a sovereign, hardware-validated decision. The
+preflight fails only when the local pin is broken: `KERNEL_TAG`,
+`KERNEL_COMMIT`, and `KERNEL_PATCHDIR` disagree; the pinned commit cannot be
+resolved from `KERNELSOURCE`; or the separate `scripts/apply.sh` gate cannot
+verify and apply the patch series to that pinned commit. Armbian mapping
+fetches, alias changes, missing branch arms, and board-menu differences are
+printed as `info` and never change the exit status.
+
+The weekly workflow retains its existing non-blocking schedule treatment, but
+push and pull-request runs now receive the same informational-only Armbian
+comparison. Repair local pin failures; do not change the pin merely to follow
+an upstream distro alias.
+
+## Future direction
+
+Future work may support multiple concurrently-pinned kernel versions and move
+toward a self-managed kernel release/versioning scheme independent of any
+upstream distro branch. The intended model is similar to `librga` and
+`gstreamer-rockchip`: cut an upstream-style project release against an
+explicitly pinned commit. This note is documentation only; this repository
+still has one v7.2 pin.
 
 ---
 
@@ -214,35 +239,19 @@ from anything else.
 
 ---
 
-## What `preflight.sh` gates, and what it only prints
+## Gate summary
 
-| Check | Gating? |
+| Check | Result |
 |---|---|
-| board → `BOARDFAMILY` | **yes** |
-| board `KERNEL_TARGET` | no — printed as `info` |
-| family config has no `bleedingedge)` arm of its own | **yes** |
-| `KERNEL_MAJOR_MINOR` on the branch arm | **yes** |
-| `LINUXFAMILY` on the branch arm | **yes** |
-| `LINUXCONFIG`, with `$BRANCH` expanded | **yes** |
-| the resolved config file exists at the revision | **yes** |
-| `KERNELBRANCH`, against the **explicit** 7.2 arm | **yes** |
-| `KERNELSOURCE`, against the hook keyed on that branch | **yes** |
-| this repo's own `KERNEL_TAG` / `KERNEL_COMMIT` | no — printed; `apply.sh` proves it |
+| `KERNEL_TAG` / `KERNEL_COMMIT` / `KERNEL_PATCHDIR` consistency | blocking |
+| `KERNEL_TAG` resolution to `KERNEL_COMMIT` from `KERNELSOURCE` | blocking |
+| patch-series verification and application | blocking in `scripts/apply.sh` |
+| selected Armbian alias and mapping | informational only |
+| Armbian board menu and branch movement | informational only |
 
-### The `KERNELBRANCH` comparison was reworked for this base
-
-Worth knowing if you are reading a `git blame` here. While this repo tracked
-`edge` → `7.1`, `preflight.sh` compared `KERNELBRANCH_ARMBIAN` against the
-**rolling default** and treated the appearance of an explicit arm as drift —
-correct then, because `7.1` has no arm and an arm appearing would have changed
-the resolution entirely.
-
-That logic is exactly wrong for `7.2`, which resolves *through* an explicit arm:
-it would have compared the pin against a default that never runs and reported
-permanent, unfixable drift. The script now reads the explicit arm **first** and
-falls back to the rolling default only when there genuinely is no arm for this
-`MAJOR.MINOR`, so both shapes are handled and a future 7.2 rollover to a final
-tag will register as ordinary drift rather than as a broken check.
+The selected alias comes from `ARMBIAN_BRANCH` in `kernel-pin.env`; it is not
+hardcoded into the gate. Clearing the Armbian observation fields disables that
+optional report without changing the sovereign pin checks.
 
 ---
 

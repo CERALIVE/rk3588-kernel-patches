@@ -42,7 +42,7 @@ rk3588-kernel-patches/
 ├── patches/                   # GENERATED git-am series + series file — NEVER hand-edit
 ├── rebase/<tag>.rules         # per-kernel-tag context re-anchors (context lines ONLY)
 ├── scripts/
-│   ├── preflight.sh           # re-resolve the Armbian edge mapping; --head for live check
+│   ├── preflight.sh           # validate the sovereign pin; optionally report Armbian mapping
 │   ├── build-series.py        # source lanes -> patches/ ; --check asserts in-sync; orphan check
 │   ├── verify-payload-parity.py  # proves patches/ changes nothing its source lane didn't
 │   ├── verify-island-provenance.py # release SHA-256 + byte comparison; independent of generator
@@ -82,7 +82,7 @@ rk3588-kernel-patches/
 | Stop carrying a patch | **Never `git rm` it.** Move it to `retired/` and add a row — see [`retired/REGISTRY.md`](retired/REGISTRY.md) |
 | Why HDMI-RX audio needs a DT patch at all | [`docs/PROVENANCE.md`](docs/PROVENANCE.md) §8 and `patches/0006-*`'s own mail header |
 | Why the rkvenc DMA segment-size fix exists, and why the IOVA guardrail is left alone | [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) § `0008` and `patches/0008-*`'s own mail header |
-| Check whether Armbian moved `edge` | `scripts/preflight.sh --head` |
+| Report the selected Armbian alias | `scripts/preflight.sh --head` |
 | Understand the `bleedingedge` → 7.2 derivation | [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md) |
 | Apply the series | `scripts/apply.sh` — see [`README.md`](README.md) |
 | Why a hunk was re-anchored, or a member revised, at the current base | [`docs/REBASE-v7.2.md`](docs/REBASE-v7.2.md) |
@@ -384,15 +384,13 @@ not resolve to the pinned commit *and* the pinned tag object, so a moved or
 re-created tag fails loudly instead of going green against the wrong source.
 **Downstream consumers must pin the same tag.**
 
-**The `bleedingedge` mapping was verified fresh, and the family config is a trap.**
-`config/sources/families/rockchip-rk3588.conf` handles only `legacy` and `vendor`
-in its own `case $BRANCH`, which alone suggests `bleedingedge` is unsupported — but
-it sources `rockchip64_common.inc`, whose `bleedingedge)` arm sets
-`KERNEL_MAJOR_MINOR=7.2`. `preflight.sh` asserts the absence of a
-`bleedingedge)` case in the family config so a future Armbian change there cannot
-silently invalidate the derivation, and it asserts Armbian's explicit `7.2` arm and
-its keyed source override too. The same trap caught the previous `edge` → `7.1`
-derivation; the shape of the mistake outlived the branch name.
+**Armbian mapping is an informational observation, not a pin authority.**
+`ARMBIAN_BRANCH` selects an optional alias to report, so this repository can
+observe `edge`, `bleedingedge`, or no alias without changing the gate. Armbian
+branch movement, board menus, and mapping structure never invalidate CeraLive's
+sovereign kernel decision. The blocking checks are the local pin contract,
+resolvability of its commit from `KERNELSOURCE`, and `apply.sh`'s series gate;
+the derivation details remain in [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md).
 
 **This repository supplies the shipped image's permanent production kernel.** The
 production image builds the mainline/edge **7.2** track from source with this patch
@@ -441,7 +439,7 @@ pinned to latest stable major; the ~2 GB kernel clone cached. Jobs:
 |-----|---------|
 | `series-integrity` | `patches/` is generated, payload-identical to its source lane, island members match the release asset, and every lane file is accounted for exactly once; no Python needed beyond stdlib |
 | `pin` | nothing — it *reads* `KERNEL_TAG` out of `kernel-pin.env` and emits the `apply` matrix |
-| `preflight` | `kernel-pin.env` still matches `armbian/build` — non-blocking on schedule, blocking on PR |
+| `preflight` | CeraLive's own pin is valid; Armbian mapping is informational only |
 | `apply` | `scripts/apply.sh` — the real `git am` against the pinned tag |
 
 `apply` is the gate. It runs the same script the README tells humans to run, so a
