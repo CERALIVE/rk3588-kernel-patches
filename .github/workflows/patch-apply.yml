@@ -97,8 +97,8 @@ jobs:
           echo "tags=[\"$KERNEL_TAG\"]" >> "$GITHUB_OUTPUT"
           echo "apply matrix: [\"$KERNEL_TAG\"]"
 
-  # Non-blocking on the weekly schedule (drift is information, not a regression);
-  # blocking on push/PR (a change that desyncs the pin from Armbian is a bug).
+  # Armbian mapping is informational on every trigger; only the sovereign pin
+  # checks and the separate apply job can block push/PR.
   preflight:
     name: armbian pin preflight
     runs-on: ubuntu-latest
@@ -106,10 +106,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: kernel-pin.env matches the pinned armbian/build revision
+      - name: validate the sovereign kernel pin and report Armbian mapping
         run: scripts/preflight.sh
 
-      - name: armbian/build HEAD has not moved rk3588 edge
+      - name: report current Armbian mapping for the selected alias
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: scripts/preflight.sh --head
