@@ -109,6 +109,18 @@ Message-ID.
 else's fix for the same problem is, which is exactly the condition a retire
 trigger keys off.
 
+**A `merged@<version>` carries two claims, and they do not prove out together.**
+That a commit exists is checkable today: it has an id, an author and a diff. The
+release it will *first appear in* is not, while that release is unbuilt — a patch
+sitting in a maintainer tree or in linux-next has no tag yet, and the version
+everyone expects it in is a forecast. So where `<version>` is still a forecast the
+status cell says so (`merge VERIFIED, release PROJECTED`) and the Notes name the
+sources the forecast rests on, separately from the commit evidence. The
+consequence for retirement is the important half: **a retire trigger is never
+keyed on a projected version number.** It is keyed on the pinned base actually
+absorbing the change, which is a content check against the base — the version
+comparison is a proxy that goes wrong precisely when the forecast does.
+
 **"Retire trigger" is a precondition, not an instruction.** When it fires, the
 retirement itself still goes through the state machine in
 [`retired/REGISTRY.md`](../retired/REGISTRY.md): the source file **moves** to
@@ -159,8 +171,8 @@ are enforced in `scripts/build-series.py` and independently byte-verified by
 | `0002` hdmirx EDID fix | `upstream/` | `merged@7.2-rc1` counterpart, but orthogonal | Hardware proves the upstream HPD hold fully replaces this mechanism | 2026-08-26 | Active; see the detailed historical analysis below |
 | `0003` hdmirx plugout fix | `upstream/` | `fork-carried-no-upstream` | Mainline absorbs the same plugout fix | 2026-08-26 | Active |
 | `0009` system-uncached dma-heap | `ceralive/` | `first-party-no-upstream` | Mainline supplies the exact heap ABI or userspace no longer requires it | 2026-08-26 | Active; v7.1.7 board evidence is historical |
-| `0010` naneng-combphy RTERM erratum | `backports/` | `sent-v1` | Posting merges and the pinned base absorbs it | 2026-08-26 | Active unmerged lore posting |
-| `0011` dw-hdmi-qp N/CTS helper | `backports/` | `sent-v3` | Posting merges and the pinned base absorbs it | 2026-08-26 | Active unmerged lore posting |
+| `0010` naneng-combphy RTERM erratum | `backports/` | `sent-v1` | Posting merges and the pinned base absorbs it | 2026-09-06 | Active unmerged lore posting. [Re-posted unchanged](https://lore.kernel.org/r/1788158204-161347-1-git-send-email-shawn.lin@rock-chips.com): `git diff --no-index` payload verdict **IDENTICAL**, seven hunks (PHYREG26 definitions; config flag; PCIe init; RK3562/RK3568/RK3576/RK3588 configs), 19 additions and zero deletions. No candidate or source-lane change. |
+| `0011` dw-hdmi-qp N/CTS helper | `backports/` | `merged@7.4-rc1` — merge VERIFIED, release PROJECTED | The pinned base absorbs the commit — a content check, never a version comparison — then retire through `retired/REGISTRY.md` | 2026-09-12 | **Merge — verified.** [`a9f09b5ea0c3db1e2d4c0f8d3ebdd612d8aa0366`](https://git.kernel.org/pub/scm/linux/kernel/git/next/linux-next.git/commit/?id=a9f09b5ea0c3db1e2d4c0f8d3ebdd612d8aa0366) *"drm/bridge: dw-hdmi-qp: use drm_hdmi_acr_get_n_cts() helper for audio N/CTS"*, Simon Wright, authored 2026-05-21, applied by Heiko Stuebner 2026-09-03; **one** file (`drivers/gpu/drm/bridge/synopsys/dw-hdmi-qp.c`), three hunks, `+1 / -208`. Reached through linux-next; the [applied mail](https://lore.kernel.org/r/178845174737.2601151.16427479820258337465.b4-ty@sntech.de) names that exact `1/1`. **Release — projected, NOT a verified tag.** Measured the same day: the commit is in neither `v7.2` (our pin), `v7.3-rc1`, `v7.3-rc2`, nor Linus's `master`, so it has appeared in **no** release yet — and `v7.3`, `v7.4-rc1` and `v7.4` do not exist on `torvalds/linux`. `7.4-rc1` is the target claimed by the applied mail and by [Collabora's merged-table move](https://gitlab.collabora.com/hardware-enablement/rockchip-3588/notes-for-rockchip-3588/-/commit/136f4456a56539f06860cc43ef7327eee631542c); treat it as a projection to re-check, never as a fact. **Still carried, and retirement is now mandatory rather than optional.** `v7.2` lacks the helper and the patch applies clean, so `0011` stays in `backports/` — it is Simon Wright's work and `ceralive/` would misattribute it. Its carried `+`/`-` payload is **byte-identical** to the merged commit (same SHA-256; only `index` lines and `@@` offsets differ), so once the base absorbs the change the carried copy is a guaranteed `git am` **conflict**, not a silent double-apply. |
 | `0012` dw-hdmi-qp audio EOPNOTSUPP | `backports/` | `sent-v1` | Posting merges and the pinned base absorbs it | 2026-08-26 | Active unmerged lore posting |
 | `0018` truthful dma-heap partial registration | `ceralive/` | `first-party-no-upstream` | A real dma-heap removal API permits unwind | 2026-08-26 | Active |
 | `0026` hdmirx hardirq lock context | `ceralive/` | `first-party-no-upstream` | Mainline makes the lock raw or leaves hardirq context | 2026-09-05 | Active; obsolete 0017 comment/context removed, every raw-lock operation preserved |
@@ -1972,6 +1984,36 @@ kernel):
 None of the three is a work item, and none should be turned into one. They are
 recorded so the next person does not repeat the search and reach the same three
 dead ends.
+
+### Collabora window: 2026-08-29 -> 2026-09-06
+
+The [GitLab REST commit listing](https://gitlab.collabora.com/api/v4/projects/hardware-enablement%2Frockchip-3588%2Fnotes-for-rockchip-3588/repository/commits?since=2026-08-29T00:00:00Z)
+returned ten notes-repository commits: ARM SMMUv3 PM, NPU DVFS, DP AltMode
+`205dc9cb39f5`, the `0011` merged-table move, HDMI 10-bit YUV, CAN, HDMI PHY
+FRL TxFFE, HDMI 2.0 scrambling, ISP v3, and the `0010` re-post notice. The
+per-commit GitLab diff route returned only `mainline-status.md` for all ten;
+there was **no new `rk3588-test` commit** for
+`drivers/media/platform/{synopsys/hdmirx,rockchip,verisilicon}`,
+`drivers/staging/media/rkvdec`, `drivers/iommu/rockchip-iommu.c`,
+`drivers/dma-buf/heaps`, `drivers/thermal/rockchip_thermal.c`, or
+`arch/arm64/boot/dts/rockchip/rk3588*`.
+
+- `0011` is the one material status transition: notes commit
+  [`136f4456a565`](https://gitlab.collabora.com/hardware-enablement/rockchip-3588/notes-for-rockchip-3588/-/commit/136f4456a56539f06860cc43ef7327eee631542c)
+  places the N/CTS cleanup in 7.4-rc1, and the
+  [maintainer applied-mail](https://lore.kernel.org/r/178845174737.2601151.16427479820258337465.b4-ty@sntech.de)
+  records `a9f09b5ea0c3db1e2d4c0f8d3ebdd612d8aa0366`. The carried payload is
+  `git diff --no-index`-identical to the canonical v3 source's three hunks.
+- `0010`'s bare-v1 re-post is payload-identical across its seven hunks; it is
+  not a new backport candidate, so `backports/` and generated `patches/` stay
+  unchanged.
+- The window's remaining subjects are deliberately ignored: SMMUv3 PM, NPU
+  DVFS, DP-AltMode, HDMI-TX YUV/FRL/scrambling, and CAN are output/NPU/PCIe
+  paths; RKISP2 v3 is an ISP path. They do not alter this media/capture series.
+
+**Last checked: 2026-09-06.** Re-run this bounded window at the next weekly
+Collabora check and before any base bump; move a row's date only when its named
+source was reached.
 
 ### Sources checked for the 2026-08-26 sweep (the `v7.2` base)
 
