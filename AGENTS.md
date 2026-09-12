@@ -178,7 +178,7 @@ put first-party, backported, or island content in `upstream/`.**
 verified against its release asset.** Every member carries an `Island(...)`
 provenance variant naming the immutable tag, source-repository commit, and asset
 SHA-256. `scripts/verify-island-provenance.py` downloads that asset (or reads a
-cached copy), verifies its digest, and byte-compares all seven members without
+cached copy), verifies its digest, and byte-compares all nine members without
 importing `build-series.py`. Island patches are never hand-edited or re-anchored;
 a base conflict requires a new island release.
 
