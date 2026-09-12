@@ -56,6 +56,8 @@ rk3588-kernel-patches/
 │   ├── BOARD-QUALIFICATION.md # the hardware checklist + its Run log — runs 1 and 2 executed
 │   ├── EVAL-0002-EDID.md      # verdict: keep 0002; the 7.2-rc1 fix is already in the base
 │   ├── EVAL-0005-AUDIO.md     # historical KEEP verdict; superseded by the v4 reconciliation ledger
+│   ├── AUDIO-V4-VALIDATION.md # what the v4 migration gate ran, and what it does not claim
+│   ├── EDID-STREAMING-GUARD.md # deferred board procedure for 0040
 │   ├── PROVENANCE.md          # licence/provenance audit incl. the MIT-claim caveat
 │   ├── PREFLIGHT.md           # how the Armbian bleedingedge -> 7.2 mapping was derived
 │   ├── REBASE-v7.2.md         # hunk-by-hunk rebase ledger — CURRENT base; a verdict per ordinal, 0009 + 0018 revised, 0007 retired
@@ -80,6 +82,8 @@ rk3588-kernel-patches/
 | Why `0002` was kept instead of taking the upstream EDID fix | [`docs/EVAL-0002-EDID.md`](docs/EVAL-0002-EDID.md) |
 | Why `0005`+`0006` were kept instead of taking the lore HDMI-audio series | [`docs/EVAL-0005-AUDIO.md`](docs/EVAL-0005-AUDIO.md) |
 | Stop carrying a patch | **Never `git rm` it.** Move it to `retired/` and add a row — see [`retired/REGISTRY.md`](retired/REGISTRY.md) |
+| How the audio v4 migration was gated, and what it does NOT prove | [`docs/AUDIO-V4-VALIDATION.md`](docs/AUDIO-V4-VALIDATION.md) |
+| Board procedure for the `0040` EDID streaming guard | [`docs/EDID-STREAMING-GUARD.md`](docs/EDID-STREAMING-GUARD.md) |
 | Why HDMI-RX audio needs a DT patch at all | [`docs/PROVENANCE.md`](docs/PROVENANCE.md) §8 and the archived `retired/0006-*`'s own mail header — the live wiring is `0044` + `0049` |
 | Why the rkvenc DMA segment-size fix existed, and why the IOVA guardrail was left alone | [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) § `0008` and the archived `retired/0008-*`'s own mail header; the live intent is island source |
 | Report the selected Armbian alias | `scripts/preflight.sh --head` |
