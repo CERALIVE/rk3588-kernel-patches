@@ -116,8 +116,9 @@ ISLAND_TAG_RE = re.compile(r"^v[0-9]{4}\.[0-9]+\.[0-9]+$")
 # 30 slots existed before the island lane; the current release adds 9 members at
 # 0031-0039; the EDID guard adds 0040 and the AVI colorimetry report 0041.
 # Retiring ten members out of those first 30 slots does NOT reduce it: an N/41
-# subject counts slots.
-SERIES_TOTAL = 49
+# subject counts slots. The audio v4 migration takes 0042-0049, and the pmdomain
+# idle-request unwind takes 0050.
+SERIES_TOTAL = 50
 ISLAND_ORDINAL_OFFSET = 30
 
 DS_STORE_RE = re.compile(r"^Binary files .*\.DS_Store .* differ$")
@@ -1183,6 +1184,106 @@ SERIES += tuple(
          "arm64: dts: rockchip: preserve Rock HDMI input audio and codec dependency",
          "Enable the v4 shared card on the Rock family; retain codec Kconfig closure."),
     )
+)
+
+SERIES += (
+    Patch(
+        filename="0050-pmdomain-rockchip-idle-request-unwind.patch",
+        ordinal=50,
+        subject=(
+            "pmdomain: rockchip: release the NIU idle request when "
+            "power-down fails"
+        ),
+        provenance=NULL_OID,
+        author="Andres Cera <andres.cera@hotmail.com>",
+        date="Sat, 12 Sep 2026 12:00:00 +0000",
+        origin=CERALIVE,
+        rationale=(
+            "MOTIVATION. rockchip_pmu_set_idle_request() writes the NIU idle",
+            "request bit BEFORE it polls for the idle ack and again for the",
+            "idle status, and it returns the error from either poll with that",
+            "bit still written. rockchip_pd_power() asserts that request on",
+            "the power-DOWN path and then calls",
+            "rockchip_do_pmu_set_power_domain(). Both of those error paths",
+            "jumped straight to the clock-ungate epilogue at out:, so a failed",
+            "power-down returned with the idle request left asserted on the",
+            "interconnect.",
+            "",
+            "THE LEAK IS PERMANENT, NOT TRANSIENT. The power-down failed, so",
+            "the domain is still on; rockchip_pmu_domain_is_on() therefore",
+            "keeps reporting it on, so every later rockchip_pd_power(pd, true)",
+            "returns early at the already-in-the-requested-state check. The",
+            "driver's ONLY de-assert site sits past that check on the power-on",
+            "branch, so it is unreachable for the rest of the boot. The result",
+            "is a block that is still powered -- powering it down is what",
+            "failed -- while the interconnect has been told to stop talking to",
+            "it: alive and unreachable, until reboot. A transient failure",
+            "becomes a permanent one.",
+            "",
+            "BEHAVIOUR. Add an err_unidle: path that de-asserts the idle",
+            "request and calls rockchip_pmu_restore_qos(), and route both",
+            "power-down error paths to it. That includes the failure of",
+            "rockchip_pmu_set_idle_request(pd, true) itself, which can return",
+            "an error after the request bit has already been written, and a",
+            "rockchip_do_pmu_set_power_domain() failure when !power_on, where",
+            "the request is asserted by definition. The block is left usable",
+            "and the error is still reported: err_unidle: never assigns ret,",
+            "so the caller sees the original power-down failure rather than",
+            "how the cleanup went. The QoS restore is gated on the de-assert",
+            "succeeding, matching the ordering the power-on path already uses,",
+            "so no new unconditional MMIO is issued through an interconnect",
+            "that may still be idled. A failing de-assert is logged once and",
+            "not retried -- set_idle_request() is already bounded by two 10 ms",
+            "atomic polls, and repeating the same register write buys no new",
+            "information.",
+            "",
+            "NON-GOALS. The power-ON failure path is deliberately left alone:",
+            "with power_on true this call asserted nothing, and de-asserting",
+            "the idle request for a powered-off domain is not something the",
+            "driver does anywhere. Domains whose req_mask is 0 are unaffected;",
+            "set_idle_request() returns 0 for them in both directions. Every",
+            "successful power-on and power-off executes byte-identical logic",
+            "to before -- err_unidle: is reachable only from two ret < 0",
+            "branches.",
+            "",
+            "THIS IS NOT THE FIX FOR THE RK3588 RGA2 SError, AND MUST NOT BE",
+            "DESCRIBED AS ONE. It was noticed while reading this code during",
+            "an RGA2 crash investigation, because a stale idle request on the",
+            "shared PD_VDPU domain was the suspected mechanism. It was then",
+            "tested as a candidate fix for that crash on a Radxa Rock 5B+ and",
+            "LOST 2 OF 2 ELIGIBLE RUNS: the err_unidle: path provably executed",
+            "-- its own dev_err fired -- and the board still took the same",
+            "SError, because the de-assert it issues fails to get an NIU ack",
+            "itself. That crash was separately root-caused to a broken AXI",
+            "reset in the media island's rga2_soft_reset() and is fixed there.",
+            "This patch stands on its own as an error-path correctness fix:",
+            "returning with a written request bit still asserted is wrong",
+            "regardless of what provoked the write.",
+            "",
+            "PROVENANCE. First-party CeraLive fix to mainline code.",
+            "rockchip_pd_power() and rockchip_pmu_set_idle_request() are the",
+            "pinned base's own and are touched by no other member of this",
+            "series; no upstream counterpart exists. No Fixes: tag is claimed:",
+            "the defective shape -- assert, then goto out on error, with the",
+            "sole de-assert on the power-on branch -- predates both v7.2 and",
+            "the drivers/soc/rockchip/pm_domains.c to",
+            "drivers/pmdomain/rockchip/pm-domains.c move, and the introducing",
+            "commit cannot be identified from a tree pinned to a single tag,",
+            "so naming a SHA would be inventing one. Whoever submits this",
+            "upstream should resolve it with git log --follow across the",
+            "rename on a full tree.",
+            "",
+            "EVIDENCE. Code only. checkpatch.pl --strict reports 0 errors, 0",
+            "warnings and 0 checks on this diff against the pinned base, and",
+            "the identical payload compiled into a 7.2.0-ceralive-rk3588 arm64",
+            "Image during the investigation above. NO BOARD QUALIFICATION IS",
+            "CLAIMED for the corrected error path itself: reaching it needs an",
+            "NIU that refuses to idle, and the only runs known to have reached",
+            "it are the refuted crash trials described above.",
+            "Intended for upstream submission to linux-pm; retire when the",
+            "base absorbs it.",
+        ),
+    ),
 )
 
 

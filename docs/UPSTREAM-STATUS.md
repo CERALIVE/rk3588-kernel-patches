@@ -143,7 +143,7 @@ a verified row from a skipped one.
 
 ## Current series members
 
-The active series now has 31 members across 49 slots. Ten standalone-rkvenc
+The active series now has 32 members across 50 slots. Ten standalone-rkvenc
 members moved byte-unchanged to `retired/` after `rk3588-media-island v2026.9.0`
 re-expressed their intent as maintained source and permanent tests. The nine
 island rows name the release components; their exact tag, commit and asset digest
@@ -184,6 +184,7 @@ are enforced in `scripts/build-series.py` and independently byte-verified by
 | `0047` HDMI-RX audio worker lifetime | `ceralive/` | `first-party-no-upstream` | Upstream drains before EDID/link/device teardown | 2026-09-05 | Serialized control; no ASoC callback from the worker |
 | `0048` HDMI-RX channel routing | `ceralive/` | `first-party-no-upstream` | Upstream preserves multichannel routing and invalid-rate backoff | 2026-09-05 | Reworks 0005's speaker override; preserves 0041's IRQ definition |
 | `0049` Rock HDMI-IN enable and codec dependency | `ceralive/` | `first-party-no-upstream` | Upstream covers Rock family and codec dependency | 2026-09-05 | Same shared card as Orange Pi |
+| `0050` pmdomain rockchip idle-request unwind | `ceralive/` | `first-party-no-upstream` | Mainline de-asserts the NIU idle request on the power-down error paths | 2026-09-12 | **Send upstream (linux-pm).** `rockchip_pd_power()` asserted the NIU idle request, then `goto out` on a power-down failure without unwinding it; the domain stays on, so the sole de-assert past the already-in-state fast path is unreachable for the boot and the block is left alive but unreachable. Adds `err_unidle:` — de-assert, then `rockchip_pmu_restore_qos()` only if that succeeded — and routes both power-down error paths to it, preserving the original `ret`. No `Fixes:` tag: the introducing commit predates v7.2 and the `drivers/soc/rockchip` → `drivers/pmdomain/rockchip` move and cannot be identified from a single-tag tree. **NOT the fix for the RGA2 SError** — tested as a candidate on a Rock 5B+ and lost 2 of 2 eligible runs; that crash was root-caused to the media island's `rga2_soft_reset()` AXI reset. Code-only; no board qualification claimed for the corrected error path |
 <!-- current-series: end -->
 
 ## HDMI-RX audio v4 reconciliation — 2026-09-05

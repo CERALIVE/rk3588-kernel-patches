@@ -1,0 +1,46 @@
+diff --git a/drivers/pmdomain/rockchip/pm-domains.c b/drivers/pmdomain/rockchip/pm-domains.c
+--- a/drivers/pmdomain/rockchip/pm-domains.c
++++ b/drivers/pmdomain/rockchip/pm-domains.c
+@@ -654,12 +654,15 @@ static int rockchip_pd_power(struct rockchip_pm_domain *pd, bool power_on)
+ 		/* if powering down, idle request to NIU first */
+ 		ret = rockchip_pmu_set_idle_request(pd, true);
+ 		if (ret < 0)
+-			goto out;
++			goto err_unidle;
+ 	}
+ 
+ 	ret = rockchip_do_pmu_set_power_domain(pd, power_on);
+-	if (ret < 0)
++	if (ret < 0) {
++		if (!power_on)
++			goto err_unidle;
+ 		goto out;
++	}
+ 
+ 	if (power_on) {
+ 		/* if powering up, leave idle mode */
+@@ -675,6 +678,24 @@ out:
+ 	clk_bulk_disable(pd->num_clks, pd->clks);
+ 
+ 	return ret;
++
++err_unidle:
++	/*
++	 * Powering the domain down failed, but the idle request has already
++	 * been written to the NIU while the domain stayed on.  Leaving it
++	 * asserted quiesces the interconnect for good: the next power-on sees
++	 * the domain as already on and returns early, so the de-assert above
++	 * is never reached and any access to a device behind that NIU no
++	 * longer completes.  Drop the request so the domain is left as it was
++	 * found.  Keep the original error - the caller has to learn that the
++	 * power-down failed, not how the cleanup went.
++	 */
++	if (rockchip_pmu_set_idle_request(pd, false))
++		dev_err(pmu->dev, "failed to release idle request on domain '%s'\n",
++			pd->genpd.name);
++	else
++		rockchip_pmu_restore_qos(pd);
++	goto out;
+ }
+ 
+ static int rockchip_pd_regulator_disable(struct rockchip_pm_domain *pd)

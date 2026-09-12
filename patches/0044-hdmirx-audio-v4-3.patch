@@ -1,7 +1,7 @@
 From lore-posting Mon Sep 17 00:00:00 2001
 From: Igor Paunovic <royalnet026@gmail.com>
 Date: Tue, 21 Jul 2026 08:41:14 +0200
-Subject: [PATCH 44/49] arm64: dts: rockchip: add HDMI RX audio on RK3588
+Subject: [PATCH 44/50] arm64: dts: rockchip: add HDMI RX audio on RK3588
 
 Backport of unmerged v4 posting.
 
