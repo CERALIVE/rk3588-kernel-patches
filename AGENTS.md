@@ -80,8 +80,8 @@ rk3588-kernel-patches/
 | Why `0002` was kept instead of taking the upstream EDID fix | [`docs/EVAL-0002-EDID.md`](docs/EVAL-0002-EDID.md) |
 | Why `0005`+`0006` were kept instead of taking the lore HDMI-audio series | [`docs/EVAL-0005-AUDIO.md`](docs/EVAL-0005-AUDIO.md) |
 | Stop carrying a patch | **Never `git rm` it.** Move it to `retired/` and add a row — see [`retired/REGISTRY.md`](retired/REGISTRY.md) |
-| Why HDMI-RX audio needs a DT patch at all | [`docs/PROVENANCE.md`](docs/PROVENANCE.md) §8 and `patches/0006-*`'s own mail header |
-| Why the rkvenc DMA segment-size fix exists, and why the IOVA guardrail is left alone | [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) § `0008` and `patches/0008-*`'s own mail header |
+| Why HDMI-RX audio needs a DT patch at all | [`docs/PROVENANCE.md`](docs/PROVENANCE.md) §8 and the archived `retired/0006-*`'s own mail header — the live wiring is `0044` + `0049` |
+| Why the rkvenc DMA segment-size fix existed, and why the IOVA guardrail was left alone | [`docs/UPSTREAM-STATUS.md`](docs/UPSTREAM-STATUS.md) § `0008` and the archived `retired/0008-*`'s own mail header; the live intent is island source |
 | Report the selected Armbian alias | `scripts/preflight.sh --head` |
 | Understand the `bleedingedge` → 7.2 derivation | [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md) |
 | Apply the series | `scripts/apply.sh` — see [`README.md`](README.md) |
