@@ -7,8 +7,8 @@ Holds the **mainline-track RK3588 kernel patch series** for CeraLive: the
 seven backported **unmerged lore postings**, and board Type-C policy patches —
 assembled as one `git am` mailbox series pinned to an exact kernel tag.
 
-The base is **`v7.2`**. **31 members are active across
-49 slots** — `0004` was never published, and seventeen retired ordinals stay
+The base is **`v7.2`**. **32 members are active across
+50 slots** — `0004` was never published, and seventeen retired ordinals stay
 burned. Board evidence quoted anywhere in this repo was measured at the previous
 `v7.1.7` base and is historical here.
 
@@ -131,6 +131,31 @@ when the stored tuple actually changes AND the queue is streaming, because a
 colorimetry-only change carries no resolution change for an application to
 notice. Rockchip's `rk_hdmirx.c` is the behavioural reference; no vendor code is
 copied. Board evidence is deferred — this is code and unit tests only.
+
+**`0050` unwinds a leaked NIU idle request, and it is NOT the fix for the RGA2
+SError.** `rockchip_pd_power()` asserts the NIU idle request before powering a
+domain down and then calls `rockchip_do_pmu_set_power_domain()`. Both power-down
+error paths jumped straight to `out:`, so a failed power-down returned with the
+request still asserted — and because the power-down failed the domain is still
+on, `rockchip_pmu_domain_is_on()` keeps saying so, and every later power-on
+returns early at the already-in-the-requested-state check without ever reaching
+the driver's sole de-assert. The block is left powered but unreachable for the
+rest of the boot: a transient failure made permanent. `0050` adds an
+`err_unidle:` path that de-asserts and then calls `rockchip_pmu_restore_qos()`
+**only if that de-assert succeeded** — the same ordering the power-on path
+already uses, so no new unconditional MMIO is issued through an interconnect
+that may still be idled — and preserves the original `ret` so the caller still
+sees the power-down failure. Two things about it are easy to get wrong. First,
+**it does not fix the RK3588 RGA2 SError and must never be described as doing
+so**: it was found during that investigation, tested as a candidate for it on a
+Rock 5B+, and lost 2 of 2 eligible runs with its own `dev_err` proving the new
+path executed; that crash was root-caused to a broken AXI reset in the media
+island's `rga2_soft_reset()` and is fixed there. Second, **it carries no
+`Fixes:` tag on purpose** — the defective shape predates both `v7.2` and the
+`drivers/soc/rockchip/pm_domains.c` → `drivers/pmdomain/rockchip/pm-domains.c`
+move, and a tree pinned to a single tag cannot identify the introducing commit,
+so naming one would be inventing it. Code-only: no board qualification is
+claimed for the corrected error path.
 
 **`patches/` is generated. Editing it by hand is a bug, and CI catches it.**
 `scripts/build-series.py --check` regenerates from `upstream/` + `ceralive/` into a
@@ -276,8 +301,9 @@ backported, and island patches continue the same counter. The nine island member
 begin at the actual next ordinal, `0031`, and end at `0039`; no retired slot was
 reused and `0004` remains visible. Ten standalone-rkvenc members plus the earlier
 `0007` and `0023`–`0025` retirements leave fourteen burned slots. With the `0040`
-EDID guard, `0041` AVI colorimetry, and audio v4 migration (`0042`–`0049`, retiring
-`0005`/`0006`/`0017`), that yields **31 active members across 49 slots**.
+EDID guard, `0041` AVI colorimetry, audio v4 migration (`0042`–`0049`, retiring
+`0005`/`0006`/`0017`) and the `0050` pmdomain idle-request unwind, that yields
+**32 active members across 50 slots**.
 `SERIES_TOTAL` is the slot ceiling, never the
 member count, and retirement never shrinks it.
 
@@ -477,7 +503,7 @@ defconfig, and a 30-minute job to prove something the image pipeline proves bett
   lore fetch — Anubis answers `Mozilla/5.0` with an HTTP 200 challenge page, so
   the spoof is what breaks it, not what gets you through
 - Don't renumber to close a retired ordinal's slot, and don't read `SERIES_TOTAL`
-  as a member count — it is 49 slots holding 31 members
+  as a member count — it is 50 slots holding 32 members
 - Don't rename, alias, symlink or `mknod` the `system-uncached` heap — the name is
   a userspace ABI and an alias is a corruption trap, not a workaround
 - Don't tick anything in `docs/BOARD-QUALIFICATION.md` without a pasted transcript,

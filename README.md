@@ -11,7 +11,7 @@ imported at `e13a311` (2026-07-01) with full history and authorship preserved.
 | **Target kernel** | `v7.2` (`8d3ae59288f1e7d58d76558a6ee96d533bc5019f`) |
 | **Why that kernel** | Armbian rk3588 `bleedingedge` → `KERNEL_MAJOR_MINOR=7.2` — derived in [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md). Armbian itself still points that branch at `tag:v7.2-rc7`; we pin the **final** release deliberately. |
 | **Boards** | Radxa Rock 5B+, Orange Pi 5+ (both `BOARDFAMILY=rockchip-rk3588`) |
-| **Status** | **31 active members across 49 slots**, gated by `scripts/apply.sh` on `v7.2`. Nine byte-verified members carry `rk3588-media-island v2026.9.2`. HDMI-RX audio now uses unmerged upstream v4 plus four first-party deltas. This audio migration is code-only: no new image or board evidence is claimed. |
+| **Status** | **32 active members across 50 slots**, gated by `scripts/apply.sh` on `v7.2`. Nine byte-verified members carry `rk3588-media-island v2026.9.2`. HDMI-RX audio now uses unmerged upstream v4 plus four first-party deltas. That audio migration and the `0050` pmdomain fix are code-only: no new image or board evidence is claimed. |
 
 ## What's in the series
 
@@ -31,12 +31,19 @@ teardown, multichannel routing and Rock 5B+ enablement. The shared ALSA card is
 named exactly **`RK3588 HDMI-IN`**. The v4 second-suspend-cycle silence remains
 unfixed; jack notifications and idle pre-lock polling are deliberately retired.
 See the [per-behavior ledger](docs/UPSTREAM-STATUS.md#hdmi-rx-audio-v4-reconciliation--2026-09-05)
-for the behavior trade-offs and evidence. The series now has 31 active members
-across 49 slots.
+for the behavior trade-offs and evidence.
+
+New member `0050` stops a failed power-down leaving a NIU idle request asserted
+on a Rockchip power domain. Because the power-down failed the domain is still
+on, so the driver's sole de-assert — which sits past the power-on fast path — is
+never reached again, and the block is left powered but unreachable for the rest
+of the boot. It is **not** the fix for the RK3588 RGA2 SError: it was tested as
+a candidate for that crash and lost 2 of 2 eligible runs. The series now has 32
+active members across 50 slots.
 
 Upstream's numbering is preserved verbatim, gap included. First-party,
-backported, and island patches continue the same counter. 31 members are active
-across 49 slots: `0004` was never published, and seventeen retired ordinals stay
+backported, and island patches continue the same counter. 32 members are active
+across 50 slots: `0004` was never published, and seventeen retired ordinals stay
 burned.
 
 | | Patch | Source | What it does |
@@ -74,6 +81,7 @@ burned.
 | `0039` | RGA2 DT ownership | `island/` | Hands RGA2 to multi_rga with sole `rockchip,rga2_core0` compatible. |
 | `0040` | streaming EDID guard | `ceralive/` | Refuses S_EDID writes and clears while capture streams, before mutation. |
 | `0041` | AVI colorimetry on the capture format | `ceralive/` | Reports the source's colorimetry, encoding, transfer function and quantization instead of a hardcoded sRGB. The mapping is one pure function, asserted row by row off-hardware. |
+| `0050` | pmdomain NIU idle-request unwind | `ceralive/` | De-asserts the NIU idle request when a power-domain power-down fails, instead of returning with it asserted and the sole de-assert made unreachable by the power-on fast path. QoS is restored only if the de-assert succeeded, and the original error is preserved. **Not** the fix for the RGA2 SError — tested as a candidate for it and lost 2 of 2 eligible runs. No `Fixes:` tag: the introducing commit is not identifiable from a single-tag tree. Code-only; no board qualification claimed. |
 
 Which of these have an upstream counterpart, how far along it is, and what would
 have to be true before a patch can be dropped, is tracked per patch in
