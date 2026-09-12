@@ -1,7 +1,7 @@
 From lore-posting Mon Sep 17 00:00:00 2001
 From: Igor Paunovic <royalnet026@gmail.com>
 Date: Tue, 21 Jul 2026 08:41:13 +0200
-Subject: [PATCH 43/50] media: synopsys: hdmirx: add HDMI audio capture support
+Subject: [PATCH 43/51] media: synopsys: hdmirx: add HDMI audio capture support
 
 Backport of unmerged v4 posting.
 

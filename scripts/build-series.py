@@ -117,8 +117,8 @@ ISLAND_TAG_RE = re.compile(r"^v[0-9]{4}\.[0-9]+\.[0-9]+$")
 # 0031-0039; the EDID guard adds 0040 and the AVI colorimetry report 0041.
 # Retiring ten members out of those first 30 slots does NOT reduce it: an N/41
 # subject counts slots. The audio v4 migration takes 0042-0049, and the pmdomain
-# idle-request unwind takes 0050.
-SERIES_TOTAL = 50
+# idle-request unwind takes 0050, and the hdmirx no-signal log level 0051.
+SERIES_TOTAL = 51
 ISLAND_ORDINAL_OFFSET = 30
 
 DS_STORE_RE = re.compile(r"^Binary files .*\.DS_Store .* differ$")
@@ -1281,6 +1281,62 @@ SERIES += (
             "NIU that refuses to idle, and the only runs known to have reached",
             "it are the refuted crash trials described above.",
             "Intended for upstream submission to linux-pm; retire when the",
+            "base absorbs it.",
+        ),
+    ),
+)
+
+SERIES += (
+    Patch(
+        filename="0051-hdmirx-no-signal-is-not-an-error.patch",
+        ordinal=51,
+        subject=(
+            "media: synopsys: hdmirx: an absent source is not an error"
+        ),
+        provenance=NULL_OID,
+        author="Andres Cera <andres.cera@hotmail.com>",
+        date="Sat, 12 Sep 2026 16:00:00 +0000",
+        origin=CERALIVE,
+        rationale=(
+            "MOTIVATION. hdmirx_query_dv_timings() logs at v4l2_err when the",
+            "port has no link and again when the signal is not locked. Neither",
+            "is an error. Both are the ordinary resting state of an HDMI input",
+            "with nothing plugged into it, and the ioctl already reports each",
+            "one to its caller as -ENOLINK or -ENOLCK. The log line duplicates",
+            "a return code at KERN_ERR, which reaches the console at every",
+            "loglevel a product would ship.",
+            "",
+            "MEASURED, NOT ASSUMED. On an idle Orange Pi 5 Plus running",
+            "7.2.0-ceralive-rk3588 with no HDMI source attached, 1476 of 1623",
+            "dmesg lines were 'port has no link' and a further 138 were 'signal",
+            "is not locked' -- 99.5 percent of the kernel's entire log output",
+            "for a 13-hour uptime, from one polling path. The caller is an",
+            "ordinary capability query: the userspace engine calls",
+            "VIDIOC_QUERY_DV_TIMINGS on every device enumeration, which is by",
+            "design and is not the defect.",
+            "",
+            "WHY IT MATTERS BEYOND TIDINESS. The image is gaining",
+            "CONFIG_PSTORE_CONSOLE so that a silent SoC reset leaves the",
+            "console behind in a reserved DRAM ring. That ring is small and it",
+            "wraps. A repeated no-signal message emitted at error level is",
+            "exactly what evicts the messages preceding a fault, so shipping",
+            "the forensics feature alongside this printk would produce a",
+            "flight recorder whose contents are almost entirely its own noise.",
+            "",
+            "WHAT CHANGES, AND WHAT DOES NOT. Only the log level and its",
+            "gating. Both sites become v4l2_dbg at level 1 behind the driver's",
+            "existing 'debug' module parameter, which the file already uses in",
+            "62 other places, so the diagnostic is still one module parameter",
+            "away when an integrator wants it. The return values, the control",
+            "flow and every other message are untouched, so no caller and no",
+            "userspace contract can observe this change.",
+            "",
+            "PROVENANCE. First-party CeraLive change to mainline code. No",
+            "upstream counterpart exists and no Fixes: tag is claimed: the",
+            "levels are as the driver was merged, and this is a product",
+            "judgement about what deserves KERN_ERR on a shipping device",
+            "rather than a defect in the original author's reasoning.",
+            "Intended for upstream submission to linux-media; retire when the",
             "base absorbs it.",
         ),
     ),

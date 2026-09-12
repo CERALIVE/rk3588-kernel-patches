@@ -1,0 +1,21 @@
+diff --git a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
+--- a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
++++ b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
+@@ -469,12 +469,14 @@ static int hdmirx_query_dv_timings(struct file *file, void *priv,
+ 	struct v4l2_device *v4l2_dev = &hdmirx_dev->v4l2_dev;
+ 	int ret;
+ 
+ 	if (port_no_link(hdmirx_dev)) {
+-		v4l2_err(v4l2_dev, "%s: port has no link\n", __func__);
++		v4l2_dbg(1, debug, v4l2_dev, "%s: port has no link\n",
++			 __func__);
+ 		return -ENOLINK;
+ 	}
+ 
+ 	if (signal_not_lock(hdmirx_dev)) {
+-		v4l2_err(v4l2_dev, "%s: signal is not locked\n", __func__);
++		v4l2_dbg(1, debug, v4l2_dev, "%s: signal is not locked\n",
++			 __func__);
+ 		return -ENOLCK;
+ 	}
+ 

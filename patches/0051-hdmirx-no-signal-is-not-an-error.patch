@@ -1,0 +1,80 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Andres Cera <andres.cera@hotmail.com>
+Date: Sat, 12 Sep 2026 16:00:00 +0000
+Subject: [PATCH 51/51] media: synopsys: hdmirx: an absent source is not an error
+
+MOTIVATION. hdmirx_query_dv_timings() logs at v4l2_err when the
+port has no link and again when the signal is not locked. Neither
+is an error. Both are the ordinary resting state of an HDMI input
+with nothing plugged into it, and the ioctl already reports each
+one to its caller as -ENOLINK or -ENOLCK. The log line duplicates
+a return code at KERN_ERR, which reaches the console at every
+loglevel a product would ship.
+
+MEASURED, NOT ASSUMED. On an idle Orange Pi 5 Plus running
+7.2.0-ceralive-rk3588 with no HDMI source attached, 1476 of 1623
+dmesg lines were 'port has no link' and a further 138 were 'signal
+is not locked' -- 99.5 percent of the kernel's entire log output
+for a 13-hour uptime, from one polling path. The caller is an
+ordinary capability query: the userspace engine calls
+VIDIOC_QUERY_DV_TIMINGS on every device enumeration, which is by
+design and is not the defect.
+
+WHY IT MATTERS BEYOND TIDINESS. The image is gaining
+CONFIG_PSTORE_CONSOLE so that a silent SoC reset leaves the
+console behind in a reserved DRAM ring. That ring is small and it
+wraps. A repeated no-signal message emitted at error level is
+exactly what evicts the messages preceding a fault, so shipping
+the forensics feature alongside this printk would produce a
+flight recorder whose contents are almost entirely its own noise.
+
+WHAT CHANGES, AND WHAT DOES NOT. Only the log level and its
+gating. Both sites become v4l2_dbg at level 1 behind the driver's
+existing 'debug' module parameter, which the file already uses in
+62 other places, so the diagnostic is still one module parameter
+away when an integrator wants it. The return values, the control
+flow and every other message are untouched, so no caller and no
+userspace contract can observe this change.
+
+PROVENANCE. First-party CeraLive change to mainline code. No
+upstream counterpart exists and no Fixes: tag is claimed: the
+levels are as the driver was merged, and this is a product
+judgement about what deserves KERN_ERR on a shipping device
+rather than a defect in the original author's reasoning.
+Intended for upstream submission to linux-media; retire when the
+base absorbs it.
+
+First-party: authored by CeraLive against v7.2, with no upstream
+counterpart in rockchip-rk3588-mainline-patches. The source of record
+is ceralive/0051-hdmirx-no-signal-is-not-an-error.patch
+and patches/ is generated from it by scripts/build-series.py.
+scripts/verify-payload-parity.py holds it to the same
+added/removed-line parity the upstream lane gets.
+
+NOT upstream-bound: this targets the CeraLive device tree only and
+is not a submission to linux-media, linux-rockchip or the fork
+parent. No Signed-off-by is added, because a DCO assertion belongs
+to whoever actually submits it.
+
+---
+diff --git a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
+--- a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
++++ b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
+@@ -469,12 +469,14 @@ static int hdmirx_query_dv_timings(struct file *file, void *priv,
+ 	struct v4l2_device *v4l2_dev = &hdmirx_dev->v4l2_dev;
+ 	int ret;
+ 
+ 	if (port_no_link(hdmirx_dev)) {
+-		v4l2_err(v4l2_dev, "%s: port has no link\n", __func__);
++		v4l2_dbg(1, debug, v4l2_dev, "%s: port has no link\n",
++			 __func__);
+ 		return -ENOLINK;
+ 	}
+ 
+ 	if (signal_not_lock(hdmirx_dev)) {
+-		v4l2_err(v4l2_dev, "%s: signal is not locked\n", __func__);
++		v4l2_dbg(1, debug, v4l2_dev, "%s: signal is not locked\n",
++			 __func__);
+ 		return -ENOLCK;
+ 	}
+ 

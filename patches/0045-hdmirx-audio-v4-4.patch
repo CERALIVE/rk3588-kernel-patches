@@ -1,7 +1,7 @@
 From lore-posting Mon Sep 17 00:00:00 2001
 From: Igor Paunovic <royalnet026@gmail.com>
 Date: Tue, 21 Jul 2026 08:41:15 +0200
-Subject: [PATCH 45/50] arm64: dts: rockchip: enable HDMI RX audio capture on Orange Pi 5 Plus
+Subject: [PATCH 45/51] arm64: dts: rockchip: enable HDMI RX audio capture on Orange Pi 5 Plus
 
 Backport of unmerged v4 posting.
 
