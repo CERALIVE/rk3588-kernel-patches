@@ -1,7 +1,7 @@
 From lore-posting Mon Sep 17 00:00:00 2001
 From: Igor Paunovic <royalnet026@gmail.com>
 Date: Tue, 21 Jul 2026 08:41:12 +0200
-Subject: [PATCH 42/50] dt-bindings: media: snps,dw-hdmi-rx: add #sound-dai-cells
+Subject: [PATCH 42/51] dt-bindings: media: snps,dw-hdmi-rx: add #sound-dai-cells
 
 Backport of unmerged v4 posting.
 

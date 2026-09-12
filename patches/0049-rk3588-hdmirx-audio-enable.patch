@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Andres Cera <andres.cera@hotmail.com>
 Date: Sat, 5 Sep 2026 14:00:00 +0000
-Subject: [PATCH 49/50] arm64: dts: rockchip: preserve Rock HDMI input audio and codec dependency
+Subject: [PATCH 49/51] arm64: dts: rockchip: preserve Rock HDMI input audio and codec dependency
 
 Enable the v4 shared card on the Rock family; retain codec Kconfig closure.
 Reconciliation evidence: docs/UPSTREAM-STATUS.md.

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Andres Cera <andres.cera@hotmail.com>
 Date: Sat, 5 Sep 2026 14:00:00 +0000
-Subject: [PATCH 48/50] media: synopsys: hdmirx: preserve multichannel routing and rate validity
+Subject: [PATCH 48/51] media: synopsys: hdmirx: preserve multichannel routing and rate validity
 
 Carry 0005 speaker override and channel changes; back off on invalid ACR.
 Reconciliation evidence: docs/UPSTREAM-STATUS.md.
