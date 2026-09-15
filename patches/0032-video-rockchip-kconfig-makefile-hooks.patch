@@ -11,10 +11,10 @@ Origin: yisding/rock-5b-ysp@ca3da04280c48c004e522c15f31862bf88a2d1b9:kernel-driv
 Patches a file mainline already carries. The payload below is carried byte-for-byte from integration/0001-video-rockchip-kconfig-makefile-hooks.patch; scripts/build-series.py adds the mail header and nothing else, and scripts/verify-series-parity.py proves that independently.
 
 
-Generated from CeraLive rk3588-media-island v2026.9.2 (1fd357d8a8b83b6f4ed7f7692d761f7b653d44f5).
+Generated from CeraLive rk3588-media-island v2026.9.4 (e23dae264ae91811730f79c12bc8527a98435774).
 
-Release asset rk3588-media-island-v2026.9.2.mbox.tar
-  asset_sha256  393b50a26117b95659f35a603abb9939f767e397f71e85fb180dda107e2df616
+Release asset rk3588-media-island-v2026.9.4.mbox.tar
+  asset_sha256  f64bebb369afa13e1fa37c733e7fa69021ff14f4be2da8d88235ba8d66488820
   member        0002-video-rockchip-kconfig-makefile-hooks.patch
   member_sha256 f82b7918a5f6c212f076de492f47d5f9674aa2f99e58ed2039f6e5a96477efec
 
