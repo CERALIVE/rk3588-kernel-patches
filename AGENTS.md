@@ -97,6 +97,18 @@ rk3588-kernel-patches/
 
 ## KEY FACTS
 
+**The island lane carries `v2026.9.4`, with board qualification pending.** All nine
+members retain ordinals `0031`–`0039`; the release tag, source commit and asset
+digest must agree in the generator, independent verifier and test expectations.
+Regenerate every consumer header after updating those coordinates. The preceding
+import updated the verifier but left generator headers naming `v2026.9.2`;
+`tests/test_island_lane.py` now checks both surfaces against the release tuple.
+The RGA job-owned-table and execution-DMA repairs fail closed on reset failure:
+memory and power remain retained until reboot, and unload refuses. No board
+qualification is claimed; the downstream image pin PR stays open through that
+gate. Software evidence and the deliberately untouched, stale MPP hardening
+checker boundary are documented in the island release, not re-proven here.
+
 **HDMI-RX audio now uses v4 plus explicit deltas (`0042`–`0049`).** Canonical
 mail and diff bodies are byte-preserved; `0005`, `0006`, and `0017` are archived.
 The ACR byte-order concern does not survive v4, but remove-time work draining and

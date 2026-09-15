@@ -5,7 +5,7 @@ Subject: [PATCH 1/9] video: rockchip: add the CeraLive RK3588 media island
 
 The Rockchip MPP service with its three compiled clients (RKVENC2, RKVDEC2, JPGDEC), the multi_rga 2D engine driver, and the UAPI headers they publish.
 
-86 file(s), added under paths mainline does not carry, so every hunk is a create-mode diff.
+87 file(s), added under paths mainline does not carry, so every hunk is a create-mode diff.
 
 GENERATED from the rk3588-media-island source tree by scripts/build-series.py. The source is the truth and this series is its output; per-file provenance is docs/PROVENANCE.md and the originating commits' Origin: trailers, never this mailbox header.
 
@@ -35399,10 +35399,10 @@ index 0000000000000000000000000000000000000000..b9fcfa507997d60325220f6edb59a73d
 +#endif
 diff --git a/drivers/video/rockchip/rga3/include/rga_drv.h b/drivers/video/rockchip/rga3/include/rga_drv.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..148f07b694a877afa6aab8602a036824f18ef7f4
+index 0000000000000000000000000000000000000000..f0efec5b68f016e38dbfad7dd08ad678f6a94794
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/include/rga_drv.h
-@@ -0,0 +1,612 @@
+@@ -0,0 +1,620 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -35447,6 +35447,7 @@ index 0000000000000000000000000000000000000000..148f07b694a877afa6aab8602a036824
 +#include <linux/version.h>
 +#include <linux/vmalloc.h>
 +#include <linux/wait.h>
++#include <linux/xarray.h>
 +#include <linux/pm_runtime.h>
 +#include <linux/sched/mm.h>
 +#include <linux/sizes.h>
@@ -35507,7 +35508,7 @@ index 0000000000000000000000000000000000000000..148f07b694a877afa6aab8602a036824
 +			"." STR(DRIVER_REVISION_VERSION) STR(DRIVER_PATCH_VERSION))
 +
 +/* time limit */
-+#define RGA_JOB_TIMEOUT_DELAY		HZ
++#define RGA_JOB_TIMEOUT_DELAY		1000 /* milliseconds */
 +#define RGA_RESET_TIMEOUT			1000
 +
 +#define RGA_MAX_SCHEDULER	RGA_HW_SIZE
@@ -35699,6 +35700,10 @@ index 0000000000000000000000000000000000000000..148f07b694a877afa6aab8602a036824
 +};
 +
 +struct rga_job_buffer {
++	bool ready;
++	bool writable;
++	struct sg_table *rga2_user_sgt[3];
++	int rga2_user_sgt_count;
 +	union {
 +		struct {
 +			struct rga_external_buffer *ex_y_addr;
@@ -35720,11 +35725,7 @@ index 0000000000000000000000000000000000000000..148f07b694a877afa6aab8602a036824
 +	uint32_t *page_table;
 +	int order;
 +	int page_count;
-+	/*
-+	 * DMA address of page_table for the RGA2 device: an offset into the
-+	 * persistently mapped ring for non-handle jobs, or a per-job
-+	 * dma_map_single() mapping (unmapped at put) for handle jobs.
-+	 */
++	/* Every table and its executing-device mapping belong to this job. */
 +	dma_addr_t page_table_dma;
 +	struct device *page_table_dev;
 +	bool page_table_mapped;
@@ -35742,7 +35743,7 @@ index 0000000000000000000000000000000000000000..148f07b694a877afa6aab8602a036824
 +	struct rga_rga2_stage *rga2_stage[3];
 +	int rga2_stage_count;
 +
-+	/* Per-job mappings when an imported handle executes on another RGA3 core. */
++	/* Execution mappings are distinct from the retained classification mapping. */
 +	struct {
 +		struct rga_internal_buffer *origin;
 +		struct rga_dma_buffer *mapping;
@@ -35790,6 +35791,8 @@ index 0000000000000000000000000000000000000000..148f07b694a877afa6aab8602a036824
 +	size_t task_start;
 +	size_t task_count;
 +	size_t finished_count;
++	struct xarray rga2_user_pages;
++	size_t rga2_user_bytes;
 +
 +	/* for rga2 virtual_address */
 +	struct mm_struct *mm;
@@ -35821,7 +35824,7 @@ index 0000000000000000000000000000000000000000..148f07b694a877afa6aab8602a036824
 +	int (*set_reg)(struct rga_job *job, struct rga_scheduler_t *scheduler);
 +	int (*init_reg)(struct rga_job *job);
 +	/* Called with irq_lock held; must not sleep. */
-+	void (*soft_reset)(struct rga_scheduler_t *scheduler);
++	int (*soft_reset)(struct rga_scheduler_t *scheduler);
 +	int (*read_back_reg)(struct rga_job *job, struct rga_scheduler_t *scheduler);
 +	int (*read_status)(struct rga_job *job, struct rga_scheduler_t *scheduler);
 +	int (*irq)(struct rga_scheduler_t *scheduler);
@@ -35832,6 +35835,9 @@ index 0000000000000000000000000000000000000000..148f07b694a877afa6aab8602a036824
 +	u32 busy_time;
 +	u32 busy_time_record;
 +};
++
++#define RGA_SCHED_QUEUE_LIMIT 32
++#define RGA_QUEUE_TIMEOUT_MS 1000
 +
 +struct rga_scheduler_t {
 +	struct device *dev;
@@ -35854,6 +35860,9 @@ index 0000000000000000000000000000000000000000..148f07b694a877afa6aab8602a036824
 +	struct mutex job_mutex;
 +	/* Once set at remove, no queued work may start on this scheduler. */
 +	bool shutdown;
++	/* Failed reset is fail-stop until reboot: DMA ownership cannot be revoked. */
++	bool dma_faulted;
++	int reset_result;
 +	spinlock_t irq_lock;
 +	wait_queue_head_t job_done_wq;
 +
@@ -35961,7 +35970,6 @@ index 0000000000000000000000000000000000000000..148f07b694a877afa6aab8602a036824
 +	int device_count[RGA_DEVICE_BUTT];
 +	/* The scheduler_index used by default for memory mapping. */
 +	int map_scheduler_index;
-+	struct rga_mmu_base *mmu_base;
 +
 +	struct delayed_work power_off_work;
 +
@@ -36184,10 +36192,10 @@ index 0000000000000000000000000000000000000000..12e7e81e3f47f12f4aeb43a1212a11e7
 +#endif /* __LINUX_RGA_HW_CONFIG_H_ */
 diff --git a/drivers/video/rockchip/rga3/include/rga_iommu.h b/drivers/video/rockchip/rga3/include/rga_iommu.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..39b7ffd690891b4f692f4e3e84a55c73780ba973
+index 0000000000000000000000000000000000000000..7a0d79bb369411e30d382572a436bce89d1532b1
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/include/rga_iommu.h
-@@ -0,0 +1,85 @@
+@@ -0,0 +1,56 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +#ifndef __RGA_MMU_INFO_H__
 +#define __RGA_MMU_INFO_H__
@@ -36230,39 +36238,10 @@ index 0000000000000000000000000000000000000000..39b7ffd690891b4f692f4e3e84a55c73
 +#define RGA_IOMMU_IRQ_BUS_ERROR			0x02 /* bus read error */
 +#define RGA_IOMMU_IRQ_MASK			(RGA_IOMMU_IRQ_PAGE_FAULT | RGA_IOMMU_IRQ_BUS_ERROR)
 +
-+/*
-+ * The maximum input is 8192*8192, the maximum output is 4096*4096
-+ * The size of physical pages requested is:
-+ * (( maximum_input_value *
-+ *         maximum_input_value * format_bpp ) / 4K_page_size) + 1
-+ */
-+#define RGA2_PHY_PAGE_SIZE	 (((8192 * 8192 * 4) / 4096) + 1)
-+
-+struct rga_mmu_base {
-+	unsigned int *buf_virtual;
-+	struct page **pages;
-+	u8 buf_order;
-+	u8 pages_order;
-+
-+	int32_t front;
-+	int32_t back;
-+	int32_t size;
-+	int32_t curr;
-+
-+	/* streaming DMA mapping of buf_virtual against the RGA2 device */
-+	struct device *map_dev;
-+	dma_addr_t dma_addr;
-+};
-+
 +int rga_user_memory_check(struct page **pages, u32 w, u32 h, u32 format, int flag);
 +int rga_set_mmu_base(struct rga_job *job,
 +		     struct rga_job_task_buffers *task_buffers,
 +		     struct rga2_req *req);
-+unsigned int *rga_mmu_buf_get(struct rga_mmu_base *mmu_base, uint32_t size);
-+
-+struct rga_mmu_base *rga_mmu_base_init(struct device *map_dev, size_t size);
-+void rga_mmu_base_free(struct rga_mmu_base **mmu_base);
-+
 +int rga_iommu_detach(struct rga_iommu_info *info);
 +int rga_iommu_attach(struct rga_iommu_info *info);
 +int rga_iommu_flush_tlb(struct rga_iommu_info *info);
@@ -36275,7 +36254,7 @@ index 0000000000000000000000000000000000000000..39b7ffd690891b4f692f4e3e84a55c73
 +#endif
 diff --git a/drivers/video/rockchip/rga3/include/rga_job.h b/drivers/video/rockchip/rga3/include/rga_job.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..d3ac4cc0de0ef9c7a2a214200998f0810ee25871
+index 0000000000000000000000000000000000000000..ff512a835b11f7984d5f487c6b124b689ffdd5a0
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/include/rga_job.h
 @@ -0,0 +1,65 @@
@@ -36307,8 +36286,8 @@ index 0000000000000000000000000000000000000000..d3ac4cc0de0ef9c7a2a214200998f081
 +void rga_job_scheduler_dump_info(struct rga_scheduler_t *scheduler);
 +void rga_job_next(struct rga_scheduler_t *scheduler);
 +struct rga_job *rga_job_done(struct rga_scheduler_t *scheduler);
-+void rga_telemetry_reset(struct rga_scheduler_t *scheduler, int reason,
-+			 void (*reset)(struct rga_scheduler_t *scheduler));
++int rga_telemetry_reset(struct rga_scheduler_t *scheduler, int reason,
++			 int (*reset)(struct rga_scheduler_t *scheduler));
 +int rga_job_commit(struct rga_req *task_list, size_t task_count,
 +		   struct rga_request *request, size_t task_start);
 +int rga_job_mpi_commit(struct rga_req *rga_command_base, struct rga_request *request);
@@ -36346,10 +36325,10 @@ index 0000000000000000000000000000000000000000..d3ac4cc0de0ef9c7a2a214200998f081
 +#endif /* __LINUX_RKRGA_JOB_H_ */
 diff --git a/drivers/video/rockchip/rga3/include/rga_mm.h b/drivers/video/rockchip/rga3/include/rga_mm.h
 new file mode 100644
-index 0000000000000000000000000000000000000000..aeba404d133469bd9fe3f158280d0597478a13af
+index 0000000000000000000000000000000000000000..b3cbeb9ebf8dd270d26025bde003d642259537ac
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/include/rga_mm.h
-@@ -0,0 +1,93 @@
+@@ -0,0 +1,94 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -36431,6 +36410,7 @@ index 0000000000000000000000000000000000000000..aeba404d133469bd9fe3f158280d0597
 +void rga_mm_rga2_stage_show(struct seq_file *m);
 +u64 rga_mm_rga2_stage_counter(enum rga2_stage_counter counter);
 +
++int rga_mm_prepare_job_info(struct rga_job *job);
 +int rga_mm_map_job_info(struct rga_job *job);
 +void rga_mm_unmap_job_info(struct rga_job *job);
 +
@@ -36555,12 +36535,178 @@ index 0000000000000000000000000000000000000000..12602951a1361734111489f597990898
 +}
 +
 +#endif
+diff --git a/drivers/video/rockchip/rga3/include/rga_user_stage.h b/drivers/video/rockchip/rga3/include/rga_user_stage.h
+new file mode 100644
+index 0000000000000000000000000000000000000000..68f1d7b57aa07532d589fcc85fd18f5a3a2b4686
+--- /dev/null
++++ b/drivers/video/rockchip/rga3/include/rga_user_stage.h
+@@ -0,0 +1,160 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/* Included by rga_mm.c: the job pool keys original PFNs, not virtual ranges. */
++#ifndef RGA_USER_STAGE_H
++#define RGA_USER_STAGE_H
++
++struct rga2_user_page {
++	struct page *origin;
++	struct page *page;
++	struct device *dev;
++	dma_addr_t dma;
++	DECLARE_BITMAP(writable, PAGE_SIZE);
++};
++
++static void rga2_user_stage_release(struct rga_job *job)
++{
++	struct rga2_user_page *entry;
++	unsigned long index;
++	bool success = rga2_stage_job_succeeded(job);
++
++	xa_for_each(&job->rga2_user_pages, index, entry) {
++		unsigned long start = 0, end;
++		void *origin, *copy;
++
++		dma_unmap_page(entry->dev, entry->dma, PAGE_SIZE, DMA_BIDIRECTIONAL);
++		if (success && !bitmap_empty(entry->writable, PAGE_SIZE)) {
++			origin = kmap_local_page(entry->origin);
++			copy = kmap_local_page(entry->page);
++			while ((start = find_next_bit(entry->writable, PAGE_SIZE, start)) < PAGE_SIZE) {
++				end = find_next_zero_bit(entry->writable, PAGE_SIZE, start);
++				memcpy(origin + start, copy + start, end - start);
++				atomic64_add(end - start, &rga2_stage_copy_out_bytes);
++				start = end;
++			}
++			kunmap_local(copy);
++			kunmap_local(origin);
++			set_page_dirty_lock(entry->origin);
++		}
++		put_page(entry->origin);
++		__free_page(entry->page);
++		kfree(entry);
++		atomic64_dec(&rga2_stage_active_count);
++	}
++	xa_destroy(&job->rga2_user_pages);
++	atomic64_sub(job->rga2_user_bytes, &rga2_stage_active_bytes);
++	atomic64_sub(job->rga2_user_bytes, &job->session->rga2_stage_active_bytes);
++	job->rga2_user_bytes = 0;
++}
++
++static struct rga2_user_page *rga2_user_stage_page(struct rga_job *job, struct page *origin)
++{
++	struct rga2_user_page *entry;
++	struct rga_rga2_stage *stage;
++	size_t bytes = job->rga2_user_bytes;
++	int ret;
++
++	entry = xa_load(&job->rga2_user_pages, page_to_pfn(origin));
++	if (entry) {
++		atomic64_inc(&rga2_stage_reuse_count);
++		return entry;
++	}
++	atomic64_inc(&rga2_stage_attempt_count);
++	list_for_each_entry(stage, &job->rga2_stage_list, node)
++		bytes += stage->size;
++	if (bytes > RGA2_STAGE_MAX_SIZE - PAGE_SIZE)
++		return ERR_PTR(-E2BIG);
++	ret = rga2_stage_reserve(&job->session->rga2_stage_active_bytes,
++				 PAGE_SIZE, RGA2_STAGE_SESSION_MAX_SIZE);
++	if (ret)
++		return ERR_PTR(ret);
++	ret = rga2_stage_reserve(&rga2_stage_active_bytes, PAGE_SIZE, RGA2_STAGE_GLOBAL_MAX_SIZE);
++	if (ret)
++		goto uncharge_session;
++	entry = kzalloc(sizeof(*entry), GFP_KERNEL);
++	if (!entry) {
++		ret = -ENOMEM;
++		goto uncharge_global;
++	}
++	entry->page = alloc_page(GFP_KERNEL | GFP_DMA32 | __GFP_NOWARN | __GFP_NORETRY);
++	if (!entry->page) {
++		ret = -ENOMEM;
++		goto free_entry;
++	}
++	copy_highpage(entry->page, origin);
++	entry->dev = job->scheduler->dev;
++	entry->dma = dma_map_page(entry->dev, entry->page, 0, PAGE_SIZE, DMA_BIDIRECTIONAL);
++	if (dma_mapping_error(entry->dev, entry->dma)) {
++		ret = -EIO;
++		goto free_page;
++	}
++	ret = xa_err(xa_store(&job->rga2_user_pages, page_to_pfn(origin), entry, GFP_KERNEL));
++	if (ret)
++		goto unmap;
++	get_page(origin);
++	entry->origin = origin;
++	job->rga2_user_bytes += PAGE_SIZE;
++	atomic64_inc(&rga2_stage_success_count);
++	atomic64_inc(&rga2_stage_active_count);
++	atomic64_add(PAGE_SIZE, &rga2_stage_copy_in_bytes);
++	rga2_stage_update_peak(atomic64_read(&rga2_stage_active_bytes));
++	return entry;
++
++unmap:
++	dma_unmap_page(entry->dev, entry->dma, PAGE_SIZE, DMA_BIDIRECTIONAL);
++free_page:
++	__free_page(entry->page);
++free_entry:
++	kfree(entry);
++uncharge_global:
++	atomic64_sub(PAGE_SIZE, &rga2_stage_active_bytes);
++uncharge_session:
++	atomic64_sub(PAGE_SIZE, &job->session->rga2_stage_active_bytes);
++	atomic64_inc(&rga2_stage_failure_count);
++	return ERR_PTR(ret);
++}
++
++static struct sg_table *rga2_user_stage_sgt(struct rga_job *job,
++					   struct rga_job_buffer *channel,
++					   struct rga_internal_buffer *buffer)
++{
++	struct rga_virt_addr *virt = buffer->virt_addr;
++	struct rga2_user_page *entry;
++	struct sg_table *sgt;
++	struct scatterlist *sg;
++	size_t start, end;
++	int i, ret;
++
++	if (!virt || !virt->pages || virt->result != virt->page_count)
++		return ERR_PTR(-EOPNOTSUPP);
++	if (channel->rga2_user_sgt_count == ARRAY_SIZE(channel->rga2_user_sgt))
++		return ERR_PTR(-E2BIG);
++	sgt = kzalloc(sizeof(*sgt), GFP_KERNEL);
++	if (!sgt)
++		return ERR_PTR(-ENOMEM);
++	ret = sg_alloc_table(sgt, virt->page_count, GFP_KERNEL);
++	if (ret) {
++		kfree(sgt);
++		return ERR_PTR(ret);
++	}
++	/* Each DMA mapping belongs to the shared page; the SG only describes it. */
++	for_each_sg(sgt->sgl, sg, sgt->orig_nents, i) {
++		entry = rga2_user_stage_page(job, rga_virt_original_page(virt, i));
++		if (IS_ERR(entry)) {
++			ret = PTR_ERR(entry);
++			rga_free_sgt(&sgt);
++			return ERR_PTR(ret);
++		}
++		sg_set_page(sg, entry->page, PAGE_SIZE, 0);
++		sg_dma_address(sg) = entry->dma;
++		sg_dma_len(sg) = PAGE_SIZE;
++		if (channel->writable) {
++			start = i ? 0 : virt->offset;
++			end = min_t(size_t, PAGE_SIZE, virt->offset + virt->size - (size_t)i * PAGE_SIZE);
++			bitmap_set(entry->writable, start, end - start);
++		}
++	}
++	channel->rga2_user_sgt[channel->rga2_user_sgt_count++] = sgt;
++	return sgt;
++}
++
++#endif
 diff --git a/drivers/video/rockchip/rga3/rga2_reg_info.c b/drivers/video/rockchip/rga3/rga2_reg_info.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..a83a046ee04626bf0f35c8c7b41532f74f9658a6
+index 0000000000000000000000000000000000000000..046c5b9fb73ac165a06a1a47ed192ba85aae9171
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/rga2_reg_info.c
-@@ -0,0 +1,3608 @@
+@@ -0,0 +1,3618 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -39288,7 +39434,7 @@ index 0000000000000000000000000000000000000000..a83a046ee04626bf0f35c8c7b41532f7
 +	}
 +}
 +
-+static void rga2_soft_reset(struct rga_scheduler_t *scheduler)
++static int rga2_soft_reset(struct rga_scheduler_t *scheduler)
 +{
 +	u32 i = 0;
 +	u32 reg;
@@ -39340,16 +39486,23 @@ index 0000000000000000000000000000000000000000..a83a046ee04626bf0f35c8c7b41532f7
 +		rga_write(RGA_IOMMU_CMD_ENABLE_PAGING, RGA_IOMMU_COMMAND, scheduler);
 +	}
 +
-+	if (i == RGA_RESET_TIMEOUT)
++	if (i == RGA_RESET_TIMEOUT) {
 +		rga_fault(scheduler, "%s[%#x] soft reset timeout.\n",
 +			rga_get_core_name(scheduler->core), scheduler->core);
++		return -ETIMEDOUT;
++	}
++	return 0;
 +}
 +
-+static void rga2_soft_reset_print(struct rga_scheduler_t *scheduler)
++static int rga2_soft_reset_print(struct rga_scheduler_t *scheduler)
 +{
-+	rga2_soft_reset(scheduler);
++	int ret = rga2_soft_reset(scheduler);
++
++	if (ret)
++		return ret;
 +	rga_log("%s[%#x] soft reset complete.\n",
 +		rga_get_core_name(scheduler->core), scheduler->core);
++	return 0;
 +}
 +
 +static int rga2_check_param(struct rga_job *job,
@@ -39834,7 +39987,10 @@ index 0000000000000000000000000000000000000000..a83a046ee04626bf0f35c8c7b41532f7
 +		rga_write(0, RGA2_INT, scheduler);
 +		rga_write(0, RGA2_CMD_REG_BASE + RGA2_MODE_CTRL_OFFSET, scheduler);
 +		/* replace auto_rst */
-+		rga_telemetry_reset(scheduler, 0, rga2_soft_reset);
++		if (rga_telemetry_reset(scheduler, 0, rga2_soft_reset)) {
++			spin_unlock_irqrestore(&scheduler->irq_lock, flags);
++			return scheduler->reset_result;
++		}
 +	} else {
 +		sys_ctrl |= m_RGA2_SYS_CTRL_AUTO_RST;
 +	}
@@ -40171,10 +40327,10 @@ index 0000000000000000000000000000000000000000..a83a046ee04626bf0f35c8c7b41532f7
 +};
 diff --git a/drivers/video/rockchip/rga3/rga3_reg_info.c b/drivers/video/rockchip/rga3/rga3_reg_info.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..569ad8fbb3fc08d63a6b650fbc962c1dc8415c40
+index 0000000000000000000000000000000000000000..37f98f426f6d331c2eb9521422d3ea9685ee94f8
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/rga3_reg_info.c
-@@ -0,0 +1,2403 @@
+@@ -0,0 +1,2404 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -41940,7 +42096,7 @@ index 0000000000000000000000000000000000000000..569ad8fbb3fc08d63a6b650fbc962c1d
 +	}
 +}
 +
-+static void rga3_soft_reset(struct rga_scheduler_t *scheduler)
++static int rga3_soft_reset(struct rga_scheduler_t *scheduler)
 +{
 +	u32 i = 0;
 +	u32 iommu_dte_addr = 0;
@@ -41981,6 +42137,7 @@ index 0000000000000000000000000000000000000000..569ad8fbb3fc08d63a6b650fbc962c1d
 +	else
 +		rga_fault(scheduler, "%s[%#x] soft reset complete.\n",
 +			rga_get_core_name(scheduler->core), scheduler->core);
++	return i == RGA_RESET_TIMEOUT ? -ETIMEDOUT : 0;
 +}
 +
 +static int rga3_scale_check(struct rga_job *job, const struct rga3_req *req)
@@ -42580,10 +42737,10 @@ index 0000000000000000000000000000000000000000..569ad8fbb3fc08d63a6b650fbc962c1d
 +};
 diff --git a/drivers/video/rockchip/rga3/rga_common.c b/drivers/video/rockchip/rga3/rga_common.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..725c03a0de09cfd7320c519573dff6abc2f04b4d
+index 0000000000000000000000000000000000000000..8b105624547a4a811a1c7b308e0d8be3463348d5
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/rga_common.c
-@@ -0,0 +1,1147 @@
+@@ -0,0 +1,1149 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -43491,7 +43648,7 @@ index 0000000000000000000000000000000000000000..725c03a0de09cfd7320c519573dff6ab
 +}
 +
 +static int rga_validate_image(struct rga_job *job,
-+			      const struct rga_img_info_t *img, int win_num)
++			      const struct rga_img_info_t *img, int win_num, bool handle)
 +{
 +	struct rga_plane_request plane = {
 +		.active_width = img->act_w,
@@ -43512,7 +43669,6 @@ index 0000000000000000000000000000000000000000..725c03a0de09cfd7320c519573dff6ab
 +	u64 buffer_size;
 +	u64 bit_stride;
 +	int required[RGA_REQUEST_MAX_PLANES] = {};
-+	bool handle = job->flags & RGA_JOB_USE_HANDLE;
 +	bool separate = handle && img->uv_addr;
 +	int pixel_stride;
 +	int image_size;
@@ -43588,6 +43744,9 @@ index 0000000000000000000000000000000000000000..725c03a0de09cfd7320c519573dff6ab
 +
 +static int rga_validate_task(struct rga_job *job, const struct rga_req *task)
 +{
++	bool handle = (task->handle_flag & 1) &&
++		      !(job->flags & RGA_JOB_DEBUG_FAKE_BUFFER);
++
 +	switch (task->render_mode) {
 +	case BITBLT_MODE:
 +	case COLOR_PALETTE_MODE: {
@@ -43596,19 +43755,19 @@ index 0000000000000000000000000000000000000000..725c03a0de09cfd7320c519573dff6ab
 +		if (rga_request_rotation_swaps_axes(task->rotate_mode,
 +						    task->sina, task->cosa))
 +			swap(dst.act_w, dst.act_h);
-+		if (rga_validate_image(job, &task->src, 0) ||
-+		    rga_validate_image(job, &dst, 2))
++		if (rga_validate_image(job, &task->src, 0, handle) ||
++		    rga_validate_image(job, &dst, 2, handle))
 +			return -EINVAL;
 +		if (task->bsfilter_flag &&
-+		    rga_validate_image(job, &task->pat, 1))
++		    rga_validate_image(job, &task->pat, 1, handle))
 +			return -EINVAL;
 +		return 0;
 +	}
 +	case COLOR_FILL_MODE:
-+		return rga_validate_image(job, &task->dst, 2);
++		return rga_validate_image(job, &task->dst, 2, handle);
 +	case UPDATE_PALETTE_TABLE_MODE:
 +	case UPDATE_PATTEN_BUF_MODE:
-+		return rga_validate_image(job, &task->pat, 1);
++		return rga_validate_image(job, &task->pat, 1, handle);
 +	default:
 +		return -EINVAL;
 +	}
@@ -45896,10 +46055,10 @@ index 0000000000000000000000000000000000000000..2eabff20024a5b2cea7138a428b2daf7
 +}
 diff --git a/drivers/video/rockchip/rga3/rga_drv.c b/drivers/video/rockchip/rga3/rga_drv.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..feebc4b4cd6ca042ce097086dd441ef33d95c326
+index 0000000000000000000000000000000000000000..18a71a1e925d23bbf7445fafaf771ce60215f4f3
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/rga_drv.c
-@@ -0,0 +1,2029 @@
+@@ -0,0 +1,2037 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -47635,14 +47794,6 @@ index 0000000000000000000000000000000000000000..feebc4b4cd6ca042ce097086dd441ef3
 +	pm_runtime_put_sync_suspend(dev);
 +#endif /* #ifndef RGA_DISABLE_PM */
 +
-+	/*
-+	 * RGA cores read images through page tables or an IOMMU, so a
-+	 * contiguous import may span arbitrarily long sg segments; without
-+	 * this the DMA API's default 64 KiB segment limit is exceeded by any
-+	 * contiguous buffer larger than 64 KiB (e.g. CMA dma-buf imports).
-+	 */
-+	dma_set_max_seg_size(dev, DMA_BIT_MASK(32));
-+
 +	if (scheduler->data->mmu == RGA_IOMMU) {
 +		scheduler->iommu_info = rga_iommu_probe(dev);
 +		if (IS_ERR(scheduler->iommu_info)) {
@@ -47661,6 +47812,18 @@ index 0000000000000000000000000000000000000000..feebc4b4cd6ca042ce097086dd441ef3
 +			 * offset of the original address.
 +			 */
 +			dma_set_min_align_mask(dev, PAGE_SIZE - 1);
++	}
++	if (scheduler->data->mmu == RGA_MMU) {
++		size_t limit = min_t(size_t, dma_max_mapping_size(dev), UINT_MAX);
++
++		limit = round_down(limit, PAGE_SIZE);
++		if (limit < PAGE_SIZE) {
++			ret = -EOPNOTSUPP;
++			goto err_disable_pm;
++		}
++		dma_set_max_seg_size(dev, limit);
++	} else {
++		dma_set_max_seg_size(dev, UINT_MAX);
 +	}
 +
 +	data->scheduler[data->num_of_scheduler] = scheduler;
@@ -47710,10 +47873,12 @@ index 0000000000000000000000000000000000000000..feebc4b4cd6ca042ce097086dd441ef3
 +		rga_request_scheduler_shutdown(scheduler);
 +
 +#ifndef RGA_DISABLE_PM
-+	pm_runtime_suspend(&pdev->dev);
-+	device_init_wakeup(&pdev->dev, false);
-+	pm_runtime_disable(&pdev->dev);
-+	pm_runtime_dont_use_autosuspend(&pdev->dev);
++	if (!scheduler || !scheduler->dma_faulted) {
++		pm_runtime_suspend(&pdev->dev);
++		device_init_wakeup(&pdev->dev, false);
++		pm_runtime_disable(&pdev->dev);
++		pm_runtime_dont_use_autosuspend(&pdev->dev);
++	}
 +#endif /* #ifndef RGA_DISABLE_PM */
 +
 +	up_write(&rga_drvdata->rwsem);
@@ -47738,6 +47903,7 @@ index 0000000000000000000000000000000000000000..feebc4b4cd6ca042ce097086dd441ef3
 +	.shutdown = rga_drv_shutdown,
 +	.driver = {
 +		 .name = "rga3",
++		 .suppress_bind_attrs = true,
 +		 .of_match_table = of_match_ptr(rga3_dt_ids),
 +		 },
 +};
@@ -47748,6 +47914,7 @@ index 0000000000000000000000000000000000000000..feebc4b4cd6ca042ce097086dd441ef3
 +	.shutdown = rga_drv_shutdown,
 +	.driver = {
 +		 .name = "rga2",
++		 .suppress_bind_attrs = true,
 +		 .of_match_table = of_match_ptr(rga2_dt_ids),
 +		 },
 +};
@@ -48856,10 +49023,10 @@ index 0000000000000000000000000000000000000000..6fe05d4e879927175aed9392b6959628
 +};
 diff --git a/drivers/video/rockchip/rga3/rga_iommu.c b/drivers/video/rockchip/rga3/rga_iommu.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..9081cf55d7f7e42ce5679aa7681a967f7a13b5a3
+index 0000000000000000000000000000000000000000..9c1ca093f9982565c65ed90f1e119a2dd2900f61
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/rga_iommu.c
-@@ -0,0 +1,564 @@
+@@ -0,0 +1,393 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -48919,8 +49086,7 @@ index 0000000000000000000000000000000000000000..9081cf55d7f7e42ce5679aa7681a967f
 +{
 +	/*
 +	 * The page table is a streaming DMA buffer of the RGA2 device (the
-+	 * shared ring is mapped at bind time, per-job handle tables at fill
-+	 * time); publish the CPU-filled entries to the device and program
++	 * job-owned tables are mapped at fill time); publish the entries and program
 +	 * the retained DMA address.
 +	 */
 +	dma_sync_single_for_device(job_buf->page_table_dev,
@@ -48959,160 +49125,6 @@ index 0000000000000000000000000000000000000000..9081cf55d7f7e42ce5679aa7681a967f
 +			rga_job_buffer_mmu_base(&task_buffers->els_buffer);
 +
 +	return 0;
-+}
-+
-+static int rga_mmu_buf_get_try(struct rga_mmu_base *t, uint32_t size)
-+{
-+	int ret = 0;
-+
-+	if ((t->back - t->front) > t->size) {
-+		if (t->front + size > t->back - t->size) {
-+			rga_log("front %d, back %d dsize %d size %d",
-+				t->front, t->back, t->size, size);
-+			ret = -ENOMEM;
-+			goto out;
-+		}
-+	} else {
-+		if ((t->front + size) > t->back) {
-+			rga_log("front %d, back %d dsize %d size %d",
-+				t->front, t->back, t->size, size);
-+			ret = -ENOMEM;
-+			goto out;
-+		}
-+
-+		if (t->front + size > t->size) {
-+			if (size > (t->back - t->size)) {
-+				rga_log("front %d, back %d dsize %d size %d",
-+					t->front, t->back, t->size, size);
-+				ret = -ENOMEM;
-+				goto out;
-+			}
-+			t->front = 0;
-+		}
-+	}
-+out:
-+	return ret;
-+}
-+
-+unsigned int *rga_mmu_buf_get(struct rga_mmu_base *mmu_base, uint32_t size)
-+{
-+	int ret;
-+	unsigned int *buf = NULL;
-+
-+	WARN_ON(!mutex_is_locked(&rga_drvdata->lock));
-+
-+	size = ALIGN(size, 16);
-+
-+	ret = rga_mmu_buf_get_try(mmu_base, size);
-+	if (ret < 0) {
-+		rga_err("Get MMU mem failed\n");
-+		return NULL;
-+	}
-+
-+	buf = mmu_base->buf_virtual + mmu_base->front;
-+
-+	mmu_base->front += size;
-+
-+	if (mmu_base->back + size > 2 * mmu_base->size)
-+		mmu_base->back = size + mmu_base->size;
-+	else
-+		mmu_base->back += size;
-+
-+	return buf;
-+}
-+
-+struct rga_mmu_base *rga_mmu_base_init(struct device *map_dev, size_t size)
-+{
-+	int order = 0;
-+	struct rga_mmu_base *mmu_base;
-+
-+	mmu_base = kzalloc(sizeof(*mmu_base), GFP_KERNEL);
-+	if (mmu_base == NULL) {
-+		pr_err("Cannot alloc mmu_base!\n");
-+		return ERR_PTR(-ENOMEM);
-+	}
-+
-+	/*
-+	 * malloc pre scale mid buf mmu table:
-+	 * size * channel_num * address_size
-+	 */
-+	mmu_base->buf_virtual = (uint32_t *)rga_get_free_pages(GFP_KERNEL | GFP_DMA32,
-+		&order, size * 3 * sizeof(*mmu_base->buf_virtual));
-+	if (mmu_base->buf_virtual == NULL) {
-+		pr_err("Can not alloc pages for mmu_page_table\n");
-+		goto err_free_mmu_base;
-+	}
-+	mmu_base->buf_order = order;
-+
-+	mmu_base->pages = (struct page **)rga_get_free_pages(GFP_KERNEL | GFP_DMA32,
-+		&order, size * sizeof(*mmu_base->pages));
-+	if (mmu_base->pages == NULL) {
-+		pr_err("Can not alloc pages for mmu_base->pages\n");
-+		goto err_free_buf_virtual;
-+	}
-+	mmu_base->pages_order = order;
-+
-+	/*
-+	 * The page-table ring is CPU-filled and device-read for the whole
-+	 * driver lifetime, so own it as a streaming DMA mapping of the RGA2
-+	 * device and sync the touched range on each job instead of touching
-+	 * unmapped memory behind the DMA API's back.
-+	 */
-+	mmu_base->dma_addr = dma_map_single(map_dev, mmu_base->buf_virtual,
-+					    size * 3 * sizeof(*mmu_base->buf_virtual),
-+					    DMA_TO_DEVICE);
-+	if (dma_mapping_error(map_dev, mmu_base->dma_addr)) {
-+		pr_err("Can not map mmu_page_table for device\n");
-+		goto err_free_pages;
-+	}
-+	mmu_base->map_dev = map_dev;
-+
-+	mmu_base->front = 0;
-+	mmu_base->back = RGA2_PHY_PAGE_SIZE * 3;
-+	mmu_base->size = RGA2_PHY_PAGE_SIZE * 3;
-+
-+	return mmu_base;
-+
-+err_free_pages:
-+	free_pages((unsigned long)mmu_base->pages, mmu_base->pages_order);
-+	mmu_base->pages_order = 0;
-+
-+err_free_buf_virtual:
-+	free_pages((unsigned long)mmu_base->buf_virtual, mmu_base->buf_order);
-+	mmu_base->buf_order = 0;
-+
-+err_free_mmu_base:
-+	kfree(mmu_base);
-+
-+	return ERR_PTR(-ENOMEM);
-+}
-+
-+void rga_mmu_base_free(struct rga_mmu_base **mmu_base)
-+{
-+	struct rga_mmu_base *base = *mmu_base;
-+
-+	if (base->map_dev != NULL) {
-+		dma_unmap_single(base->map_dev, base->dma_addr,
-+				 base->size * sizeof(*base->buf_virtual),
-+				 DMA_TO_DEVICE);
-+		base->map_dev = NULL;
-+		base->dma_addr = 0;
-+	}
-+
-+	if (base->buf_virtual != NULL) {
-+		free_pages((unsigned long)base->buf_virtual, base->buf_order);
-+		base->buf_virtual = NULL;
-+		base->buf_order = 0;
-+	}
-+
-+	if (base->pages != NULL) {
-+		free_pages((unsigned long)base->pages, base->pages_order);
-+		base->pages = NULL;
-+		base->pages_order = 0;
-+	}
-+
-+	kfree(base);
-+	*mmu_base = NULL;
 +}
 +
 +static int rga_iommu_intr_fault_handler(struct iommu_domain *iommu, struct device *iommu_dev,
@@ -49356,19 +49368,6 @@ index 0000000000000000000000000000000000000000..9081cf55d7f7e42ce5679aa7681a967f
 +			break;
 +
 +		case RGA_MMU:
-+			if (rga_drvdata->mmu_base != NULL)
-+				continue;
-+
-+			rga_drvdata->mmu_base = rga_mmu_base_init(scheduler->dev,
-+								  RGA2_PHY_PAGE_SIZE);
-+			if (IS_ERR(rga_drvdata->mmu_base)) {
-+				dev_err(scheduler->dev, "rga mmu base init failed!\n");
-+				ret = PTR_ERR(rga_drvdata->mmu_base);
-+				rga_drvdata->mmu_base = NULL;
-+
-+				goto err_unbind;
-+			}
-+
 +			main_mmu_index = i;
 +
 +			break;
@@ -49419,17 +49418,14 @@ index 0000000000000000000000000000000000000000..9081cf55d7f7e42ce5679aa7681a967f
 +		if (rga_drvdata->scheduler[i]->iommu_info)
 +			rga_iommu_clear_fault_handler(rga_drvdata->scheduler[i]->iommu_info);
 +
-+	if (rga_drvdata->mmu_base)
-+		rga_mmu_base_free(&rga_drvdata->mmu_base);
-+
 +	rga_drvdata->map_scheduler_index = -1;
 +}
 diff --git a/drivers/video/rockchip/rga3/rga_job.c b/drivers/video/rockchip/rga3/rga_job.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094aeb31ffe
+index 0000000000000000000000000000000000000000..c8d76a65f4d96f7cc27fed5a4ef38ceff7b942ee
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/rga_job.c
-@@ -0,0 +1,2118 @@
+@@ -0,0 +1,2122 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -49553,21 +49549,34 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +	media_dump_capture(&scheduler->dump, &record);
 +}
 +
-+void rga_telemetry_reset(struct rga_scheduler_t *scheduler, int reason,
-+			 void (*reset)(struct rga_scheduler_t *scheduler))
++static int rga_reset_failed(struct rga_scheduler_t *scheduler, int error)
 +{
-+	if (!reset)
-+		return;
-+	if (!media_recovery_claim(&scheduler->recovery,
++	if (!scheduler->dma_faulted)
++		__module_get(THIS_MODULE);
++	scheduler->dma_faulted = true;
++	scheduler->reset_result = error;
++	return error;
++}
++
++int rga_telemetry_reset(struct rga_scheduler_t *scheduler, int reason,
++			 int (*reset)(struct rga_scheduler_t *scheduler))
++{
++	if (scheduler->dma_faulted)
++		return scheduler->reset_result;
++	/* The per-job initialization reset must not consume error recovery's claim. */
++	if (reason && !media_recovery_claim(&scheduler->recovery,
 +				  atomic64_read(&scheduler->recovery.recovery_epoch)))
-+		return;
++		return scheduler->reset_result;
 +
 +	atomic64_inc(&scheduler->telemetry.resets);
 +	trace_rga_reset(scheduler->core, reason);
 +	if (scheduler->running_job)
 +		rga_dump_job(scheduler, scheduler->running_job);
 +	media_dump_event(&scheduler->dump, MEDIA_RESET, 0, reason);
-+	reset(scheduler);
++	scheduler->reset_result = reset ? reset(scheduler) : -EOPNOTSUPP;
++	if (scheduler->reset_result)
++		return rga_reset_failed(scheduler, scheduler->reset_result);
++	return scheduler->reset_result;
 +}
 +
 +static int rga_job_cleanup(struct rga_job *job)
@@ -49580,6 +49589,12 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +static int rga_job_judgment_support_core(struct rga_job *job, struct rga_req *req)
 +{
 +	int ret = 0;
++	int i;
++	uint64_t handles[] = {
++		req->src.yrgb_addr, req->src.uv_addr, req->src.v_addr,
++		req->dst.yrgb_addr, req->dst.uv_addr, req->dst.v_addr,
++		req->pat.yrgb_addr, req->pat.uv_addr, req->pat.v_addr,
++	};
 +	struct rga_mm *mm;
 +
 +	mm = rga_drvdata->mm;
@@ -49590,52 +49605,23 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +
 +	mutex_lock(&mm->lock);
 +
-+	/*
-+	 * A buffer only disqualifies the RGA2 MMU cores when it can neither
-+	 * be addressed below 4G directly nor be remapped below 4G by a
-+	 * per-job DMA mapping of the 32-bit RGA2 device.
-+	 */
-+	if (likely(req->src.yrgb_addr > 0)) {
-+		ret = rga_mm_lookup_rga2_support(mm, req->src.yrgb_addr,
-+						 job->session);
++	for (i = 0; i < ARRAY_SIZE(handles); i++) {
++		if (!handles[i])
++			continue;
++		if (handles[i] > U32_MAX) {
++			ret = -EINVAL;
++			goto out_finish;
++		}
++		ret = rga_mm_lookup_rga2_support(mm, handles[i], job->session);
 +		if (ret < 0)
 +			goto out_finish;
 +
-+		if (ret == RGA2_BUFFER_STAGEABLE) {
++		if (ret == RGA2_BUFFER_STAGEABLE)
 +			job->flags |= RGA_JOB_RGA2_STAGEABLE_DMA_BUF;
-+		} else if (!ret) {
++		else if (ret == RGA2_BUFFER_UNSUPPORTED)
 +			job->flags |= RGA_JOB_UNSUPPORT_RGA_MMU;
-+			goto out_finish;
-+		}
 +	}
-+
-+	if (likely(req->dst.yrgb_addr > 0)) {
-+		ret = rga_mm_lookup_rga2_support(mm, req->dst.yrgb_addr,
-+						 job->session);
-+		if (ret < 0)
-+			goto out_finish;
-+
-+		if (ret == RGA2_BUFFER_STAGEABLE) {
-+			job->flags |= RGA_JOB_RGA2_STAGEABLE_DMA_BUF;
-+		} else if (!ret) {
-+			job->flags |= RGA_JOB_UNSUPPORT_RGA_MMU;
-+			goto out_finish;
-+		}
-+	}
-+
-+	if (req->pat.yrgb_addr > 0) {
-+		ret = rga_mm_lookup_rga2_support(mm, req->pat.yrgb_addr,
-+						 job->session);
-+		if (ret < 0)
-+			goto out_finish;
-+
-+		if (ret == RGA2_BUFFER_STAGEABLE) {
-+			job->flags |= RGA_JOB_RGA2_STAGEABLE_DMA_BUF;
-+		} else if (!ret) {
-+			job->flags |= RGA_JOB_UNSUPPORT_RGA_MMU;
-+			goto out_finish;
-+		}
-+	}
++	ret = 0;
 +
 +out_finish:
 +	mutex_unlock(&mm->lock);
@@ -49658,6 +49644,7 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +
 +	INIT_LIST_HEAD(&job->head);
 +	INIT_LIST_HEAD(&job->rga2_stage_list);
++	xa_init(&job->rga2_user_pages);
 +	kref_init(&job->refcount);
 +	rga_session_get(session);
 +	job->session = session;
@@ -49692,9 +49679,6 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +	for (i = 0; i < task_count; i++) {
 +		if (job->task_list[i].handle_flag & 1) {
 +			job->flags |= RGA_JOB_USE_HANDLE;
-+			rga_job_judgment_support_core(job, &job->task_list[i]);
-+			if (job->flags & RGA_JOB_UNSUPPORT_RGA_MMU)
-+				break;
 +		}
 +	}
 +
@@ -49713,6 +49697,7 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +		return ret;
 +	}
 +
++	media_recovery_started(&scheduler->recovery);
 +	iommu_fault = rga_iommu_test_prepare(scheduler);
 +	if (iommu_fault || rga_test_irq_timeout() || rga_test_hang_task()) {
 +		/* Keep timeout/cancel ownership, but never start DMA for this shot. */
@@ -49724,21 +49709,22 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +	}
 +	if (ret < 0) {
 +		rga_job_err(job, "set reg failed");
-+		rga_power_disable(scheduler);
++		if (!scheduler->dma_faulted)
++			rga_power_disable(scheduler);
 +		return ret;
 +	}
 +
 +	set_bit(RGA_JOB_STATE_RUNNING, &job->state);
 +	job->telemetry_start = ktime_get();
 +	trace_rga_job_started(scheduler->core, job->request_id);
-+	media_recovery_started(&scheduler->recovery);
 +	media_dump_event(&scheduler->dump, MEDIA_STARTED, job->request_id, 0);
 +
 +	if (iommu_fault) {
 +		/* The callback owns irq_lock; job_mutex keeps this job published. */
 +		rga_iommu_test_fault(scheduler);
 +		rga_telemetry_record_busy(scheduler, job, false);
-+		rga_power_disable(scheduler);
++		if (!scheduler->dma_faulted)
++			rga_power_disable(scheduler);
 +		return job->ret;
 +	}
 +
@@ -49755,7 +49741,7 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +	mutex_lock(&scheduler->job_mutex);
 +	spin_lock_irqsave(&scheduler->irq_lock, flags);
 +
-+	if (scheduler->shutdown || scheduler->running_job ||
++	if (scheduler->shutdown || scheduler->dma_faulted || scheduler->running_job ||
 +	    list_empty(&scheduler->todo_list)) {
 +		spin_unlock_irqrestore(&scheduler->irq_lock, flags);
 +		mutex_unlock(&scheduler->job_mutex);
@@ -49768,6 +49754,15 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +
 +	scheduler->job_count--;
 +	atomic_dec(&rga_drvdata->telemetry_queue_depth);
++	if (ktime_ms_delta(ktime_get(), job->timestamp.insert) >= RGA_QUEUE_TIMEOUT_MS) {
++		job->ret = -ETIMEDOUT;
++		set_bit(RGA_JOB_STATE_INTR_ERR, &job->state);
++		spin_unlock_irqrestore(&scheduler->irq_lock, flags);
++		rga_mm_unmap_job_info(job);
++		mutex_unlock(&scheduler->job_mutex);
++		rga_request_release_signal(scheduler, job);
++		goto next_job;
++	}
 +
 +	scheduler->running_job = job;
 +	set_bit(RGA_JOB_STATE_PREPARE, &job->state);
@@ -49776,6 +49771,12 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +	spin_unlock_irqrestore(&scheduler->irq_lock, flags);
 +
 +	ret = rga_job_run(job, scheduler);
++	if (scheduler->dma_faulted) {
++		job->ret = scheduler->reset_result;
++		rga_job_put(job);
++		mutex_unlock(&scheduler->job_mutex);
++		return;
++	}
 +	/* If some error before hw run */
 +	if (ret < 0) {
 +		rga_job_err(job, "some error on rga_job_run before hw start, %s(%d)\n",
@@ -49811,6 +49812,11 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +	spin_lock_irqsave(&scheduler->irq_lock, flags);
 +
 +	job = scheduler->running_job;
++	if (scheduler->dma_faulted) {
++		spin_unlock_irqrestore(&scheduler->irq_lock, flags);
++		mutex_unlock(&scheduler->job_mutex);
++		return NULL;
++	}
 +	if (job == NULL) {
 +		rga_err("%s(%#x) running job has been cleanup.\n",
 +			rga_get_core_name(scheduler->core), scheduler->core);
@@ -49918,10 +49924,14 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +		trace_rga_job_timeout(scheduler->core, job->request_id);
 +		rga_dump_job(scheduler, job);
 +
-+		scheduler->running_job = NULL;
 +		scheduler->status = RGA_SCHEDULER_ABORT;
-+		rga_telemetry_reset(scheduler, -ETIMEDOUT,
-+				    scheduler->ops->soft_reset);
++		if (rga_telemetry_reset(scheduler, -ETIMEDOUT,
++					scheduler->ops->soft_reset)) {
++			spin_unlock_irqrestore(&scheduler->irq_lock, flags);
++			mutex_unlock(&scheduler->job_mutex);
++			return;
++		}
++		scheduler->running_job = NULL;
 +
 +		spin_unlock_irqrestore(&scheduler->irq_lock, flags);
 +
@@ -49945,10 +49955,15 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +
 +	mutex_lock(&scheduler->job_mutex);
 +	spin_lock_irqsave(&scheduler->irq_lock, flags);
-+	if (scheduler->shutdown) {
++	if (scheduler->shutdown || scheduler->dma_faulted) {
 +		spin_unlock_irqrestore(&scheduler->irq_lock, flags);
 +		mutex_unlock(&scheduler->job_mutex);
 +		return -ESHUTDOWN;
++	}
++	if (scheduler->job_count >= RGA_SCHED_QUEUE_LIMIT) {
++		spin_unlock_irqrestore(&scheduler->irq_lock, flags);
++		mutex_unlock(&scheduler->job_mutex);
++		return -EAGAIN;
 +	}
 +
 +	/* priority policy set by userspace */
@@ -49996,15 +50011,10 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +		rga_job_scheduler_timeout_clean(scheduler);
 +	}
 +
-+	if (rga_drvdata->num_of_scheduler > 1) {
-+		job->core = rga_job_assign(job);
-+		if (job->core <= 0) {
-+			rga_job_err(job, "job assign failed");
-+			return ERR_PTR(job->core < 0 ? job->core : -EINVAL);
-+		}
-+	} else {
-+		job->core = rga_drvdata->scheduler[0]->core;
-+		job->scheduler = rga_drvdata->scheduler[0];
++	job->core = rga_job_assign(job);
++	if (job->core <= 0) {
++		rga_job_err(job, "job assign failed");
++		return ERR_PTR(job->core < 0 ? job->core : -EOPNOTSUPP);
 +	}
 +
 +	scheduler = job->scheduler;
@@ -50045,6 +50055,21 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +	 */
 +	job->mm = request->current_mm;
 +
++	if (!(job->flags & RGA_JOB_DEBUG_FAKE_BUFFER)) {
++		size_t i;
++
++		for (i = 0; i < job->task_count; i++) {
++			if (!(job->task_list[i].handle_flag & 1))
++				continue;
++			ret = rga_job_judgment_support_core(job, &job->task_list[i]);
++			if (ret < 0)
++				goto err_free_job;
++		}
++	}
++	ret = rga_mm_prepare_job_info(job);
++	if (ret)
++		goto err_free_job;
++
 +	scheduler = rga_job_schedule(job);
 +	if (IS_ERR(scheduler)) {
 +		ret = PTR_ERR(scheduler);
@@ -50081,14 +50106,6 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +		}
 +	}
 +
-+	job->task_buffers =
-+		kvzalloc(array_size(job->task_count, sizeof(*job->task_buffers)), GFP_KERNEL);
-+	if (!job->task_buffers) {
-+		rga_job_err(job, "Failed to allocate memory for channel buffers.\n");
-+		ret = -ENOMEM;
-+		goto err_power_disable;
-+	}
-+
 +	ret = rga_mm_map_job_info(job);
 +	if (ret < 0) {
 +		rga_job_err(job, "%s: failed to map job info\n", __func__);
@@ -50121,12 +50138,15 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +	return 0;
 +
 +err_unmap_job_info:
-+	rga_mm_unmap_job_info(job);
-+
 +err_power_disable:
++	rga_mm_unmap_job_info(job);
 +	rga_power_disable(scheduler);
++	goto free_job;
 +
 +err_free_job:
++	if (job->task_buffers)
++		rga_mm_unmap_job_info(job);
++free_job:
 +	rga_job_free(job);
 +
 +	return ret;
@@ -50366,7 +50386,6 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +{
 +	struct rga_job *job, *job_q;
 +	unsigned long flags;
-+	int power_ret;
 +	int removed = 0;
 +	bool had_running = false;
 +	LIST_HEAD(list_to_free);
@@ -50378,12 +50397,15 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +
 +	job = scheduler->running_job;
 +	if (job) {
-+		had_running = true;
 +		rga_telemetry_record_busy(scheduler, job, false);
-+		scheduler->running_job = NULL;
 +		job->ret = -ESHUTDOWN;
 +		set_bit(RGA_JOB_STATE_INTR_ERR, &job->state);
-+		list_add_tail(&job->head, &list_to_free);
++		if (!rga_telemetry_reset(scheduler, -ESHUTDOWN,
++					 scheduler->ops->soft_reset)) {
++			had_running = true;
++			scheduler->running_job = NULL;
++			list_add_tail(&job->head, &list_to_free);
++		}
 +	}
 +
 +	list_for_each_entry_safe(job, job_q, &scheduler->todo_list, head) {
@@ -50399,27 +50421,14 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +	spin_unlock_irqrestore(&scheduler->irq_lock, flags);
 +	mutex_unlock(&scheduler->job_mutex);
 +
-+	power_ret = rga_power_enable(scheduler);
-+	if (power_ret) {
-+		rga_err("failed to power core[%d] for shutdown: %d\n",
-+			scheduler->core, power_ret);
-+	} else if (had_running) {
-+		spin_lock_irqsave(&scheduler->irq_lock, flags);
-+		rga_telemetry_reset(scheduler, -ESHUTDOWN,
-+				    scheduler->ops->soft_reset);
-+		spin_unlock_irqrestore(&scheduler->irq_lock, flags);
-+	}
-+
 +	/* No IRQ or restart path owns these jobs after shutdown was published. */
 +	list_for_each_entry_safe(job, job_q, &list_to_free, head) {
 +		rga_mm_unmap_job_info(job);
 +		rga_request_release_signal(scheduler, job);
 +	}
 +
-+	/* Balance the running job and temporary reset power references. */
++	/* A failed reset retains the running job's power reference. */
 +	if (had_running)
-+		rga_power_disable(scheduler);
-+	if (!power_ret)
 +		rga_power_disable(scheduler);
 +}
 +
@@ -50440,13 +50449,20 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +	job = scheduler->running_job;
 +	if (job) {
 +		rga_telemetry_record_busy(scheduler, job, false);
-+		scheduler->running_job = NULL;
 +		scheduler->status = RGA_SCHEDULER_ABORT;
 +		job->ret = -ECANCELED;
 +		set_bit(RGA_JOB_STATE_INTR_ERR, &job->state);
-+		if (!power_ret)
-+			rga_telemetry_reset(scheduler, -ECANCELED,
-+					    scheduler->ops->soft_reset);
++		if (power_ret || rga_telemetry_reset(scheduler, -ECANCELED,
++						 scheduler->ops->soft_reset)) {
++			if (power_ret)
++				rga_reset_failed(scheduler, power_ret);
++			spin_unlock_irqrestore(&scheduler->irq_lock, flags);
++			mutex_unlock(&scheduler->job_mutex);
++			if (!power_ret)
++				rga_power_disable(scheduler);
++			return;
++		}
++		scheduler->running_job = NULL;
 +
 +		spin_unlock_irqrestore(&scheduler->irq_lock, flags);
 +
@@ -50511,6 +50527,13 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +		if (scheduler->running_job) {
 +			if (request->id == scheduler->running_job->request_id) {
 +				job = scheduler->running_job;
++				if (scheduler->dma_faulted ||
++				    rga_telemetry_reset(scheduler, -ECANCELED,
++							scheduler->ops->soft_reset)) {
++					job->ret = -ECANCELED;
++					job = NULL;
++					goto unlock_scheduler;
++				}
 +				scheduler->running_job = NULL;
 +				scheduler->status = RGA_SCHEDULER_ABORT;
 +				job->ret = -ECANCELED;
@@ -50522,8 +50545,6 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +					scheduler->timer.busy_time +=
 +						ktime_us_delta(ktime_get(),
 +							       job->timestamp.hw_recode);
-+					rga_telemetry_reset(scheduler, -ECANCELED,
-+							    scheduler->ops->soft_reset);
 +				}
 +				job->session->last_active = ktime_get();
 +
@@ -50534,6 +50555,7 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +			}
 +		}
 +
++	unlock_scheduler:
 +		spin_unlock_irqrestore(&scheduler->irq_lock, flags);
 +		if (removed)
 +			atomic_sub(removed, &rga_drvdata->telemetry_queue_depth);
@@ -50664,30 +50686,8 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +
 +static int rga_request_timeout_query_state(struct rga_request *request)
 +{
-+	int i;
-+	unsigned long flags;
-+	struct rga_scheduler_t *scheduler = NULL;
-+	struct rga_job *job = NULL;
-+
-+	for (i = 0; i < rga_drvdata->num_of_scheduler; i++) {
-+		scheduler = rga_drvdata->scheduler[i];
-+
-+		spin_lock_irqsave(&scheduler->irq_lock, flags);
-+
-+		if (scheduler->running_job) {
-+			job = scheduler->running_job;
-+
-+			if (request->id == job->request_id) {
-+				request->ret = rga_job_timeout_query_state(job, request->ret);
-+
-+				spin_unlock_irqrestore(&scheduler->irq_lock, flags);
-+				break;
-+			}
-+		}
-+
-+		spin_unlock_irqrestore(&scheduler->irq_lock, flags);
-+	}
-+
++	/* Cancel queued work too; only completion winning the lock may return zero. */
++	rga_request_release_abort(request, -ETIMEDOUT, false);
 +	return request->ret;
 +}
 +
@@ -50697,7 +50697,7 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +	int ret;
 +
 +	left_time = wait_event_timeout(request->finished_wq, request->is_done,
-+				       RGA_JOB_TIMEOUT_DELAY * request->task_count);
++			msecs_to_jiffies(RGA_JOB_TIMEOUT_DELAY * request->task_count));
 +
 +	switch (left_time) {
 +	case 0:
@@ -51550,10 +51550,10 @@ index 0000000000000000000000000000000000000000..c3ac3e7da8cb6c6035090ab91a966094
 +}
 diff --git a/drivers/video/rockchip/rga3/rga_mm.c b/drivers/video/rockchip/rga3/rga_mm.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d7d6200fd
+index 0000000000000000000000000000000000000000..39e6b76481c004377ee6de386491058f38ba9a1e
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/rga_mm.c
-@@ -0,0 +1,4300 @@
+@@ -0,0 +1,4441 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -51562,6 +51562,7 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 + */
 +
 +#include <linux/atomic.h>
++#include <linux/bitmap.h>
 +#include <linux/dma-buf.h>
 +#include <linux/iosys-map.h>
 +#include <linux/limits.h>
@@ -51807,6 +51808,26 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +static inline bool rga_shadow_active(struct rga_virt_addr *virt_addr)
 +{
 +	return virt_addr && !list_empty(&virt_addr->shadow_list);
++}
++
++static struct page *rga_virt_original_page(struct rga_virt_addr *virt, int index)
++{
++	struct rga_shadow_node *shadow;
++
++	list_for_each_entry(shadow, &virt->shadow_list, node)
++		if (shadow->page_idx == index)
++			return shadow->orig_page;
++	return virt->pages[index];
++}
++
++static bool rga_virt_under_4g(struct rga_virt_addr *virt)
++{
++	int i;
++
++	for (i = 0; i < virt->page_count; i++)
++		if (page_to_phys(rga_virt_original_page(virt, i)) >= SZ_4G)
++			return false;
++	return true;
 +}
 +
 +static void rga_shadow_sync_data(struct rga_virt_addr *virt_addr, bool to_shadow)
@@ -52080,7 +52101,8 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +{
 +	size_t max_segment = dma_max_mapping_size(dev);
 +
-+	return rga_staging_segment_limit(max_segment);
++	max_segment = min_t(size_t, max_segment, dma_get_max_seg_size(dev));
++	return round_down(max_segment, PAGE_SIZE);
 +}
 +
 +static struct sg_table *rga_alloc_sgt_segment(struct page **pages,
@@ -52092,6 +52114,8 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +	int ret;
 +	struct sg_table *sgt = NULL;
 +
++	if (max_segment < PAGE_SIZE)
++		return ERR_PTR(-EINVAL);
 +	sgt = kzalloc(sizeof(*sgt), gfp_mask);
 +	if (sgt == NULL) {
 +		rga_err("%s alloc sgt error!\n", __func__);
@@ -52291,7 +52315,7 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +
 +	for_each_sg(sgt->sgl, sg, sgt->orig_nents, i) {
 +		s_phys = sg_phys(sg);
-+		if ((s_phys > 0xffffffff) || (s_phys + sg->length > 0xffffffff))
++		if (s_phys >= SZ_4G || sg->length > SZ_4G - s_phys)
 +			return 0;
 +	}
 +
@@ -52361,8 +52385,7 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +	phys_addr_t phys_addr = 0;
 +	struct rga_dma_buffer *buffer;
 +	struct device *map_dev;
-+	struct device *fallback_dev;
-+	struct rga_scheduler_t *fallback_scheduler;
++	struct rga_scheduler_t *map_scheduler;
 +	struct rga_scheduler_t *scheduler;
 +
 +	scheduler = job ? job->scheduler :
@@ -52395,29 +52418,19 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +	 * dma-buf api needs to use default_domain of main dev,
 +	 * and not IOMMU for devices without iommu_info ptr.
 +	 */
-+	map_dev = scheduler->iommu_info ? scheduler->iommu_info->default_dev : scheduler->dev;
-+	ret = rga_mm_map_external_dma_buffer(external_buffer, buffer,
-+					     scheduler, map_dev);
-+	if (ret == -EIO && scheduler->data->mmu == RGA_MMU) {
-+		/*
-+		 * The exporter can reject a large high-memory SG entry before
-+		 * SWIOTLB can map it for RGA2. Keep a normal attachment alive on
-+		 * the IOMMU-backed map core so the per-job staging path can copy
-+		 * the DMA-BUF without repeating the doomed RGA2 attachment.
-+		 */
-+		fallback_scheduler =
-+			rga_drvdata->scheduler[rga_drvdata->map_scheduler_index];
-+		fallback_dev = fallback_scheduler && fallback_scheduler->iommu_info ?
-+			fallback_scheduler->iommu_info->default_dev :
-+			fallback_scheduler ? fallback_scheduler->dev : NULL;
-+		if (fallback_scheduler && fallback_dev && fallback_dev != map_dev) {
-+			ret = rga_mm_map_external_dma_buffer(external_buffer, buffer,
-+							     fallback_scheduler,
-+							     fallback_dev);
-+			if (!ret)
-+				rga2_dma_incompatible = true;
++	map_scheduler = scheduler;
++	if (scheduler->data->mmu == RGA_MMU) {
++		map_scheduler = rga_drvdata->scheduler[rga_drvdata->map_scheduler_index];
++		if (!map_scheduler || !map_scheduler->iommu_info) {
++			ret = -ENODEV;
++			goto free_buffer;
 +		}
 +	}
++	/* The exporter owns its SG list: inspect it through a capable attachment. */
++	map_dev = map_scheduler->iommu_info ?
++		map_scheduler->iommu_info->default_dev : map_scheduler->dev;
++	ret = rga_mm_map_external_dma_buffer(external_buffer, buffer,
++					     map_scheduler, map_dev);
 +	if (ret < 0) {
 +		rga_err("%s core[%d] map dma buffer error!\n",
 +			__func__, scheduler->core);
@@ -52433,11 +52446,13 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +		goto unmap_buffer;
 +	}
 +
-+	if (scheduler->data->mmu == RGA_IOMMU)
++	if (map_scheduler->data->mmu == RGA_IOMMU)
 +		buffer->iova = buffer->dma_addr;
 +
 +	if (rga_mm_check_range_sgt(buffer->sgt))
 +		mm_flag |= RGA_MEM_UNDER_4G;
++	else
++		rga2_dma_incompatible = true;
 +
 +	/*
 +	 * If it's physically contiguous, then the RGA_MMU can
@@ -52468,11 +52483,31 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +		goto unmap_buffer;
 +	}
 +
++	if (job && scheduler->data->mmu == RGA_MMU &&
++	    (mm_flag & RGA_MEM_UNDER_4G)) {
++		struct rga_dma_buffer *execution = kzalloc(sizeof(*execution), GFP_KERNEL);
++
++		if (!execution) {
++			ret = -ENOMEM;
++			goto unmap_buffer;
++		}
++		ret = rga_mm_map_external_dma_buffer(external_buffer, execution,
++						     scheduler, scheduler->dev);
++		if (ret) {
++			kfree(execution);
++			goto unmap_buffer;
++		}
++		rga_dma_unmap_buf(buffer);
++		kfree(buffer);
++		buffer = execution;
++		map_scheduler = scheduler;
++	}
++
 +	internal_buffer->dma_buffer = buffer;
 +	internal_buffer->mm_flag = mm_flag;
 +	internal_buffer->phys_addr = phys_addr ? phys_addr : 0;
 +	internal_buffer->size = buffer->size - buffer->offset;
-+	internal_buffer->scheduler = scheduler;
++	internal_buffer->scheduler = map_scheduler;
 +	internal_buffer->rga2_dma_incompatible = rga2_dma_incompatible;
 +
 +	return 0;
@@ -52598,8 +52633,15 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +		goto free_virt_addr;
 +	}
 +
-+	if (rga_mm_check_range_sgt(sgt))
++	if (rga_virt_under_4g(virt_addr))
 +		mm_flag |= RGA_MEM_UNDER_4G;
++	else if (scheduler->data->mmu == RGA_MMU) {
++		scheduler = rga_drvdata->scheduler[rga_drvdata->map_scheduler_index];
++		if (!scheduler || !scheduler->iommu_info) {
++			ret = -ENODEV;
++			goto free_sgt;
++		}
++	}
 +
 +	if (rga_mm_check_contiguous_sgt(sgt)) {
 +		phys_addr = sg_phys(sgt->sgl);
@@ -53237,7 +53279,7 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +		return RGA2_BUFFER_STAGEABLE;
 +	case RGA_VIRTUAL_ADDRESS:
 +		return buffer->virt_addr && buffer->virt_addr->pages ?
-+		       RGA2_BUFFER_DIRECT : RGA2_BUFFER_UNSUPPORTED;
++		       RGA2_BUFFER_STAGEABLE : RGA2_BUFFER_UNSUPPORTED;
 +	case RGA_PHYSICAL_ADDRESS:
 +		return RGA2_BUFFER_UNSUPPORTED;
 +	default:
@@ -53379,24 +53421,22 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +	/* RK_IOMMU no need to configure enable or not in the driver. */
 +	if (job->scheduler->data->mmu == RGA_IOMMU)
 +		return false;
-+
-+	/*
-+	 * High DMA-BUFs and USERPTRs that look physically contiguous still need
-+	 * the RGA2 MMU: their direct address is outside the 32-bit aperture and
-+	 * the per-job path may replace or remap them below 4G. Raw physical
-+	 * imports remain direct-address-only.
-+	 */
-+	if (buffer->mm_flag & RGA_MEM_PHYSICAL_CONTIGUOUS) {
-+		if (!(buffer->mm_flag & RGA_MEM_UNDER_4G) &&
-+		    (buffer->type == RGA_DMA_BUFFER ||
-+		     buffer->type == RGA_DMA_BUFFER_PTR ||
-+		     buffer->type == RGA_VIRTUAL_ADDRESS))
-+			return true;
-+
++	if (job->flags & RGA_JOB_DEBUG_FAKE_BUFFER)
 +		return false;
-+	}
++	if (buffer->type == RGA_DMA_BUFFER || buffer->type == RGA_DMA_BUFFER_PTR ||
++	    buffer->type == RGA_VIRTUAL_ADDRESS)
++		return true;
++	if (buffer->mm_flag & RGA_MEM_PHYSICAL_CONTIGUOUS)
++		return false;
 +
 +	return buffer->mm_flag & RGA_MEM_NEED_USE_IOMMU;
++}
++
++static bool rga_mm_channel_needs_mmu(struct rga_job *job, struct rga_job_buffer *buffer)
++{
++	return rga_mm_is_need_mmu(job, buffer->y_addr) ||
++	       rga_mm_is_need_mmu(job, buffer->uv_addr) ||
++	       rga_mm_is_need_mmu(job, buffer->v_addr);
 +}
 +
 +static int rga_mm_set_mmu_flag(struct rga_job *job,
@@ -53409,10 +53449,10 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +	int dst_mmu_en;
 +	int els_mmu_en;
 +
-+	src_mmu_en = rga_mm_is_need_mmu(job, buffers->src_buffer.addr);
-+	src1_mmu_en = rga_mm_is_need_mmu(job, buffers->src1_buffer.addr);
-+	dst_mmu_en = rga_mm_is_need_mmu(job, buffers->dst_buffer.addr);
-+	els_mmu_en = rga_mm_is_need_mmu(job, buffers->els_buffer.addr);
++	src_mmu_en = rga_mm_channel_needs_mmu(job, &buffers->src_buffer);
++	src1_mmu_en = rga_mm_channel_needs_mmu(job, &buffers->src1_buffer);
++	dst_mmu_en = rga_mm_channel_needs_mmu(job, &buffers->dst_buffer);
++	els_mmu_en = rga_mm_channel_needs_mmu(job, &buffers->els_buffer);
 +
 +	mmu_info = &req->mmu_info;
 +	memset(mmu_info, 0x0, sizeof(*mmu_info));
@@ -53678,7 +53718,7 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +{
 +	struct rga_rga2_stage *stage;
 +	struct dma_buf *origin;
-+	size_t staged_bytes = 0;
++	size_t staged_bytes = job->rga2_user_bytes;
 +	unsigned int i;
 +	int ret;
 +
@@ -53785,6 +53825,8 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +	       job->finished_count == job->task_count;
 +}
 +
++#include "rga_user_stage.h"
++
 +static void rga2_stage_put(struct rga_job *job,
 +			   struct rga_rga2_stage *stage,
 +			   enum dma_data_direction dir)
@@ -53818,6 +53860,10 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +				   enum dma_data_direction dir)
 +{
 +	int i;
++
++	for (i = 0; i < job_buf->rga2_user_sgt_count; i++)
++		rga_free_sgt(&job_buf->rga2_user_sgt[i]);
++	job_buf->rga2_user_sgt_count = 0;
 +
 +	for (i = 0; i < job_buf->rga2_bounce_count; i++) {
 +		struct rga_dma_buffer *bounce = job_buf->rga2_bounce[i];
@@ -53867,10 +53913,13 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +
 +/*
 + * Return the sg table an RGA2 page table for @buffer should be built from,
-+ * and whether to consume sg_dma_address() (device-usable, possibly bounced
-+ * below 4G) or sg_phys(). Over-4G buffers that are only mapped for another
-+ * core get a transient per-job mapping against the RGA2 device here.
++ * using executing-device DMA addresses, never a foreign attachment's PFNs.
++ * High buffers use the bounded stage; low buffers still need an RGA2 map.
 + */
++static struct rga_dma_buffer *
++rga_mm_map_job_iommu_buffer(struct rga_job *job, struct rga_job_buffer *job_buf,
++			    struct rga_internal_buffer *origin);
++
 +static struct sg_table *rga_mm_get_rga2_sgt(struct rga_job *job,
 +					    struct rga_job_buffer *job_buf,
 +					    struct rga_internal_buffer *buffer,
@@ -53886,6 +53935,14 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +
 +	if (buffer == NULL)
 +		return NULL;
++	if (buffer->type == RGA_VIRTUAL_ADDRESS &&
++	    (job->flags & RGA_JOB_RGA2_STAGEABLE_DMA_BUF)) {
++		dma_sync_sg_for_cpu(buffer->dma_buffer->map_dev,
++			buffer->dma_buffer->sgt->sgl,
++			buffer->dma_buffer->sgt->orig_nents, DMA_BIDIRECTIONAL);
++		*use_dma_address = true;
++		return rga2_user_stage_sgt(job, job_buf, buffer);
++	}
 +
 +	/*
 +	 * High DMA-BUFs always use the job-shared stage. A successful SWIOTLB
@@ -53903,8 +53960,15 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +		return rga_mm_lookup_sgt(buffer);
 +	}
 +
-+	if (buffer->mm_flag & RGA_MEM_UNDER_4G)
-+		return rga_mm_lookup_sgt(buffer);
++	if (buffer->mm_flag & RGA_MEM_UNDER_4G) {
++		bounce = rga_mm_map_job_iommu_buffer(job, job_buf, buffer);
++		if (IS_ERR(bounce))
++			return ERR_CAST(bounce);
++		if (!bounce || bounce->map_dev != job->scheduler->dev)
++			return ERR_PTR(-EIO);
++		*use_dma_address = true;
++		return bounce->sgt;
++	}
 +	if (job_buf->rga2_bounce_count >= ARRAY_SIZE(job_buf->rga2_bounce))
 +		return ERR_PTR(-EOPNOTSUPP);
 +
@@ -53969,7 +54033,7 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +		rga_job_err(job,
 +			    "RGA2: can not map over-4G buffer below 4G (%d); use below-4G (e.g. CMA/DMA32) buffers\n",
 +			    ret);
-+		return ERR_PTR(-EOPNOTSUPP);
++		return ERR_PTR(ret);
 +	}
 +
 +	job_buf->rga2_bounce[job_buf->rga2_bounce_count] = bounce;
@@ -53996,6 +54060,22 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +	*use_dma_address = true;
 +
 +	return stage->sgt;
++}
++
++static void rga_mm_free_page_table(struct rga_job_buffer *job_buf)
++{
++	if (job_buf->page_table_mapped)
++		dma_unmap_single(job_buf->page_table_dev, job_buf->page_table_dma,
++				 job_buf->page_count * sizeof(*job_buf->page_table),
++				 DMA_TO_DEVICE);
++	if (job_buf->page_table)
++		free_pages((unsigned long)job_buf->page_table, job_buf->order);
++	job_buf->page_table = NULL;
++	job_buf->page_table_mapped = false;
++	job_buf->page_table_dev = NULL;
++	job_buf->page_table_dma = 0;
++	job_buf->page_count = 0;
++	job_buf->order = 0;
 +}
 +
 +static int rga_mm_set_mmu_base(struct rga_job *job,
@@ -54060,26 +54140,13 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +			return -EINVAL;
 +		}
 +
-+		if (job->flags & RGA_JOB_USE_HANDLE) {
-+			page_table = (uint32_t *)rga_get_free_pages(GFP_KERNEL | GFP_DMA32,
-+				&order, page_count * sizeof(uint32_t *));
-+			if (page_table == NULL) {
-+				rga_job_err(job, "%s can not alloc pages for page_table, order = %d\n",
-+					__func__, order);
-+				return -ENOMEM;
-+			}
-+		} else {
-+			mutex_lock(&rga_drvdata->lock);
-+
-+			page_table = rga_mmu_buf_get(rga_drvdata->mmu_base, page_count);
-+			if (page_table == NULL) {
-+				rga_err("mmu_buf get error!\n");
-+				mutex_unlock(&rga_drvdata->lock);
-+				return -EFAULT;
-+			}
-+
-+			mutex_unlock(&rga_drvdata->lock);
-+		}
++		page_table = (uint32_t *)rga_get_free_pages(GFP_KERNEL | GFP_DMA32,
++			&order, page_count * sizeof(*page_table));
++		if (!page_table)
++			return -ENOMEM;
++		job_buf->page_table = page_table;
++		job_buf->order = order;
++		job_buf->page_count = page_count;
 +
 +		if (job_buf->y_addr) {
 +			sgt = rga_mm_get_rga2_sgt(job, job_buf, job_buf->y_addr,
@@ -54144,26 +54211,13 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +			return -EFAULT;
 +		}
 +
-+		if (job->flags & RGA_JOB_USE_HANDLE) {
-+			page_table = (uint32_t *)rga_get_free_pages(GFP_KERNEL | GFP_DMA32,
-+				&order, page_count * sizeof(uint32_t *));
-+			if (page_table == NULL) {
-+				rga_job_err(job, "%s can not alloc pages for page_table, order = %d\n",
-+					__func__, order);
-+				return -ENOMEM;
-+			}
-+		} else {
-+			mutex_lock(&rga_drvdata->lock);
-+
-+			page_table = rga_mmu_buf_get(rga_drvdata->mmu_base, page_count);
-+			if (page_table == NULL) {
-+				rga_job_err(job, "mmu_buf get error!\n");
-+				mutex_unlock(&rga_drvdata->lock);
-+				return -EFAULT;
-+			}
-+
-+			mutex_unlock(&rga_drvdata->lock);
-+		}
++		page_table = (uint32_t *)rga_get_free_pages(GFP_KERNEL | GFP_DMA32,
++			&order, page_count * sizeof(*page_table));
++		if (!page_table)
++			return -ENOMEM;
++		job_buf->page_table = page_table;
++		job_buf->order = order;
++		job_buf->page_count = page_count;
 +
 +		sgt = rga_mm_get_rga2_sgt(job, job_buf, job_buf->addr, dir,
 +					  &use_dma_address);
@@ -54183,43 +54237,21 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +		rga_convert_addr(img, false);
 +	}
 +
-+	/*
-+	 * The hardware reads the CPU-filled table through DMA, so give the
-+	 * table a proper streaming mapping of the RGA2 device: per-job
-+	 * handle tables are mapped here (the mapping itself publishes the
-+	 * entries) and unmapped at put; ring windows borrow the persistent
-+	 * mapping made at bind time and are synced before each job.
-+	 */
-+	if (job->flags & RGA_JOB_USE_HANDLE) {
-+		job_buf->page_table_dma =
-+			dma_map_single(job->scheduler->dev, page_table,
-+				       page_count * sizeof(*page_table),
-+				       DMA_TO_DEVICE);
-+		if (dma_mapping_error(job->scheduler->dev, job_buf->page_table_dma)) {
-+			rga_job_err(job, "can not DMA-map page_table for RGA2\n");
-+			ret = -EFAULT;
-+			goto err_free_page_table;
-+		}
-+		job_buf->page_table_dev = job->scheduler->dev;
-+		job_buf->page_table_mapped = true;
-+	} else {
-+		job_buf->page_table_dma = rga_drvdata->mmu_base->dma_addr +
-+			(page_table - rga_drvdata->mmu_base->buf_virtual) *
-+			sizeof(*page_table);
-+		job_buf->page_table_dev = rga_drvdata->mmu_base->map_dev;
-+		job_buf->page_table_mapped = false;
++	/* Queued tasks retain distinct tables until their terminal cleanup. */
++	job_buf->page_table_dma = dma_map_single(job->scheduler->dev, page_table,
++				page_count * sizeof(*page_table), DMA_TO_DEVICE);
++	if (dma_mapping_error(job->scheduler->dev, job_buf->page_table_dma)) {
++		ret = -EIO;
++		goto err_free_page_table;
 +	}
-+
-+	job_buf->page_table = page_table;
-+	job_buf->order = order;
-+	job_buf->page_count = page_count;
++	job_buf->page_table_dev = job->scheduler->dev;
++	job_buf->page_table_mapped = true;
 +
 +	return 0;
 +
 +err_free_page_table:
 +	rga_mm_put_rga2_bounce(job, job_buf, DMA_NONE);
-+	if (job->flags & RGA_JOB_USE_HANDLE)
-+		free_pages((unsigned long)page_table, order);
++	rga_mm_free_page_table(job_buf);
 +	return ret;
 +}
 +
@@ -54262,6 +54294,19 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +	while (job_buf->iommu_mapping_count)
 +		rga_mm_unmap_job_iommu_mapping(job_buf,
 +					       job_buf->iommu_mapping_count - 1);
++}
++
++static void rga_mm_release_job_buffer_mapping(struct rga_job_buffer *job_buf,
++					     struct rga_internal_buffer *origin)
++{
++	int i;
++
++	for (i = 0; i < job_buf->iommu_mapping_count; i++) {
++		if (job_buf->iommu_mapping[i].origin == origin) {
++			rga_mm_unmap_job_iommu_mapping(job_buf, i);
++			return;
++		}
++	}
 +}
 +
 +static struct rga_dma_buffer *
@@ -54351,7 +54396,10 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +	int ret;
 +	int slot;
 +
-+	if (job->scheduler->data->mmu != RGA_IOMMU)
++	if (job->scheduler->data->mmu == RGA_MMU &&
++	    (!(origin->mm_flag & RGA_MEM_UNDER_4G) ||
++	     (origin->type == RGA_VIRTUAL_ADDRESS &&
++	      (job->flags & RGA_JOB_RGA2_STAGEABLE_DMA_BUF))))
 +		return origin->dma_buffer;
 +	if (rga_mm_is_invalid_dma_buffer(origin->dma_buffer))
 +		return ERR_PTR(-EINVAL);
@@ -54375,10 +54423,28 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +			ret = -EINVAL;
 +			break;
 +		}
-+		ret = rga_dma_map_buf(origin->dma_buffer->dma_buf, mapping,
-+				      DMA_BIDIRECTIONAL, job->scheduler->dev);
++		if (job->scheduler->data->mmu == RGA_MMU)
++			ret = rga_dma_map_buf_pages(origin->dma_buffer->dma_buf, mapping,
++						    DMA_BIDIRECTIONAL, job->scheduler->dev);
++		else
++			ret = rga_dma_map_buf(origin->dma_buffer->dma_buf, mapping,
++					      DMA_BIDIRECTIONAL, job->scheduler->dev);
 +		break;
 +	case RGA_VIRTUAL_ADDRESS:
++		if (job->scheduler->data->mmu == RGA_MMU) {
++			owned_sgt = rga_alloc_sgt_segment(origin->virt_addr->pages,
++				origin->virt_addr->page_count, 0,
++				(size_t)origin->virt_addr->page_count << PAGE_SHIFT,
++				rga_dma_max_segment_size(job->scheduler->dev), GFP_KERNEL);
++			if (IS_ERR(owned_sgt)) {
++				ret = PTR_ERR(owned_sgt);
++				owned_sgt = NULL;
++				break;
++			}
++			ret = rga_dma_map_sgt_pages(owned_sgt, mapping,
++				DMA_BIDIRECTIONAL, job->scheduler->dev);
++			break;
++		}
 +		owned_sgt = rga_mm_alloc_job_virt_sgt(origin, &real_offset);
 +		if (IS_ERR(owned_sgt)) {
 +			ret = PTR_ERR(owned_sgt);
@@ -54432,6 +54498,11 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +	ktime_t timestamp = ktime_get();
 +	bool has_shadow = rga_shadow_active(buffer->virt_addr);
 +
++	if (job->scheduler->data->mmu == RGA_MMU &&
++	    buffer->type == RGA_VIRTUAL_ADDRESS &&
++	    (job->flags & RGA_JOB_RGA2_STAGEABLE_DMA_BUF))
++		return 0;
++
 +	if (!dma_buffer)
 +		dma_buffer = buffer->dma_buffer;
 +	scheduler = dma_buffer == buffer->dma_buffer ? buffer->scheduler :
@@ -54445,7 +54516,8 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +	if (has_shadow && (dir == DMA_TO_DEVICE || dir == DMA_BIDIRECTIONAL))
 +		rga_shadow_copy_to_shadow(buffer->virt_addr);
 +
-+	if (buffer->mm_flag & RGA_MEM_PHYSICAL_CONTIGUOUS) {
++	if ((buffer->mm_flag & RGA_MEM_PHYSICAL_CONTIGUOUS) &&
++	    buffer->type == RGA_PHYSICAL_ADDRESS) {
 +		if (scheduler->data->mmu == RGA_IOMMU) {
 +			dma_addr_t iova = dma_buffer->iova + dma_buffer->offset;
 +
@@ -54474,7 +54546,7 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +		}
 +
 +		dma_sync_sg_for_device(dma_buffer->map_dev, sgt->sgl,
-+				       sgt->orig_nents, dir);
++				       sgt->orig_nents, dma_buffer->dir);
 +	}
 +
 +	if (DEBUGGER_EN(TIME))
@@ -54495,6 +54567,15 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +	ktime_t timestamp = ktime_get();
 +	bool has_shadow = rga_shadow_active(buffer->virt_addr);
 +
++	if (job->scheduler && job->scheduler->data->mmu == RGA_MMU &&
++	    buffer->type == RGA_VIRTUAL_ADDRESS &&
++	    (job->flags & RGA_JOB_RGA2_STAGEABLE_DMA_BUF)) {
++		dma_sync_sg_for_device(buffer->dma_buffer->map_dev,
++			buffer->dma_buffer->sgt->sgl,
++			buffer->dma_buffer->sgt->orig_nents, DMA_TO_DEVICE);
++		return 0;
++	}
++
 +	if (!dma_buffer)
 +		dma_buffer = buffer->dma_buffer;
 +	scheduler = dma_buffer == buffer->dma_buffer ? buffer->scheduler :
@@ -54505,7 +54586,8 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +		return -EFAULT;
 +	}
 +
-+	if (buffer->mm_flag & RGA_MEM_PHYSICAL_CONTIGUOUS) {
++	if ((buffer->mm_flag & RGA_MEM_PHYSICAL_CONTIGUOUS) &&
++	    buffer->type == RGA_PHYSICAL_ADDRESS) {
 +		if (scheduler->data->mmu == RGA_IOMMU) {
 +			dma_addr_t iova = dma_buffer->iova + dma_buffer->offset;
 +
@@ -54534,7 +54616,7 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +		}
 +
 +		dma_sync_sg_for_cpu(dma_buffer->map_dev, sgt->sgl,
-+				    sgt->orig_nents, dir);
++				    sgt->orig_nents, dma_buffer->dir);
 +	}
 +
 +	if (has_shadow && (dir == DMA_FROM_DEVICE || dir == DMA_BIDIRECTIONAL))
@@ -54598,12 +54680,18 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +		break;
 +	case RGA_MMU:
 +	default:
++		if (job->flags & RGA_JOB_DEBUG_FAKE_BUFFER) {
++			addr = internal_buffer->dma_buffer->dma_addr;
++			break;
++		}
 +		if ((internal_buffer->mm_flag & RGA_MEM_PHYSICAL_CONTIGUOUS) &&
-+		    ((internal_buffer->mm_flag & RGA_MEM_UNDER_4G) ||
-+		     internal_buffer->type == RGA_PHYSICAL_ADDRESS)) {
++		    internal_buffer->type == RGA_PHYSICAL_ADDRESS) {
 +			addr = internal_buffer->phys_addr;
 +			break;
 +		}
++		dma_buffer = rga_mm_map_job_iommu_buffer(job, job_buf, internal_buffer);
++		if (IS_ERR(dma_buffer))
++			return PTR_ERR(dma_buffer);
 +
 +		switch (internal_buffer->type) {
 +		case RGA_DMA_BUFFER:
@@ -54706,6 +54794,7 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +	return 0;
 +
 +put_internal_buffer:
++	rga_mm_release_job_buffer_mapping(job_buf, internal_buffer);
 +	mutex_lock(&mm->lock);
 +	kref_put(&internal_buffer->refcount, rga_mm_kref_release_buffer);
 +	mutex_unlock(&mm->lock);
@@ -54733,6 +54822,7 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +		rga_mm_dump_buffer(internal_buffer);
 +	}
 +
++	rga_mm_release_job_buffer_mapping(job_buf, internal_buffer);
 +	mutex_lock(&mm->lock);
 +	kref_put(&internal_buffer->refcount, rga_mm_kref_release_buffer);
 +	mutex_unlock(&mm->lock);
@@ -54763,18 +54853,7 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +		job_buf->v_addr = NULL;
 +	}
 +
-+	if (job_buf->page_table) {
-+		if (job_buf->page_table_mapped) {
-+			dma_unmap_single(job_buf->page_table_dev,
-+					 job_buf->page_table_dma,
-+					 job_buf->page_count *
-+					 sizeof(*job_buf->page_table),
-+					 DMA_TO_DEVICE);
-+			job_buf->page_table_mapped = false;
-+		}
-+		free_pages((unsigned long)job_buf->page_table, job_buf->order);
-+		job_buf->page_table = NULL;
-+	}
++	rga_mm_free_page_table(job_buf);
 +
 +	rga_mm_release_job_iommu_mappings(job_buf);
 +}
@@ -54845,7 +54924,7 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +	}
 +
 +	if (job->scheduler->data->mmu == RGA_MMU &&
-+	    rga_mm_is_need_mmu(job, job_buf->addr)) {
++	    rga_mm_channel_needs_mmu(job, job_buf)) {
 +		ret = rga_mm_set_mmu_base(job, img, job_buf, dir);
 +		if (ret < 0) {
 +			rga_job_err(job, "Can't set RGA2 MMU_BASE from handle!\n");
@@ -54872,6 +54951,7 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +
 +	mm = rga_drvdata->mm;
 +
++	buffers->dst_buffer.writable = true;
 +	switch (req->render_mode) {
 +	case BITBLT_MODE:
 +	case COLOR_PALETTE_MODE:
@@ -55118,7 +55198,8 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +{
 +	rga_mm_put_rga2_bounce(job, job_buffer, dir);
 +
-+	if (job_buffer->addr->mm_flag & RGA_MEM_FORCE_FLUSH_CACHE && dir != DMA_NONE)
++	if (job_buffer->ready &&
++	    job_buffer->addr->mm_flag & RGA_MEM_FORCE_FLUSH_CACHE && dir != DMA_NONE)
 +		if (rga_mm_sync_dma_sg_for_cpu(
 +				job_buffer->addr,
 +				rga_mm_job_dma_buffer(job_buffer, job_buffer->addr),
@@ -55133,8 +55214,9 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +	rga_mm_release_job_iommu_mappings(job_buffer);
 +	rga_mm_unmap_buffer(job_buffer->addr);
 +	kfree(job_buffer->addr);
-+
-+	job_buffer->page_table = NULL;
++	job_buffer->addr = NULL;
++	job_buffer->ready = false;
++	rga_mm_free_page_table(job_buffer);
 +}
 +
 +static int rga_mm_map_channel_job_buffer(struct rga_job *job,
@@ -55146,19 +55228,9 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +	int ret;
 +	struct rga_internal_buffer *buffer = NULL;
 +
-+	buffer = kzalloc(sizeof(*buffer), GFP_KERNEL);
-+	if (buffer == NULL) {
-+		rga_job_err(job, "%s alloc internal_buffer error!\n", __func__);
-+		return -ENOMEM;
-+	}
-+
-+	ret = rga_mm_map_buffer(job_buffer->ex_addr, buffer, job, write_flag);
-+	if (ret < 0) {
-+		rga_job_err(job, "job buffer map failed!\n");
-+		goto error_free_buffer;
-+	}
-+
-+	buffer->session = job->session;
++	buffer = job_buffer->addr;
++	if (!buffer)
++		return -EINVAL;
 +
 +	if (DEBUGGER_EN(MM)) {
 +		rga_job_log(job, "map buffer:\n");
@@ -55195,12 +55267,14 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +		}
 +	}
 +
++	job_buffer->ready = true;
 +	return 0;
 +
 +error_unmap_buffer:
++	rga_mm_release_job_iommu_mappings(job_buffer);
 +	rga_mm_unmap_buffer(buffer);
-+error_free_buffer:
 +	kfree(buffer);
++	job_buffer->addr = NULL;
 +
 +	return ret;
 +}
@@ -55224,12 +55298,6 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +{
 +	int ret = 0;
 +	enum dma_data_direction dir;
-+
-+	ret = rga_mm_get_external_buffer(job, buffers, req);
-+	if (ret < 0) {
-+		rga_job_err(job, "failed to get external buffer from job_cmd!\n");
-+		return ret;
-+	}
 +
 +	if (likely(buffers->src_buffer.ex_addr)) {
 +		ret = rga_mm_map_channel_job_buffer(job, &req->src,
@@ -55291,6 +55359,7 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +{
 +	struct rga_internal_buffer *buffer = job_buffer->addr;
 +
++	rga_mm_free_page_table(job_buffer);
 +	if (rga_mm_is_invalid_dma_buffer(buffer->dma_buffer))
 +		return;
 +
@@ -55482,7 +55551,7 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +		return 0;
 +	}
 +
-+	if (job->flags & RGA_JOB_USE_HANDLE) {
++	if (req->handle_flag & 1) {
 +		ret = rga_mm_get_handle_info(job, buffers, req);
 +		if (ret < 0) {
 +			rga_job_err(job, "failed to get buffer from handle\n");
@@ -55523,7 +55592,7 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +		return;
 +	}
 +
-+	if (job->flags & RGA_JOB_USE_HANDLE) {
++	if (req->handle_flag & 1) {
 +		rga_mm_put_handle_info(job, buffers, req);
 +
 +		if (DEBUGGER_EN(TIME))
@@ -55536,6 +55605,84 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +			rga_job_log(job, "unmap buffer cost %lld us\n",
 +				ktime_us_delta(ktime_get(), timestamp));
 +	}
++}
++
++static int rga_mm_prepare_channel(struct rga_job *job,
++				  struct rga_job_buffer *channel, bool writable)
++{
++	struct rga_internal_buffer *buffer;
++	int ret;
++
++	if (!channel->ex_addr)
++		return 0;
++	buffer = kzalloc(sizeof(*buffer), GFP_KERNEL);
++	if (!buffer)
++		return -ENOMEM;
++	ret = rga_mm_map_buffer(channel->ex_addr, buffer, job, writable);
++	if (ret) {
++		kfree(buffer);
++		return ret;
++	}
++	buffer->session = job->session;
++	channel->addr = buffer;
++	channel->writable = writable;
++	if (!(buffer->mm_flag & RGA_MEM_UNDER_4G)) {
++		if (buffer->type == RGA_PHYSICAL_ADDRESS)
++			job->flags |= RGA_JOB_UNSUPPORT_RGA_MMU;
++		else
++			job->flags |= RGA_JOB_RGA2_STAGEABLE_DMA_BUF;
++	}
++	return 0;
++}
++
++int rga_mm_prepare_job_info(struct rga_job *job)
++{
++	struct rga_scheduler_t *map_scheduler;
++	struct rga_job_task_buffers *buffers;
++	struct rga_req *req;
++	size_t i;
++	int ret;
++
++	job->task_buffers = kvcalloc(job->task_count, sizeof(*job->task_buffers), GFP_KERNEL);
++	if (!job->task_buffers)
++		return -ENOMEM;
++	if (job->flags & RGA_JOB_DEBUG_FAKE_BUFFER)
++		return 0;
++	map_scheduler = rga_drvdata->scheduler[rga_drvdata->map_scheduler_index];
++	if (!map_scheduler)
++		return -ENODEV;
++	ret = rga_power_enable(map_scheduler);
++	if (ret)
++		return ret;
++	job->scheduler = map_scheduler;
++	for (i = 0; i < job->task_count; i++) {
++		req = &job->task_list[i];
++		buffers = &job->task_buffers[i];
++		if (req->handle_flag & 1)
++			continue;
++		ret = rga_mm_get_external_buffer(job, buffers, req);
++		if (ret)
++			break;
++		ret = rga_mm_prepare_channel(job, &buffers->src_buffer, false);
++		if (ret)
++			break;
++		ret = rga_mm_prepare_channel(job, &buffers->dst_buffer, true);
++		if (ret)
++			break;
++		ret = rga_mm_prepare_channel(job, &buffers->src1_buffer, false);
++		if (ret)
++			break;
++		ret = rga_mm_prepare_channel(job, &buffers->els_buffer, false);
++		if (ret)
++			break;
++	}
++	if (ret) {
++		rga_mm_unmap_job_info(job);
++		kvfree(job->task_buffers);
++		job->task_buffers = NULL;
++	}
++	rga_power_disable(map_scheduler);
++	return ret;
 +}
 +
 +int rga_mm_map_job_info(struct rga_job *job)
@@ -55565,13 +55712,6 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +	return 0;
 +
 +err_unmap_job_info:
-+	for (; i > 0; i--) {
-+		task_buffers = &job->task_buffers[i - 1];
-+		req = &job->task_list[i - 1];
-+
-+		rga_mm_unmap_task_info(job, task_buffers, req);
-+	}
-+
 +	return ret;
 +}
 +
@@ -55581,6 +55721,7 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +	struct rga_job_task_buffers *task_buffers;
 +	struct rga_req *req;
 +
++	rga2_user_stage_release(job);
 +	for (i = 0; i < job->task_count; i++) {
 +		task_buffers = &job->task_buffers[i];
 +		req = &job->task_list[i];
@@ -55856,10 +55997,10 @@ index 0000000000000000000000000000000000000000..565bc90acdafe5cf8177f90828f9753d
 +}
 diff --git a/drivers/video/rockchip/rga3/rga_policy.c b/drivers/video/rockchip/rga3/rga_policy.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..351decd40262afaec1353cf7e5aa5309171b7db0
+index 0000000000000000000000000000000000000000..8f65a04362a9fd1f5a4a9ca06ef714411040177a
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/rga_policy.c
-@@ -0,0 +1,582 @@
+@@ -0,0 +1,588 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -56414,6 +56555,11 @@ index 0000000000000000000000000000000000000000..351decd40262afaec1353cf7e5aa5309
 +
 +		if (optional_cores & scheduler->core) {
 +			spin_lock_irqsave(&scheduler->irq_lock, flags);
++			if (scheduler->shutdown || scheduler->dma_faulted ||
++			    scheduler->job_count >= RGA_SCHED_QUEUE_LIMIT) {
++				spin_unlock_irqrestore(&scheduler->irq_lock, flags);
++				continue;
++			}
 +
 +			if (scheduler->running_job == NULL) {
 +				core = scheduler->core;
@@ -56434,7 +56580,8 @@ index 0000000000000000000000000000000000000000..351decd40262afaec1353cf7e5aa5309
 +		}
 +	}
 +
-+	/* TODO: need consider full load */
++	if (core == RGA_NONE_CORE)
++		return -EAGAIN;
 +	if (DEBUGGER_EN(MSG))
 +		rga_job_log(job, "matched cores = %#x, assign core: %s(%#x)\n",
 +			optional_cores,

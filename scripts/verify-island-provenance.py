@@ -16,11 +16,11 @@ from typing import Final
 ROOT: Final = Path(__file__).resolve().parent.parent
 ISLAND_DIR: Final = ROOT / "island"
 REPOSITORY: Final = "CERALIVE/rk3588-media-island"
-TAG: Final = "v2026.9.3"
-COMMIT: Final = "b9602a0a49432817c0689ce90b83590b7e52d5b4"
+TAG: Final = "v2026.9.4"
+COMMIT: Final = "e23dae264ae91811730f79c12bc8527a98435774"
 ASSET: Final = f"rk3588-media-island-{TAG}.mbox.tar"
 ASSET_SHA256: Final = (
-    "d986f3f415420e815502f9a87a3bd7fc7ee6036044ef0d762de57d270fe50015"
+    "f64bebb369afa13e1fa37c733e7fa69021ff14f4be2da8d88235ba8d66488820"
 )
 ASSET_URL: Final = (
     f"https://github.com/{REPOSITORY}/releases/download/{TAG}/{ASSET}"

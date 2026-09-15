@@ -10,10 +10,10 @@ from tests import ROOT, load_script
 
 bs = load_script("build-series.py", "ceralive_build_series_island")
 
-RELEASE_TAG = "v2026.9.2"
-RELEASE_COMMIT = "1fd357d8a8b83b6f4ed7f7692d761f7b653d44f5"
+RELEASE_TAG = "v2026.9.4"
+RELEASE_COMMIT = "e23dae264ae91811730f79c12bc8527a98435774"
 RELEASE_ASSET_SHA256 = (
-    "393b50a26117b95659f35a603abb9939f767e397f71e85fb180dda107e2df616"
+    "f64bebb369afa13e1fa37c733e7fa69021ff14f4be2da8d88235ba8d66488820"
 )
 SOURCE_FIXTURE = "0031-rk3588-media-island-drivers.patch"
 MERGED_MARKER_RE = re.compile(r"^commit [0-9a-f]{40} upstream\.$", re.MULTILINE)
@@ -72,6 +72,12 @@ class TestIslandProvenance(unittest.TestCase):
             header,
         )
         self.assertIn(f"asset_sha256  {RELEASE_ASSET_SHA256}", header)
+
+    def test_independent_verifier_names_the_published_release(self) -> None:
+        verifier = load_script("verify-island-provenance.py", "island_release_verifier")
+        self.assertEqual(verifier.TAG, RELEASE_TAG)
+        self.assertEqual(verifier.COMMIT, RELEASE_COMMIT)
+        self.assertEqual(verifier.ASSET_SHA256, RELEASE_ASSET_SHA256)
 
     def test_island_and_40_hex_provenance_are_refused(self) -> None:
         mixed = (sample_island(), RELEASE_COMMIT)

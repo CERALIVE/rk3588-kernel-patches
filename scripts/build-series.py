@@ -919,10 +919,10 @@ SERIES: tuple[Patch, ...] = (
             "video: rockchip: add the CeraLive RK3588 media island"
         ),
         provenance=Island(
-            tag="v2026.9.2",
-            commit="1fd357d8a8b83b6f4ed7f7692d761f7b653d44f5",
+            tag="v2026.9.4",
+            commit="e23dae264ae91811730f79c12bc8527a98435774",
             asset_sha256=(
-                "393b50a26117b95659f35a603abb9939f767e397f71e85fb180dda107e2df616"
+                "f64bebb369afa13e1fa37c733e7fa69021ff14f4be2da8d88235ba8d66488820"
             ),
         ),
         author="CeraLive <dev@ceralive.tv>",
@@ -936,10 +936,10 @@ SERIES: tuple[Patch, ...] = (
             "video: rockchip: hook the MPP and multi_rga Kconfig and Makefiles"
         ),
         provenance=Island(
-            tag="v2026.9.2",
-            commit="1fd357d8a8b83b6f4ed7f7692d761f7b653d44f5",
+            tag="v2026.9.4",
+            commit="e23dae264ae91811730f79c12bc8527a98435774",
             asset_sha256=(
-                "393b50a26117b95659f35a603abb9939f767e397f71e85fb180dda107e2df616"
+                "f64bebb369afa13e1fa37c733e7fa69021ff14f4be2da8d88235ba8d66488820"
             ),
         ),
         author="CeraLive <dev@ceralive.tv>",
@@ -953,10 +953,10 @@ SERIES: tuple[Patch, ...] = (
             "iommu: rockchip: export media-provider control for MPP and RGA"
         ),
         provenance=Island(
-            tag="v2026.9.2",
-            commit="1fd357d8a8b83b6f4ed7f7692d761f7b653d44f5",
+            tag="v2026.9.4",
+            commit="e23dae264ae91811730f79c12bc8527a98435774",
             asset_sha256=(
-                "393b50a26117b95659f35a603abb9939f767e397f71e85fb180dda107e2df616"
+                "f64bebb369afa13e1fa37c733e7fa69021ff14f4be2da8d88235ba8d66488820"
             ),
         ),
         author="CeraLive <dev@ceralive.tv>",
@@ -970,10 +970,10 @@ SERIES: tuple[Patch, ...] = (
             "iommu: expose media IOVA allocation helpers"
         ),
         provenance=Island(
-            tag="v2026.9.2",
-            commit="1fd357d8a8b83b6f4ed7f7692d761f7b653d44f5",
+            tag="v2026.9.4",
+            commit="e23dae264ae91811730f79c12bc8527a98435774",
             asset_sha256=(
-                "393b50a26117b95659f35a603abb9939f767e397f71e85fb180dda107e2df616"
+                "f64bebb369afa13e1fa37c733e7fa69021ff14f4be2da8d88235ba8d66488820"
             ),
         ),
         author="CeraLive <dev@ceralive.tv>",
@@ -987,10 +987,10 @@ SERIES: tuple[Patch, ...] = (
             "arm64: dts: rockchip: add RK3588 MPP encoder nodes"
         ),
         provenance=Island(
-            tag="v2026.9.2",
-            commit="1fd357d8a8b83b6f4ed7f7692d761f7b653d44f5",
+            tag="v2026.9.4",
+            commit="e23dae264ae91811730f79c12bc8527a98435774",
             asset_sha256=(
-                "393b50a26117b95659f35a603abb9939f767e397f71e85fb180dda107e2df616"
+                "f64bebb369afa13e1fa37c733e7fa69021ff14f4be2da8d88235ba8d66488820"
             ),
         ),
         author="CeraLive <dev@ceralive.tv>",
@@ -1004,10 +1004,10 @@ SERIES: tuple[Patch, ...] = (
             "arm64: dts: rockchip: hand RK3588 decoders to MPP"
         ),
         provenance=Island(
-            tag="v2026.9.2",
-            commit="1fd357d8a8b83b6f4ed7f7692d761f7b653d44f5",
+            tag="v2026.9.4",
+            commit="e23dae264ae91811730f79c12bc8527a98435774",
             asset_sha256=(
-                "393b50a26117b95659f35a603abb9939f767e397f71e85fb180dda107e2df616"
+                "f64bebb369afa13e1fa37c733e7fa69021ff14f4be2da8d88235ba8d66488820"
             ),
         ),
         author="CeraLive <dev@ceralive.tv>",
@@ -1021,10 +1021,10 @@ SERIES: tuple[Patch, ...] = (
             "arm64: dts: rockchip: add the RK3588 MPP JPEG decoder"
         ),
         provenance=Island(
-            tag="v2026.9.2",
-            commit="1fd357d8a8b83b6f4ed7f7692d761f7b653d44f5",
+            tag="v2026.9.4",
+            commit="e23dae264ae91811730f79c12bc8527a98435774",
             asset_sha256=(
-                "393b50a26117b95659f35a603abb9939f767e397f71e85fb180dda107e2df616"
+                "f64bebb369afa13e1fa37c733e7fa69021ff14f4be2da8d88235ba8d66488820"
             ),
         ),
         author="CeraLive <dev@ceralive.tv>",
@@ -1036,10 +1036,10 @@ SERIES: tuple[Patch, ...] = (
         ordinal=38,
         subject="arm64: dts: rockchip: give RK3588 RGA3 ownership to multi_rga",
         provenance=Island(
-            tag="v2026.9.2",
-            commit="1fd357d8a8b83b6f4ed7f7692d761f7b653d44f5",
+            tag="v2026.9.4",
+            commit="e23dae264ae91811730f79c12bc8527a98435774",
             asset_sha256=(
-                "393b50a26117b95659f35a603abb9939f767e397f71e85fb180dda107e2df616"
+                "f64bebb369afa13e1fa37c733e7fa69021ff14f4be2da8d88235ba8d66488820"
             ),
         ),
         author="CeraLive <dev@ceralive.tv>",
@@ -1051,10 +1051,10 @@ SERIES: tuple[Patch, ...] = (
         ordinal=39,
         subject="arm64: dts: rockchip: give RK3588 RGA2 ownership to multi_rga",
         provenance=Island(
-            tag="v2026.9.2",
-            commit="1fd357d8a8b83b6f4ed7f7692d761f7b653d44f5",
+            tag="v2026.9.4",
+            commit="e23dae264ae91811730f79c12bc8527a98435774",
             asset_sha256=(
-                "393b50a26117b95659f35a603abb9939f767e397f71e85fb180dda107e2df616"
+                "f64bebb369afa13e1fa37c733e7fa69021ff14f4be2da8d88235ba8d66488820"
             ),
         ),
         author="CeraLive <dev@ceralive.tv>",
