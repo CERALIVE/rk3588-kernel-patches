@@ -19,10 +19,10 @@ Reference: armbian/linux-rockchip@fd9f82366e235b8afbdf516765210e97d24dce93:arch/
 Patches a file mainline already carries. The payload below is carried byte-for-byte from integration/0011-arm64-dts-rk3588-mpp-decoder-nodes.patch; scripts/build-series.py adds the mail header and nothing else, and scripts/verify-series-parity.py proves that independently.
 
 
-Generated from CeraLive rk3588-media-island v2026.9.4 (e23dae264ae91811730f79c12bc8527a98435774).
+Generated from CeraLive rk3588-media-island v2026.9.5 (836db6127239962183a38c9bf13e08c4ad99b05c).
 
-Release asset rk3588-media-island-v2026.9.4.mbox.tar
-  asset_sha256  f64bebb369afa13e1fa37c733e7fa69021ff14f4be2da8d88235ba8d66488820
+Release asset rk3588-media-island-v2026.9.5.mbox.tar
+  asset_sha256  364c4afd3ad6058c21fc3a9b78b0df7c553670e73010a965fde3d2ac0edc6e44
   member        0006-arm64-dts-rk3588-mpp-decoder-nodes.patch
   member_sha256 1705d3d8c4e1f7a6fe10a8ed5188e4d17cfdfcacdcfd8aa333c2faa92516e67f
 

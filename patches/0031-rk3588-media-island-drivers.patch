@@ -10,12 +10,12 @@ The Rockchip MPP service with its three compiled clients (RKVENC2, RKVDEC2, JPGD
 GENERATED from the rk3588-media-island source tree by scripts/build-series.py. The source is the truth and this series is its output; per-file provenance is docs/PROVENANCE.md and the originating commits' Origin: trailers, never this mailbox header.
 
 
-Generated from CeraLive rk3588-media-island v2026.9.4 (e23dae264ae91811730f79c12bc8527a98435774).
+Generated from CeraLive rk3588-media-island v2026.9.5 (836db6127239962183a38c9bf13e08c4ad99b05c).
 
-Release asset rk3588-media-island-v2026.9.4.mbox.tar
-  asset_sha256  f64bebb369afa13e1fa37c733e7fa69021ff14f4be2da8d88235ba8d66488820
+Release asset rk3588-media-island-v2026.9.5.mbox.tar
+  asset_sha256  364c4afd3ad6058c21fc3a9b78b0df7c553670e73010a965fde3d2ac0edc6e44
   member        0001-rk3588-media-island-drivers.patch
-  member_sha256 d9d260d6c6946e0f677d3996504e50dbfa5182d391e3262a9bdad416764d3eac
+  member_sha256 f4e9c71389ec59c1940ae4ae4daabf97010796da8d97a29191839186c1fa71ad
 
 island/0031-rk3588-media-island-drivers.patch is that member byte-for-byte -- the mail
 header above is this repository's own, so the N/51 ordinal is ours and
@@ -49447,10 +49447,10 @@ index 0000000000000000000000000000000000000000..9c1ca093f9982565c65ed90f1e119a2d
 +}
 diff --git a/drivers/video/rockchip/rga3/rga_job.c b/drivers/video/rockchip/rga3/rga_job.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..c8d76a65f4d96f7cc27fed5a4ef38ceff7b942ee
+index 0000000000000000000000000000000000000000..49e478d45542a08c503e36a5bd13d57b9ba2dc57
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/rga_job.c
-@@ -0,0 +1,2122 @@
+@@ -0,0 +1,2127 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -49991,6 +49991,9 @@ index 0000000000000000000000000000000000000000..c8d76a65f4d96f7cc27fed5a4ef38cef
 +		return -EAGAIN;
 +	}
 +
++	/* Completion may retire the queue reference as soon as we unlock. */
++	rga_job_get(job);
++
 +	/* priority policy set by userspace */
 +	if (list_empty(&scheduler->todo_list)
 +		|| (job->priority == RGA_SCHED_PRIORITY_DEFAULT)) {
@@ -50159,6 +50162,8 @@ index 0000000000000000000000000000000000000000..c8d76a65f4d96f7cc27fed5a4ef38cef
 +	rga_job_next(scheduler);
 +
 +	rga_power_disable(scheduler);
++	/* Keep allocation ownership through every post-publication job access. */
++	rga_job_put(job);
 +
 +	return 0;
 +
@@ -50172,7 +50177,7 @@ index 0000000000000000000000000000000000000000..c8d76a65f4d96f7cc27fed5a4ef38cef
 +	if (job->task_buffers)
 +		rga_mm_unmap_job_info(job);
 +free_job:
-+	rga_job_free(job);
++	rga_job_put(job);
 +
 +	return ret;
 +}
