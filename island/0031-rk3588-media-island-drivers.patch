@@ -49422,10 +49422,10 @@ index 0000000000000000000000000000000000000000..9c1ca093f9982565c65ed90f1e119a2d
 +}
 diff --git a/drivers/video/rockchip/rga3/rga_job.c b/drivers/video/rockchip/rga3/rga_job.c
 new file mode 100644
-index 0000000000000000000000000000000000000000..c8d76a65f4d96f7cc27fed5a4ef38ceff7b942ee
+index 0000000000000000000000000000000000000000..49e478d45542a08c503e36a5bd13d57b9ba2dc57
 --- /dev/null
 +++ b/drivers/video/rockchip/rga3/rga_job.c
-@@ -0,0 +1,2122 @@
+@@ -0,0 +1,2127 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (C) Rockchip Electronics Co., Ltd.
@@ -49966,6 +49966,9 @@ index 0000000000000000000000000000000000000000..c8d76a65f4d96f7cc27fed5a4ef38cef
 +		return -EAGAIN;
 +	}
 +
++	/* Completion may retire the queue reference as soon as we unlock. */
++	rga_job_get(job);
++
 +	/* priority policy set by userspace */
 +	if (list_empty(&scheduler->todo_list)
 +		|| (job->priority == RGA_SCHED_PRIORITY_DEFAULT)) {
@@ -50134,6 +50137,8 @@ index 0000000000000000000000000000000000000000..c8d76a65f4d96f7cc27fed5a4ef38cef
 +	rga_job_next(scheduler);
 +
 +	rga_power_disable(scheduler);
++	/* Keep allocation ownership through every post-publication job access. */
++	rga_job_put(job);
 +
 +	return 0;
 +
@@ -50147,7 +50152,7 @@ index 0000000000000000000000000000000000000000..c8d76a65f4d96f7cc27fed5a4ef38cef
 +	if (job->task_buffers)
 +		rga_mm_unmap_job_info(job);
 +free_job:
-+	rga_job_free(job);
++	rga_job_put(job);
 +
 +	return ret;
 +}

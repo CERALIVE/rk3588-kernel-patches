@@ -97,17 +97,23 @@ rk3588-kernel-patches/
 
 ## KEY FACTS
 
-**The island lane carries `v2026.9.4`, with board qualification pending.** All nine
-members retain ordinals `0031`–`0039`; the release tag, source commit and asset
-digest must agree in the generator, independent verifier and test expectations.
-Regenerate every consumer header after updating those coordinates. The preceding
-import updated the verifier but left generator headers naming `v2026.9.2`;
-`tests/test_island_lane.py` now checks both surfaces against the release tuple.
-The RGA job-owned-table and execution-DMA repairs fail closed on reset failure:
-memory and power remain retained until reboot, and unload refuses. No board
-qualification is claimed; the downstream image pin PR stays open through that
-gate. Software evidence and the deliberately untouched, stale MPP hardening
-checker boundary are documented in the island release, not re-proven here.
+**The island lane carries `v2026.9.5` — the RGA job-lifecycle reliability fix,
+board-qualified.** All nine members retain ordinals `0031`–`0039`; the release
+tag, source commit and asset digest must agree in the generator, independent
+verifier and test expectations. Regenerate every consumer header after updating
+those coordinates. `tests/test_island_lane.py` checks both surfaces against the
+release tuple. The release closes a race in RGA job lifecycle management that
+could corrupt memory under sustained composition load: an admitted job's
+allocation could be released by completion while the submitting path was still
+reading it. The fix takes the queue reference before publication and releases it
+after the last use, and routes pre-publication failures through the same
+destructor. The job-owned-table and execution-DMA repairs are unchanged and
+still fail closed on reset failure: memory and power are retained on the faulted
+core until reboot, and unload refuses rather than waiting indefinitely. Rock
+5B+ `edge-test` qualification passed on 2026-09-19 with encoder, decoder and RGA
+all loaded (8 clean composition cycles + 8 engine-restart cycles + a 300 s soak)
+and no kernel fault report; the board was restored to its production slot. The
+deliberately untouched, stale MPP hardening checker boundary is unchanged.
 
 **HDMI-RX audio now uses v4 plus explicit deltas (`0042`–`0049`).** Canonical
 mail and diff bodies are byte-preserved; `0005`, `0006`, and `0017` are archived.

@@ -12,10 +12,10 @@ Origin: yisding/rock-5b-ysp@ca3da04280c48c004e522c15f31862bf88a2d1b9:kernel-driv
 Patches a file mainline already carries. The payload below is carried byte-for-byte from integration/0003-iommu-dma-expose-iova-domain.patch; scripts/build-series.py adds the mail header and nothing else, and scripts/verify-series-parity.py proves that independently.
 
 
-Generated from CeraLive rk3588-media-island v2026.9.4 (e23dae264ae91811730f79c12bc8527a98435774).
+Generated from CeraLive rk3588-media-island v2026.9.5 (836db6127239962183a38c9bf13e08c4ad99b05c).
 
-Release asset rk3588-media-island-v2026.9.4.mbox.tar
-  asset_sha256  f64bebb369afa13e1fa37c733e7fa69021ff14f4be2da8d88235ba8d66488820
+Release asset rk3588-media-island-v2026.9.5.mbox.tar
+  asset_sha256  364c4afd3ad6058c21fc3a9b78b0df7c553670e73010a965fde3d2ac0edc6e44
   member        0004-iommu-dma-expose-iova-domain.patch
   member_sha256 b2f2892fa79d5069a6323acd93587ba3e14f009a3e2141b84a5fc0e16f3b48b7
 
