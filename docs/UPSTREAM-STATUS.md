@@ -8,6 +8,24 @@ colorimetry, and the HDMI-RX audio v4 backport plus its four first-party deltas
 (2026-09-05, PR #16 / `d95a630`) — and `0050`, the pmdomain idle-request unwind
 (2026-09-12).
 **Previous full sweep:** 2026-08-08, at the `v7.1.7` base.
+**Collabora window check, 2026-09-06 (2026-08-29 → 2026-09-06):** the
+`notes-for-rockchip-3588` GitLab commit API listed ten commits in the window and
+every one's diff touched only `mainline-status.md`; the Collabora `rk3588-test`
+branch tip is unchanged (February 2025), so nothing new landed under
+`drivers/media/platform/{synopsys/hdmirx,rockchip,verisilicon}`,
+`drivers/staging/media/rkvdec`, `drivers/iommu/rockchip-iommu.c`,
+`drivers/dma-buf/heaps`, `drivers/thermal/rockchip_thermal.c` or
+`arch/arm64/boot/dts/rockchip/rk3588*`. Entries in the notes for that window that
+do not touch a carried path and are deliberately IGNORED: SMMUv3 PM, NPU DVFS,
+DP-AltMode `205dc9cb`, HDMI-TX YUV v4 / FRL TxFFE v2 / scrambling v11, CAN, and
+RKISP2 v3 — output, NPU, PCIe and ISP paths this series does not carry. The two
+rows that window DID move are `0011` (merge verified, release still projected —
+see its row) and `0010` (re-posted unchanged, payload `IDENTICAL`). This is a
+window check against the `backports/` and `upstream/` lanes' sources, not a full
+sweep: no other row's **Last checked** moved. Cadence: the next window opens at
+this check's end date and is re-listed with the same GitLab API query
+(`repository/commits?since=<end date>`) plus the lore threads the `backports/`
+rows name; a full sweep re-resolves every row.
 **Row-consistency re-check:** 2026-08-09 — every import and every evaluation from
 this cycle has a row, and each row's verdict matches the series on disk. No
 upstream status was re-resolved, so no **Last checked** date moved; a consistency
