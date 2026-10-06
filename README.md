@@ -6,6 +6,9 @@ Out-of-tree mainline Linux patches for the Rockchip RK3588, packaged as a
 CeraLive fork of [`rcawston/rockchip-rk3588-mainline-patches`](https://github.com/rcawston/rockchip-rk3588-mainline-patches),
 imported at `e13a311` (2026-07-01) with full history and authorship preserved.
 
+Agent entry-point rules are in [AGENTS.md](AGENTS.md); full subsystem contracts
+are preserved in the [agent contract index](docs/agents/README.md).
+
 | | |
 |---|---|
 | **Target kernel** | `v7.2` (`8d3ae59288f1e7d58d76558a6ee96d533bc5019f`) |
