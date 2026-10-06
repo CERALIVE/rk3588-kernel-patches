@@ -1,0 +1,363 @@
+<!-- Moved verbatim from AGENTS.md on 2026-10-05 by lean-rules-docs-landing-latam -->
+
+## KEY FACTS
+
+**The island lane carries `v2026.9.5` — the RGA job-lifecycle reliability fix,
+board-qualified.** All nine members retain ordinals `0031`–`0039`; the release
+tag, source commit and asset digest must agree in the generator, independent
+verifier and test expectations. Regenerate every consumer header after updating
+those coordinates. `tests/test_island_lane.py` checks both surfaces against the
+release tuple. The release closes a race in RGA job lifecycle management that
+could corrupt memory under sustained composition load: an admitted job's
+allocation could be released by completion while the submitting path was still
+reading it. The fix takes the queue reference before publication and releases it
+after the last use, and routes pre-publication failures through the same
+destructor. The job-owned-table and execution-DMA repairs are unchanged and
+still fail closed on reset failure: memory and power are retained on the faulted
+core until reboot, and unload refuses rather than waiting indefinitely. Rock
+5B+ `edge-test` qualification passed on 2026-09-19 with encoder, decoder and RGA
+all loaded (8 clean composition cycles + 8 engine-restart cycles + a 300 s soak)
+and no kernel fault report; the board was restored to its production slot. The
+deliberately untouched, stale MPP hardening checker boundary is unchanged.
+
+**HDMI-RX audio now uses v4 plus explicit deltas (`0042`–`0049`).** Canonical
+mail and diff bodies are byte-preserved; `0005`, `0006`, and `0017` are archived.
+The ACR byte-order concern does not survive v4, but remove-time work draining and
+clock-error handling do. `0046`–`0048` rework those gaps plus multichannel routing
+and invalid-rate backoff. `0049` preserves Rock family card enablement and codec
+Kconfig closure. Required ALSA card name: **`RK3588 HDMI-IN`**. Jack notification
+and idle pre-lock polling are deliberately retired; second-suspend-cycle silence
+is a kept limitation. Read the [per-behavior ledger](https://github.com/CERALIVE/rk3588-kernel-patches/blob/main/docs/UPSTREAM-STATUS.md#hdmi-rx-audio-v4-reconciliation--2026-09-05)
+before claiming parity or hardware qualification. `0026` loses only its obsolete
+0017 comment/context; its raw-lock runtime fix survives. Never restore a codec
+callback inside the audio worker: synchronous drains rely on its taking no
+control mutex and calling no ASoC code. `apply.sh` executes the audio helper tests
+against its applied tree as well as checking both boards' shared-card wiring.
+
+**`0040` guards EDID renegotiation at the ioctl boundary.** `S_EDID`, including
+zero-block clearing, returns `-EBUSY` while the vb2 queue streams. The video and
+queue locks share `stream->vlock`, serializing this with STREAMON/OFF. Idle
+writes remain unchanged. Board evidence is deferred; procedure:
+[`docs/EDID-STREAMING-GUARD.md`](https://github.com/CERALIVE/rk3588-kernel-patches/blob/main/docs/EDID-STREAMING-GUARD.md).
+
+**`0041` makes the capture format tell the truth about colour, and its table is
+a PURE function on purpose.** `hdmirx_set_fmt()` hardcoded `V4L2_COLORSPACE_SRGB`
+with default encoding and quantization, so a BT.709 limited-range 1080p source
+and a full-range sRGB desktop produced identical format metadata; the AVI
+InfoFrame's `C`, `EC`, `Q` and `YQ` were unpacked for the RGB-range control and
+then discarded. `0041` maps them in one function that reads nothing but its
+arguments, which is what makes every CTA-861 row assertable without a receiver —
+`tests/test_hdmirx_avi_colorimetry.py` lifts that function out of the source-lane
+patch verbatim, compiles it against the real uapi V4L2 enums, and checks every
+row plus both unknown-value fallbacks and the DVI no-InfoFrame row. Three things
+are deliberate and should not be "fixed": an unknown `C`/`EC` falls back to the
+CTA-861 no-data row rather than leaving an enum unset; both BT.2020 rows keep a
+709 transfer function because this receiver has no HDR path at all, so a PQ or
+HLG claim would be a lie; and the extra `V4L2_EVENT_SOURCE_CHANGE` fires only
+when the stored tuple actually changes AND the queue is streaming, because a
+colorimetry-only change carries no resolution change for an application to
+notice. Rockchip's `rk_hdmirx.c` is the behavioural reference; no vendor code is
+copied. Board evidence is deferred — this is code and unit tests only.
+
+**`0050` unwinds a leaked NIU idle request, and it is NOT the fix for the RGA2
+SError.** `rockchip_pd_power()` asserts the NIU idle request before powering a
+domain down and then calls `rockchip_do_pmu_set_power_domain()`. Both power-down
+error paths jumped straight to `out:`, so a failed power-down returned with the
+request still asserted — and because the power-down failed the domain is still
+on, `rockchip_pmu_domain_is_on()` keeps saying so, and every later power-on
+returns early at the already-in-the-requested-state check without ever reaching
+the driver's sole de-assert. The block is left powered but unreachable for the
+rest of the boot: a transient failure made permanent. `0050` adds an
+`err_unidle:` path that de-asserts and then calls `rockchip_pmu_restore_qos()`
+**only if that de-assert succeeded** — the same ordering the power-on path
+already uses, so no new unconditional MMIO is issued through an interconnect
+that may still be idled — and preserves the original `ret` so the caller still
+sees the power-down failure. Two things about it are easy to get wrong. First,
+**it does not fix the RK3588 RGA2 SError and must never be described as doing
+so**: it was found during that investigation, tested as a candidate for it on a
+Rock 5B+, and lost 2 of 2 eligible runs with its own `dev_err` proving the new
+path executed; that crash was root-caused to a broken AXI reset in the media
+island's `rga2_soft_reset()` and is fixed there. Second, **it carries no
+`Fixes:` tag on purpose** — the defective shape predates both `v7.2` and the
+`drivers/soc/rockchip/pm_domains.c` → `drivers/pmdomain/rockchip/pm-domains.c`
+move, and a tree pinned to a single tag cannot identify the introducing commit,
+so naming one would be inventing it. Code-only: no board qualification is
+claimed for the corrected error path.
+
+**`patches/` is generated. Editing it by hand is a bug, and CI catches it.**
+`scripts/build-series.py --check` regenerates from `upstream/` + `ceralive/` into a
+temp dir and byte-compares. Change a source lane or `rebase/<tag>.rules`, then
+regenerate — never the other way round.
+
+**Four source lanes, one pipeline: `upstream/` is imported, `ceralive/` is ours,
+`backports/` is everyone else's, and `island/` is generated upstream by CeraLive.** `upstream/` must stay byte-identical to Ross
+Cawston's published files forever — that is what makes the credit line, the licence
+audit and the parity claim checkable. A patch CeraLive authors goes in `ceralive/`
+and continues the same numbering (`0006` and up). A patch lifted from mainline, a
+stable tree or a lore posting goes in `backports/`. Island release mailboxes go
+in `island/` without byte changes. All four lanes run through
+`build-series.py`, get the same context-only rebase discipline, and are held to the
+same added/removed-line parity by `verify-payload-parity.py` — the lane only changes
+which mail header is written and which directory parity is proven against. **Never
+put first-party, backported, or island content in `upstream/`.**
+
+**The island lane is generated upstream, byte-preserved here, and independently
+verified against its release asset.** Every member carries an `Island(...)`
+provenance variant naming the immutable tag, source-repository commit, and asset
+SHA-256. `scripts/verify-island-provenance.py` downloads that asset (or reads a
+cached copy), verifies its digest, and byte-compares all nine members without
+importing `build-series.py`. Island patches are never hand-edited or re-anchored;
+a base conflict requires a new island release.
+
+**An UNMERGED posting never gets a commit id, and this is the repository's
+sharpest correctness rule.** `backports/` has two provenance variants. A merged
+commit carries `Backport(...)` and a 40-hex `provenance`, and its header says
+`commit <sha> upstream.`. An unmerged lore posting carries `LorePosting(...)` and
+`provenance=LORE_POSTING`, and its header says `Backport of unmerged <vN>
+posting.` and nothing else — **no `commit <sha> upstream.`, no `NULL_OID`, no
+parent SHA, no 40-hex mbox delimiter.** `NULL_OID` is the trap: it is forty hex
+digits, so it passes every shape test while asserting the patch came from the null
+commit. There is no identity to state, so the header states its absence.
+`scripts/check-series-ledger.py` fails the build if one ever appears, and
+`build-series.py` refuses an entry carrying both variants or neither. Importing is
+`scripts/import-lore-series.py`'s job only: it requires the canonical
+`all/<msgid>/t.mbox.gz`, treats patchwork and `/r/<msgid>/raw` as discovery
+instruments that may justify an OUT verdict but never supply bytes, and a blocked
+archive means OUT `unfetchable-canonical-thread` rather than a hand-typed patch.
+Details, digest domains and the refusal list: [`backports/README.md`](https://github.com/CERALIVE/rk3588-kernel-patches/blob/main/backports/README.md).
+
+**`backports/` carries provenance per patch, because it cannot inherit one.** The
+`upstream/` lane hard-codes a single credit block true of every file in that
+directory and of nothing else, so every `backports/` member must name its own
+origin: `provenance` is the 40-hex commit it is backported from (never
+`NULL_OID`, which is 40 hex digits and would otherwise pass the shape test),
+and `Backport(upstream_subject=…, lore_msgid=…, note=…)` supplies the rest. The
+generated header emits `commit <sha> upstream.` plus a lore link. The build
+refuses an entry lacking any of it. Details: [`backports/README.md`](https://github.com/CERALIVE/rk3588-kernel-patches/blob/main/backports/README.md).
+
+**Retirement, not deletion — `retired/` + a registry row is the ONLY way out.**
+Deleting a source file would make "`upstream/` is byte-identical to what was
+imported" unfalsifiable: a reviewer cannot tell "upstream published four" from
+"someone quietly dropped the fifth". So a patch that stops being carried is **moved
+byte-unchanged** into `retired/` and gains a row in
+[`retired/REGISTRY.md`](https://github.com/CERALIVE/rk3588-kernel-patches/blob/main/retired/REGISTRY.md) — a Markdown table that is the doc and
+the machine input at once, the same choice `rebase/*.rules` makes, so there is no
+second copy to drift. Reinstating is the reverse: move back, restore the entry with
+its **original** ordinal, drop the row. Retired ordinals are never reused, exactly
+as the `0004` gap is never closed.
+
+**Every patch's upstream position is tracked, and the retire trigger is written
+down before it fires.** [`docs/UPSTREAM-STATUS.md`](https://github.com/CERALIVE/rk3588-kernel-patches/blob/main/docs/UPSTREAM-STATUS.md) holds
+one row per series member and per pending import candidate: origin, upstream status
+(`merged@<version>` / `sent-vN` / `WIP` / no-counterpart), the precondition for
+dropping it, and the date that was last verified. Two traps it exists to prevent.
+First, **a patch that still applies proves nothing** — upstream may already have
+fixed the same thing, and only a content check says so. Second, **the trigger is a
+precondition, not a licence to delete**: when it fires the patch still goes through
+[`retired/REGISTRY.md`](https://github.com/CERALIVE/rk3588-kernel-patches/blob/main/retired/REGISTRY.md). Every lore reference in that file uses
+`https://lore.kernel.org/r/<message-id>`, which resolves regardless of list; do not
+record list-scoped URLs. Its Collabora source table is re-captured through the
+GitLab **REST API** route, which was **ungated when last checked (2026-08-26)** —
+plain `curl` got the file with no challenge. The gate has been up before and can
+return, so the real-browser fallback stays documented rather than deleted; check
+which one you are getting before concluding anything from a short response.
+
+**`0002` has exactly ONE upstream answer, we already ship it, and it is not a
+replacement.** `7dd27810eea0` ("hdmirx: Fix HPD lane hold time", in the base since
+`v7.1.6`) **is** the 7.2-rc1 "HDMI-RX EDID fix" — the stable backport of mainline
+`d1162a5adbb5`. The table names the symptom, the patch names the mechanism; it
+applied to `v7.1.7` as a **no-op**, it is in the `v7.2` base as mainline, and it
+shares no mechanism with `0002`'s IRQ masking, lock-loop rework and DMA reset — so
+there is nothing to adopt and nothing to retire. `0002`'s own three symbols are
+still absent from the base. Whether `0002` is still *needed* on top of it is a
+behavioural judgement needing an RK3588 board and an HDMI source — do not
+resolve that from source alone. Verdict: [`docs/EVAL-0002-EDID.md`](https://github.com/CERALIVE/rk3588-kernel-patches/blob/main/docs/EVAL-0002-EDID.md); see also
+[`docs/UPSTREAM-STATUS.md`](https://github.com/CERALIVE/rk3588-kernel-patches/blob/main/docs/UPSTREAM-STATUS.md) § `0002` and
+[`docs/REBASE-v7.1.7.md`](https://github.com/CERALIVE/rk3588-kernel-patches/blob/main/docs/REBASE-v7.1.7.md) § Stable overlap.
+
+**Resolving a lore Message-ID does not need a browser — but try both routes, and
+never spoof a browser User-Agent.** `lore.kernel.org`'s HTML views and its `/raw`
+endpoint are Anubis-gated (`curl` gets 403 or a proof-of-work page). Anubis keys
+on the **UA**, and it does so in the direction that surprises people: sending
+`Mozilla/5.0` to the canonical `t.mbox.gz` returns **HTTP 200 wrapping a challenge
+page**, so a status-code-only check reads as success and yields no mbox, while
+`curl`'s own default UA gets the real gzip. Two ways through, and neither covers
+every posting on its own:
+
+1. `patchwork.kernel.org` — `…/api/patches/?msgid=<msgid>` returns the real
+   subject, submitter and project as JSON, and `…/patch/<msgid>/mbox/` returns
+   the full posting including its changelog. Pair it with the GitHub
+   commit-search API over `torvalds/linux` to get the mainline SHA. This is how
+   the `0002` verdict resolved its counterpart. **It is not exhaustive:**
+   patchwork returned zero results for the `0005` counterpart's Message-ID.
+2. `https://lore.kernel.org/all/<msgid>/t.mbox.gz` — the gzipped **thread** mbox
+   is served to a plain `curl` with no gate. It is strictly better when what you
+   need is the *review*: it carries every patch in the series plus every reply,
+   so `Reviewed-by` / `Tested-by` trailers, maintainer pushback and bot findings
+   all come down in one fetch. Split it with Python's `mailbox`, dedupe by
+   Message-ID (the archive returns each message twice), and un-escape mboxrd
+   (`^>(>*From )` → `\1`) before feeding anything to `git apply`. This is how the
+   `0005` verdict read its counterpart.
+
+The Collabora **table** is a third case and neither of these routes reaches it. It
+is re-captured through the GitLab REST API, ungated as of 2026-08-26 — see the
+retire-trigger fact above for the caveat.
+
+**Membership is exactly-once, both directions, and the build enforces it.**
+`build-series.py` used to walk a hard-coded `SERIES` table and never look at the
+directories, so a new file dropped into `upstream/` or `backports/` was a silent
+no-op. Now every `*.patch` under a source lane must be **either** an active `SERIES`
+member **or** a registered retirement — never both, never neither. A registry row
+with no archived file, an archived file with no row, a file present in two lanes,
+a duplicate `SERIES` entry, and a reused ordinal all fail the build.
+`verify-payload-parity.py` re-derives the same orphan check from the filesystem
+alone, so the two opinions stay independent.
+
+**Upstream's `git am` instruction has never worked — that is why this fork exists.**
+The upstream files are raw `diff -ruN aa/ bb/` output with **no mail headers**, so
+`git am` fails format detection before reading a hunk. `0001` and `0003` also carry
+9 macOS `.DS_Store` `Binary files … differ` stanzas, which `git apply` refuses
+("cannot apply binary patch … without full index line") even once headers exist.
+`build-series.py` fixes both. Any instruction this repo publishes is executed
+verbatim by CI, so it cannot rot the same way.
+
+**Upstream numbering is preserved, gap included: `0001`, `0002`, `0003`, `0005`.**
+There is no `0004` upstream. **Do NOT renumber to close the gap** — the 1:1 filename
+correspondence with upstream is what makes the import auditable. First-party,
+backported, and island patches continue the same counter. The nine island members
+begin at the actual next ordinal, `0031`, and end at `0039`; no retired slot was
+reused and `0004` remains visible. Ten standalone-rkvenc members plus the earlier
+`0007` and `0023`–`0025` retirements leave fourteen burned slots. With the `0040`
+EDID guard, `0041` AVI colorimetry, audio v4 migration (`0042`–`0049`, retiring
+`0005`/`0006`/`0017`) and the `0050` pmdomain idle-request unwind, that yields
+**32 active members across 50 slots**.
+`SERIES_TOTAL` is the slot ceiling, never the
+member count, and retirement never shrinks it.
+
+**Historical pairing, now archived: `0005` was driver-only and `0006` made audio reachable.** Upstream's
+`0005` registers an ASoC `hdmi-audio-codec` child under `hdmi_receiver@fdee0000`
+and drives the receiver's audio FIFO/ACR/clock, but touches no device tree, and
+ALSA does not create a card for a bare codec. On a Rock 5B+ running only `0001`–
+`0005` the codec device is *bound* with no cable attached while `/proc/asound/cards`
+shows no HDMI-RX capture card at all. `0006` supplies the three missing DT facts:
+`#sound-dai-cells` on `hdmi_receiver`, an `hdmirx-sound` `simple-audio-card`, and
+`&i2s7_8ch` + `&hdmirx_sound` enabled on the two CeraLive boards. `apply.sh` asserts
+all of them post-apply, per board, because the failure mode is silent — everything
+probes, nothing errors, there is simply no capture device.
+
+**Historical evaluation, superseded by the v4-plus-deltas decision above.** A real, fully-reviewed lore series
+(<https://lore.kernel.org/r/20260721064115.64809-1-royalnet026@gmail.com>,
+`[PATCH v4 0/4]`, Igor Paunovic) does what `0005` does and carries its own DT
+patches, but its 4/4 enables the card on Orange Pi 5 Plus **only** — Rock 5B+
+gets nothing, the exact bound-codec-no-card state above. The two DT halves also
+disagree on cell arity (`#sound-dai-cells = <0>` vs `<1>`) and cannot coexist.
+Adoptable mechanically — all four patches apply clean — but declined: it also
+drops multichannel handling, jack reporting and `hdmirx_plugout()` teardown.
+Full six-criteria verdict: [`docs/EVAL-0005-AUDIO.md`](https://github.com/CERALIVE/rk3588-kernel-patches/blob/main/docs/EVAL-0005-AUDIO.md).
+That was the old KEEP decision; current adoption explicitly supplies Rock coverage
+and records every remaining behavior trade-off in UPSTREAM-STATUS.md.
+
+**The standalone rkvenc lineage is historical and retired, not deleted.** `0001`,
+`0008`, `0013`–`0016`, and `0019`–`0022` moved byte-unchanged into `retired/` when
+`rk3588-media-island v2026.9.0` re-expressed their driver and hardening intent as
+maintained source with permanent tests. The old fault-campaign evidence remains
+useful history; [`retired/REGISTRY.md`](https://github.com/CERALIVE/rk3588-kernel-patches/blob/main/retired/REGISTRY.md) maps every ordinal to
+the exact island commit and the island's `docs/FAULT-CAMPAIGN.md` row.
+
+**`0009` is the retained `system-uncached` heap, and its NAME is a userspace
+ABI.** Its board validation was measured on v7.1.7 and is historical at this
+v7.2 base. `librockchip-mpp` hard-codes the `system-uncached` dma-heap
+name, which mainline does not register — so `mpph264enc` never registered at
+all (defect 1) — and MPP performs no CPU cache maintenance on a heap it
+believes is uncached, so cached memory under that name produced non-deterministic
+output (defect 3). `0009` registers a second heap out of `system_heap.c`'s
+existing per-heap drvdata mechanism: non-cacheable mappings, a one-time
+`arch_dma_prep_coherent()` clean at allocation, and skipped CPU-sync **only**
+for that heap.
+
+Four things about it are easy to get wrong:
+
+- **The heap name must be exactly `system-uncached`.** It is the entire userspace
+  contract and there is no override in the shipped `librockchip-mpp1 1.5.0-1`. A
+  typo is silent — a node appears, under a name nothing opens. `apply.sh` asserts
+  the literal for that reason.
+- **A symlink / bind-mount / `mknod` alias is NOT a workaround, and must never be
+  added.** The image pipeline's `AGENTS.md` names it a corruption trap: aliasing
+  the `system` heap hands MPP cached memory it will not synchronise, and aliasing
+  the CMA heap caps out below 1080p (32 MiB pool, ~1.9 MiB largest run, ~3.1 MiB
+  needed). It was a diagnostic instrument, never a fix.
+- **The cacheable linear-map alias is deliberately left in place**, exactly as in
+  the ACK heap this follows. That is the one thing a compile cannot vet: getting it
+  subtly wrong yields silent intermittent video corruption, not an error. Hardware
+  proof is therefore **mandatory, not advisable** — the legs are
+  [`docs/BOARD-QUALIFICATION.md`](https://github.com/CERALIVE/rk3588-kernel-patches/blob/main/docs/BOARD-QUALIFICATION.md) §2-§7, and the
+  reasoning is [`docs/UPSTREAM-STATUS.md` § `0009`](https://github.com/CERALIVE/rk3588-kernel-patches/blob/main/docs/UPSTREAM-STATUS.md#0009--why-hardware-proof-is-mandatory-here-and-not-merely-advisable).
+- **It registers a name and nothing else.** Node mode and ownership stay the
+  shipped `99-rk-device-permissions.rules` udev policy's job. Do not encode
+  permissions in the kernel patch.
+
+**`docs/BOARD-QUALIFICATION.md` was written as a specification and is now also a
+report — read its Run log before quoting anything from it.** Producing the checklist
+and executing it are two different jobs, and the second one has now been done twice:
+run 1 (2026-08-09, Rock 5B+) ticked §2–§7 and §10a, and run 2 (2026-08-10 → 08-12,
+both boards) added the fault-injection campaign behind `0021`, `0022` and `0026`. An
+item is quotable as a result **only** where a `RUN-n` note is pasted under it; an
+unticked box still means not run, not "assumed fine". It also carries `N/A` legs for the imports T12
+and T13 evaluated and **declined** (I2S MCLK gating, PCIe system PM, V4L2 fdinfo
+stats, tracepoints, SCDC debugfs): completeness there means the leg is *present and
+marked*, not omitted, so a future reader can see it was considered. Do not delete
+an `N/A` leg, do not tick one, and do not tick anything else without a pasted
+transcript.
+
+**The `78c67d98f221` HDMI-codec regression does NOT apply to this tree.** An
+`armbian/linux-rockchip` commit zeroes `capture.channels_min/max` for every
+`hdmi-audio-codec` instance with no TX/RX discrimination, which breaks HDMI-RX
+capture on the **vendor** BSP (`rk-6.1-rkr6.1`). Mainline — including the pinned
+`v7.2` — already carries the upstream `no_i2s_playback` / `no_i2s_capture` /
+`no_spdif_*` pdata flags and only clears a direction when the registering driver
+asks. There is nothing to fix here, and a backport of that vendor-side fix would
+not even apply. Do not add one — the vendor-side fix lives in its own sibling
+repo, [`CERALIVE/rk3588-vendor-kernel-patches`](https://github.com/CERALIVE/rk3588-vendor-kernel-patches),
+pinned to its historical vendor branch. The shipped image runs mainline 7.2;
+send vendor-track investigations to that sibling and do not duplicate them here.
+
+`rebase/*.rules` are context-only for ALL lanes. At a base bump, `ceralive/`-lane patches MAY be revised in place (payload changes) to preserve their documented intent on the new base; every such revision is recorded hunk-by-hunk in `docs/REBASE-<tag>.md` with an intent-preservation note, and is verified by the post-apply assertions and the bump's compile evidence. Payload drift in `upstream/` or `backports/` lanes remains behavioural: resolve ONLY by a new `ceralive/` fixup patch at a fresh ordinal (the 0008-fixes-0001 pattern) or STOP and report. `upstream/` bytes are never edited.
+
+**This repo pins a FINAL TAG; Armbian's `bleedingedge` arm still names a release
+candidate.** The branch this repo derives its mapping from is `bleedingedge`, and
+`config/sources/mainline-kernel.conf.sh` pins it to `tag:v7.2-rc7` because
+Armbian's roll-over-once-7.2-ships TODO has not been actioned. `v7.2` final was
+tagged one day *before* the recorded framework revision, so the rc is simply
+stale, and gating this series on a kernel nobody will run would be the wrong
+trade. This repo therefore pins `v7.2` = `8d3ae59288f1e7d58d76558a6ee96d533bc5019f`,
+tag object `237a1c39e8dfd3e1c6f1f023eea37a48ec04cc63`. The `MAJOR.MINOR` — and so
+the config and patch-directory names — is identical either way, which is what
+makes the substitution safe. `apply.sh` refuses to run if the tag in the tree does
+not resolve to the pinned commit *and* the pinned tag object, so a moved or
+re-created tag fails loudly instead of going green against the wrong source.
+**Downstream consumers must pin the same tag.**
+
+**Armbian mapping is an informational observation, not a pin authority.**
+`ARMBIAN_BRANCH` selects an optional alias to report, so this repository can
+observe `edge`, `bleedingedge`, or no alias without changing the gate. Armbian
+branch movement, board menus, and mapping structure never invalidate CeraLive's
+sovereign kernel decision. The blocking checks are the local pin contract,
+resolvability of its commit from `KERNELSOURCE`, and `apply.sh`'s series gate;
+the derivation details remain in [`docs/PREFLIGHT.md`](https://github.com/CERALIVE/rk3588-kernel-patches/blob/main/docs/PREFLIGHT.md).
+
+**This repository supplies the shipped image's permanent production kernel.** The
+production image builds the mainline/edge **7.2** track from source with this patch
+series pinned by immutable commit SHA. The former vendor 6.1 BSP track is retired
+from production and preserved only as historical reference in its separate sibling
+repository. The platform migration and the owner's keep decision are complete.
+
+**Scope is patch application only.** No kernel is built, nothing is compiled, and
+no hardware is touched. Kernel builds belong to `image-building-pipeline`.
+
+**No MIT claim is made anywhere.** The new sources carry
+`(GPL-2.0+ OR MIT)` + `MODULE_LICENSE("Dual MIT/GPL")`, and the Rockchip BSP
+originals were verified to carry the same tags — so the dual grant is inherited,
+not invented. But the upstream repo has **no `LICENSE` file**, and no line-by-line
+derivation audit of the ported code was done. Only the GPL-2.0 branch is used.
+Details and open questions: [`docs/PROVENANCE.md`](https://github.com/CERALIVE/rk3588-kernel-patches/blob/main/docs/PROVENANCE.md).
+
