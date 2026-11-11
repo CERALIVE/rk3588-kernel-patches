@@ -1,6 +1,81 @@
-# Rebase ledger: v7.4-rc2
+# Rebase ledger: CeraLive target `v7.2` to `v7.4-rc2`
 
-## HDMI-RX context revisions, 2026-11-11
+This ledger records the move of the CeraLive RK3588 series from `v7.2` to the
+newest 7.4 tag available when the rebase started, `v7.4-rc2`. It lives on the
+`rebase/v7.4` branch; `main` stays on `v7.2` until cutover. The ledger name
+follows `KERNEL_TAG`, so each rc refresh renames it (see
+[rc-to-final refresh](#rc-to-final-refresh)) and at the final release it becomes
+`docs/REBASE-v7.4.md`.
+
+No board validation is claimed. Every result below is source, apply or probe
+evidence. Board qualification happens at cutover, on both boards.
+
+## Base
+
+| | |
+|---|---|
+| Previous base | `v7.2`, tag object `237a1c39e8dfd3e1c6f1f023eea37a48ec04cc63`, commit `8d3ae59288f1e7d58d76558a6ee96d533bc5019f` |
+| **This base** | **`v7.4-rc2`**, tag object `fd9230005e85472b81c1c7c16afe93dd878996b1`, commit `7475ea8b58616b33c04afb976cf0fbaad9dd63fb` |
+| Mirror | `https://github.com/torvalds/linux.git` (`KERNEL_MIRROR` in `kernel-pin.env`) |
+| Rules file | None. No `rebase/v7.4-rc2.rules` exists: the only context drift hit two first-party members, revised in place (C26.1, C41.1) |
+| Active series | 27 members; slot total remains 51 |
+| Retirements in this bump | `0010`, `0011`, `0042`, `0043`, `0051`, each merged in `v7.4-rc1` |
+| Result | 26 of 27 members apply with plain `git am`; island member `0033` fails until the 7.4-line island release lands |
+
+## Disposition table
+
+All 32 members of the `main` series (the series before this bump) were probed
+again, in order, against a clean `v7.4-rc2` tree. For each ordinal, the final
+text of every earlier active member was already applied. **pre** is the
+generated patch from `main`; **post** is the generated patch on this branch.
+Values are `git apply --check` exit codes: `0` applies, `1` does not. A retired
+member has no post value. `0033` does not apply, so it was not applied, and the
+rows after it were probed without it. The island and non-island lanes touch
+disjoint paths.
+
+| Ordinal | Lane | Verdict | pre fwd | pre rev | post fwd | Revision | Finding |
+|---|---|---|---:|---:|---:|---|---|
+| `0002` | upstream | KEEP | 0 | 1 | 0 | - | Applies unchanged. KEEP: the hardware-gated retirement question is re-scoped to the new `V4L2_SET_EDID_HPD_LOW_JIFFIES` hold (`c9c245a186ba9d65ae52a1742f387e070360b0c9`); see [`EVAL-0002-EDID.md`](EVAL-0002-EDID.md). |
+| `0003` | upstream | KEEP | 0 | 1 | 0 | - | Applies unchanged. |
+| `0009` | ceralive | KEEP | 0 | 1 | 0 | - | Applies unchanged; the v7.2 system-heap adaptation still matches the base. |
+| `0010` | backports | RETIRE | 1 | 0 | - | - | In the base as `d68e47a06c5cdc90cbd29ce2e74fa61eab5d47cc` (v7.4-rc1). Reverse-applies. |
+| `0011` | backports | RETIRE | 1 | 1 | - | - | In the base as `a9f09b5ea0c3db1e2d4c0f8d3ebdd612d8aa0366` (v7.4-rc1). Its reverse check fails in the prefix state, so identity is proven by patch-ID below. |
+| `0012` | backports | KEEP | 0 | 1 | 0 | - | Applies unchanged; `994452efe9c7` removes an include and a define outside its hunks. |
+| `0018` | ceralive | KEEP | 0 | 1 | 0 | - | Applies unchanged. |
+| `0026` | ceralive | KEEP | 1 | 1 | 0 | C26.1 | Old text rejects the removed `u32 color_depth;` context. Context-only revision C26.1 below. |
+| `0027` | ceralive | KEEP | 0 | 1 | 0 | - | Applies unchanged. |
+| `0028` | ceralive | KEEP | 0 | 1 | 0 | - | Applies unchanged. |
+| `0030` | ceralive | KEEP | 0 | 1 | 0 | - | Applies unchanged. |
+| `0031` | island | KEEP | 0 | 1 | 0 | - | Island lane, byte-preserved `v2026.9.5` asset. Applies. |
+| `0032` | island | KEEP | 0 | 1 | 0 | - | Island lane. Applies. |
+| `0033` | island | KEEP, lane pending | 1 | 1 | 1 | - | Island lane. Fails at `drivers/iommu/rockchip-iommu.c:129` on the v7.3 IOMMU rework. Not revised here: the island branch re-anchors it, and the lane moves to the 7.4-line island release (pending, todos 14 and 5). |
+| `0034` | island | KEEP | 0 | 1 | 0 | - | Island lane. Applies (probe state lacks `0033`). |
+| `0035` | island | KEEP | 0 | 1 | 0 | - | Island lane. Applies. |
+| `0036` | island | KEEP | 0 | 1 | 0 | - | Island lane. Applies. |
+| `0037` | island | KEEP | 0 | 1 | 0 | - | Island lane. Applies. |
+| `0038` | island | KEEP | 0 | 1 | 0 | - | Island lane. Applies. |
+| `0039` | island | KEEP | 0 | 1 | 0 | - | Island lane. Applies. |
+| `0040` | ceralive | KEEP | 0 | 1 | 0 | - | Applies unchanged. |
+| `0041` | ceralive | KEEP | 1 | 1 | 0 | C41.1 | Old text rejects the removed `u32 color_depth;` context. Context-only revision C41.1 below. |
+| `0042` | backports | RETIRE | 1 | 0 | - | - | In the base as `ee6a964dca657dc23fc5c34e80a0133b80cce3ed` (v7.4-rc1). Reverse-applies. |
+| `0043` | backports | RETIRE | 1 | 0 | - | - | In the base as `d667a3c4d003b53d107ce957c5f4a38f1082f5d5` (v7.4-rc1). Reverse-applies. |
+| `0044` | backports | KEEP | 0 | 1 | 0 | - | Applies unchanged. |
+| `0045` | backports | KEEP | 0 | 1 | 0 | - | Applies unchanged. |
+| `0046` | ceralive | KEEP | 0 | 1 | 0 | - | Applies unchanged; still needed, see the content check below. |
+| `0047` | ceralive | KEEP | 0 | 1 | 0 | - | Applies unchanged; still needed, see the content check below. |
+| `0048` | ceralive | KEEP | 0 | 1 | 0 | - | Applies unchanged; still needed, see the content check below. |
+| `0049` | ceralive | KEEP | 0 | 1 | 0 | - | Applies unchanged. |
+| `0050` | ceralive | KEEP | 0 | 1 | 0 | - | Applies unchanged; `4c66c423593e` changes the neighbouring clock-lookup path on attach, not the idle-request unwind. |
+| `0051` | ceralive | RETIRE | 1 | 1 | - | - | Equivalent change is in the base as `760e3b055c501ba3b99626846851339d88558b6a` (v7.4-rc1); only line wrapping differs, so the reverse check fails. |
+
+Every `pre rev` of `1` on a kept member shows its fix is not already in the
+base. Two drops, `0011` and `0051`, neither apply nor reverse-apply, so their
+retirement rests on the identity proof in the next section, not on an apply
+result.
+
+## Hunk-by-hunk ledger
+
+### HDMI-RX context revisions, 2026-11-11
 
 The candidate is `v7.4-rc2`, tag object
 `fd9230005e85472b81c1c7c16afe93dd878996b1`, commit
@@ -14,8 +89,8 @@ removed payload line byte-for-byte. All other hunks remain unchanged.
 
 | Member and hunk | Old header | New header | Intent preserved |
 |---|---|---|---|
-| `0026`, hunk 1, `struct snps_hdmirx_dev` | `@@ -205,7 +206,19 @@` | `@@ -205,6 +206,18 @@` | The raw register lock, four raw IRQ-save guards and raw lock initializer are unchanged. |
-| `0041`, hunk 2, `struct snps_hdmirx_dev` | `@@ -214,6 +225,7 @@` | `@@ -214,5 +225,6 @@` | The colorimetry field, pure mapping functions, format reporting and source-change event behavior are unchanged. |
+| C26.1: `0026`, hunk 1, `struct snps_hdmirx_dev` | `@@ -205,7 +206,19 @@` | `@@ -205,6 +206,18 @@` | The raw register lock, four raw IRQ-save guards and raw lock initializer are unchanged. |
+| C41.1: `0041`, hunk 2, `struct snps_hdmirx_dev` | `@@ -214,6 +225,7 @@` | `@@ -214,5 +225,6 @@` | The colorimetry field, pure mapping functions, format reporting and source-change event behavior are unchanged. |
 
 Both hunks previously had this leading context:
 
@@ -39,7 +114,432 @@ payload line remains `struct hdmirx_colorimetry colorimetry;`, followed by
 the unchanged raw-lock comment supplied by `0026`.
 
 The old source patches reject these struct hunks on the candidate.
-The revised members apply with plain sequential `git am`.
-This section records only the context revisions; the complete base-bump
-disposition ledger and cutover runbook are still pending.
-No kernel build or board validation is claimed here.
+The revised members apply with plain sequential `git am`. These two hunks are
+the only revisions in this bump: every other hunk of every kept member applies
+as generated, and no `upstream/` or `backports/` byte changed.
+
+## Patch-ID / content check
+
+A patch that reverse-applies is a hint, not proof. Each drop was proven against
+its upstream commit by one named method, and each upstream commit was checked as
+an ancestor of `v7.4-rc1` and of this base, and as absent from `v7.3`.
+
+| Ordinal | Upstream commit | Stable patch-ID, local / upstream | Equivalence method |
+|---|---|---|---|
+| `0010` | `d68e47a06c5cdc90cbd29ce2e74fa61eab5d47cc` | `3a48129f7aa5` / `3a48129f7aa5` | Ordered added and removed lines identical; patch-IDs equal |
+| `0011` | `a9f09b5ea0c3db1e2d4c0f8d3ebdd612d8aa0366` | `69441d2e94e5` / `69441d2e94e5` | Ordered added and removed lines identical; patch-IDs equal |
+| `0042` | `ee6a964dca657dc23fc5c34e80a0133b80cce3ed` | `febcac9819f8` / `febcac9819f8` | Source alone reverse-applies on the clean base; patch-IDs equal |
+| `0043` | `d667a3c4d003b53d107ce957c5f4a38f1082f5d5` | `7da8df200b6d` / `7da8df200b6d` | Source alone reverse-applies on the clean base; patch-IDs equal |
+| `0051` | `760e3b055c501ba3b99626846851339d88558b6a` | `bd2254369a1b` / `5bf33ee2656e` | Removed lines identical; added lines equal after whitespace normalisation (only the two `v4l2_dbg` calls wrap differently); the upstream commit has no `Link:` trailer |
+
+Each file moved byte-unchanged into `retired/`, with a row in
+[`retired/REGISTRY.md`](../retired/REGISTRY.md). No ordinal was reused.
+
+## Drift inventory
+
+These upstream changes touch paths the series or the island lane consumes. Each
+has a disposition; "board" means a source read cannot settle it.
+
+| Area | Commit | Change | Disposition |
+|---|---|---|---|
+| rockchip-iommu | [`414cb6f3ac6217d67963d53866e0fc2288dd3556`](https://github.com/torvalds/linux/commit/414cb6f3ac6217d67963d53866e0fc2288dd3556) | Per-instance `rk_ops` | Neutral for island behaviour; moved island `integration/0002` context, re-anchored on the island branch |
+| rockchip-iommu | [`841363ebb5082a06c69ac34719e26659fe63dbd6`](https://github.com/torvalds/linux/commit/841363ebb5082a06c69ac34719e26659fe63dbd6) | MMU takes every DT clock | Neutral: all seven island-consumed MMUs list exactly `aclk`/`iface` |
+| rockchip-iommu | [`b10d5920cafa292ee3cab9c20f813da4fe4f00b8`](https://github.com/torvalds/linux/commit/b10d5920cafa292ee3cab9c20f813da4fe4f00b8) | Acknowledge `PAGE_FAULT_ACTIVE` before enabling stall | **Board.** See [Stopped for behavioural judgement](#stopped-for-behavioural-judgement) |
+| rockchip-iommu | [`ea0a9d453f60d5d065c377bbd20ab8a78b8620b7`](https://github.com/torvalds/linux/commit/ea0a9d453f60d5d065c377bbd20ab8a78b8620b7) | Probe fails when no MMU resource maps | Neutral: an error-path fix; every island MMU has a resource window |
+| treewide | [`4dd10fbbeb9c33709edc89916e19c03c780a0751`](https://github.com/torvalds/linux/commit/4dd10fbbeb9c33709edc89916e19c03c780a0751) | `devm_kmalloc()` family to `devm_kmalloc_obj()` | Spelling only. Moves `rockchip-iommu.c` context for island `integration/0002`, and changes one `hdmirx_probe()` line outside `0047`'s hunk |
+| dma-iommu | [`1c8f6308e557f32412e9d4678b3f029f47f6d9aa`](https://github.com/torvalds/linux/commit/1c8f6308e557f32412e9d4678b3f029f47f6d9aa) | Catch scatterlist length overflows | Neutral: MPP accepts one nonzero DMA span within 32 bits and RGA validates its spans before mapping |
+| dma-iommu | [`1ae140d0f27248fc588f2f3baa9940512ee078f1`](https://github.com/torvalds/linux/commit/1ae140d0f27248fc588f2f3baa9940512ee078f1) | iommu-dma helpers made private | Neutral: island `integration/0003` still applies and the island's export path is unchanged |
+| hdmirx | [`e8554ac860356f1f4cd9bce454271dce1ed35fc1`](https://github.com/torvalds/linux/commit/e8554ac860356f1f4cd9bce454271dce1ed35fc1) | Fetch colour depth before the pixel clock; drops `u32 color_depth;` | Context drift for `0026`/`0041`, resolved by C26.1 and C41.1. `Cc: stable`; see [7.2-side follow-ups](#72-side-follow-ups) |
+| hdmirx | [`d029dfa8170b5d0baf39247db7501dbfcc16d9f7`](https://github.com/torvalds/linux/commit/d029dfa8170b5d0baf39247db7501dbfcc16d9f7) | Input status in `VIDIOC_ENUMINPUT` | Neutral: no member touches that ioctl; all hdmirx members apply |
+| hdmirx | [`fce1e4fa3867c0ff19a31f9977741696710855a6`](https://github.com/torvalds/linux/commit/fce1e4fa3867c0ff19a31f9977741696710855a6) | `request_any_context_irq()` for the 5V IRQ | Neutral: `0026`'s raw register lock is correct in hard-IRQ and threaded context alike |
+| media | [`c9c245a186ba9d65ae52a1742f387e070360b0c9`](https://github.com/torvalds/linux/commit/c9c245a186ba9d65ae52a1742f387e070360b0c9) | `V4L2_SET_EDID_HPD_LOW_JIFFIES` HPD-low hold | **Board.** Re-scopes `0002`'s retirement question |
+| dw-hdmi-qp | [`994452efe9c7871d7a6de8c31ba6e5a2c9733e99`](https://github.com/torvalds/linux/commit/994452efe9c7871d7a6de8c31ba6e5a2c9733e99) | Drop an unused include and define | Neutral: outside `0012`'s hunks |
+| pmdomain | [`4c66c423593e26273ea0d644906ed007630c6f6d`](https://github.com/torvalds/linux/commit/4c66c423593e26273ea0d644906ed007630c6f6d) | Attach now fails on non-`ENOENT` clock errors | **Board.** Every media clock resolves to a real CRU ID in both compiled board trees, but only a boot proves no new probe failure |
+| DT | [`d1b7c3228041f4b3ad888abe6a31f6494279e979`](https://github.com/torvalds/linux/commit/d1b7c3228041f4b3ad888abe6a31f6494279e979) | HDMI output cards renamed to "RK3588 HDMI0/1" | **Board.** Capture the real ALSA and PipeWire names at cutover; `RK3588 HDMI-IN` is unchanged |
+
+The local kernel object store lacked the four v7.3 rockchip-iommu commits, so
+their patch text was read from the pinned GitHub commit URLs above and the
+tagged `v7.4-rc2` source was audited directly. Local ancestry of those four is
+not verified; the other ten are ancestors of this base and absent from `v7.2`.
+
+## Content check of retained audio deltas
+
+`0046`-`0048` were written against the audio v4 import (`0042`/`0043`). That
+code is now mainline: `0043`'s payload equals `d667a3c4d003`. A patch that
+applies proves nothing on its own, so two things were checked.
+
+**The code under the deltas is unchanged.** Two trees were built: `v7.2` plus
+`main`'s series up to `0045`, and `v7.4-rc2` plus this branch's series up to
+`0045` (island lane skipped in both, since it touches other paths). Every
+function a `0046`-`0048` hunk lands in was compared by name in
+`snps_hdmirx.c`:
+
+| Member | Functions touched |
+|---|---|
+| `0046` | `hdmirx_audio_clk_adjust`, `hdmirx_audio_clk_ppm_inc`, `hdmirx_audio_closest_fs`, `hdmirx_audio_hw_params`, `hdmirx_audio_setup`, `hdmirx_audio_work`, `hdmirx_resume`, `hdmirx_suspend` |
+| `0047` | `hdmirx_audio_hw_params`, `hdmirx_audio_shutdown`, `hdmirx_audio_work`, `hdmirx_interrupts_setup`, `hdmirx_plugin`, `hdmirx_probe`, `hdmirx_remove`, `hdmirx_resume`, `hdmirx_set_edid`, `hdmirx_suspend` |
+| `0048` | `hdmirx_audio_clk_adjust`, `hdmirx_audio_setup`, `hdmirx_audio_work` |
+
+Thirteen of the fourteen functions are byte-identical between the two trees.
+The fourteenth, `hdmirx_probe()`, differs in one line:
+`devm_kzalloc(dev, sizeof(*hdmirx_dev), GFP_KERNEL)` became
+`devm_kzalloc_obj(dev, *hdmirx_dev)` (`4dd10fbbeb9c`), which is not in `0047`'s
+probe hunk. `snps_hdmirx.h`, which `0048` also patches, is byte-identical.
+
+**Each delta still fixes its defect at `v7.4-rc2`.** On the unpatched base
+`drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c`:
+
+- `0046`: the supported-rate table still lists `768000` (line 2688), and every
+  `clk_set_rate()` result is ignored (lines 2748, 2796, 2828, 2842).
+- `0047`: `hdmirx_remove()` (line 3082) unregisters the audio device and
+  disables the controller without draining `audio_work`; only suspend,
+  `hw_params` and shutdown cancel it.
+- `0048`: there is no speaker-allocation or channel-routing handling at all.
+
+## Stopped for behavioural judgement
+
+Nothing stopped the rebase: no `upstream/` or `backports/` payload drift was
+found, and no fixup ordinal was needed. Two questions stay open because only
+boards can answer them.
+
+1. **`0002`, KEEP.** Upstream now holds HPD low for
+   `V4L2_SET_EDID_HPD_LOW_JIFFIES` (`c9c245a186ba9d65ae52a1742f387e070360b0c9`)
+   when an EDID is set. Whether `0002`'s sequence is still needed for a 4K60
+   EDID re-read is the existing hardware-gated question from
+   [`EVAL-0002-EDID.md`](EVAL-0002-EDID.md), now asked against that hold: run
+   the same-artifact A/B with and without `0002`, plus B1-B7, on both boards.
+   Apply or compile success never retires it.
+2. **Island stale-fault ACK (`b10d5920cafa`).** The new loop acknowledges every
+   bank with `PAGE_FAULT_ACTIVE` before enabling stall, without checking the
+   interrupt mask, idle state or an island task token. The source read found
+   no interleaving on the normal RK3588 admission path that hands an unreported
+   fault to a new task owner, but that is not proof that real bank latching or
+   failed-reset recovery is safe. Needs board proof on both boards: the island
+   fault-matrix and fault-controls rows, exactly-once callback and reset
+   counters, no callback after token teardown, and a real provider-fault trace
+   covering a stale fault before prepare, a fault between START and commit,
+   mask-to-timeout recovery and a failed reset. The existing fault rows call
+   the callback directly, so a physical-stimulus row is still missing.
+
+## Compile evidence
+
+Pending. This ledger records apply and source evidence only.
+
+- Full-series kernel compile on `v7.4-rc2` with the island branch's series
+  substituted for the island lane: pending (plan todo 6).
+- All consumer gates on the real island lane, after the 7.4-line island
+  release: pending (plan todos 14, 5 and 7).
+
+For this bump, no board validation is claimed. A tree that applies is not a tree that builds,
+and a tree that builds is not a board that works.
+
+## rc-to-final refresh
+
+Run this for the next rc or for `v7.4` final, in this order.
+
+1. **Consumer pin.** Resolve the new tag on every remote and require one tag
+   object and one peeled commit:
+
+   ```sh
+   for r in https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git \
+            https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git \
+            https://github.com/gregkh/linux.git \
+            https://github.com/torvalds/linux.git; do
+     git ls-remote --tags "$r" 'refs/tags/v7.4*'
+   done
+   ```
+
+   Pick `v7.4` if it exists, else the highest `-rcN`. Keep
+   `https://github.com/gregkh/linux.git` as `KERNEL_MIRROR` if it carries the
+   tag, else `https://github.com/torvalds/linux.git`. In `kernel-pin.env`, set
+   `KERNEL_TAG`, `KERNEL_TAG_OBJECT`, `KERNEL_COMMIT` and `KERNEL_MIRROR`, keep
+   `KERNEL_MAJOR_MINOR="7.4"` and `KERNEL_PATCHDIR`, and rewrite the resolution
+   comments (date, remotes, rc or final). Then run `scripts/preflight.sh --head`
+   and `tests/test_preflight_sovereign_pin.sh`.
+2. **Consumer conflicts.** Apply the consumer series, without island `0031`-
+   `0039`, one member at a time with plain `git am` on a clean tree at the new
+   tag. Resolve any newly failing member by the lane law before anything else:
+   a context revision ledgered hunk by hunk, as in C26.1, for `ceralive/`; a
+   fresh fixup ordinal or STOP for `upstream/` and `backports/`.
+3. **Consumer regenerate and push.**
+
+   ```sh
+   python3 scripts/build-series.py
+   python3 scripts/build-series.py --check
+   git mv docs/REBASE-v7.4-rc2.md docs/REBASE-<new-tag>.md
+   # only if a rules file exists for the old tag:
+   git mv rebase/v7.4-rc2.rules rebase/<new-tag>.rules
+   git commit
+   git push origin rebase/v7.4
+   ```
+
+   `patches/series` embeds the kernel coordinates and `scripts/apply.sh` checks
+   series integrity first, so regeneration belongs in the same commit. The new
+   pin must be on GitHub before any island step.
+4. **Island mirror and conflicts.** Mirror the four values into the island
+   `kernel-pin.env`. Check that every island `patches/*` member still applies
+   with plain `git am` on the new tag; if one does not, re-anchor it and
+   regenerate the island series now.
+5. **Island gates.** Re-run the island's local gates. They wait for the consumer
+   raw URL to show the new pin, then push and require green CI.
+6. **Island release, only if step 4 changed the island series.** Cut a new
+   owner-gated, non-latest 7.4-line island release, then move this repository's
+   island lane to it.
+7. **Consumer gates.** Re-run every consumer gate on the real island lane and
+   push.
+
+## Cutover runbook
+
+Run in this order. Nothing here happens before 7.4 is the production target.
+
+1. The owner decides the 7.2 policy (see [Deferred 7.2 policy](#deferred-72-policy)).
+2. **Consumer first.** Open the PR from `rebase/v7.4` into this repository's
+   `main`. Its island lane already names the 7.4-line island tag, so it needs
+   nothing from island `main`.
+3. **Island second.** Open the PR from `release/linux-7.4` into island `main`,
+   and in the same PR restore `CONSUMER_PIN_REF="main"`. This repository's
+   `main` now carries the 7.4 coordinates, so pin-equality passes, and the
+   island's guard requires that value. In the same PR, revert or deliberately
+   keep the branch-scoped release flow. Reverting means restoring the main-only
+   flow with `scripts/check-release-ref.sh` accepting exactly `refs/heads/main`
+   and its self-test expectations updated; the alternative is removing the
+   main-merge guard together with that script and its CI and release self-test
+   calls. Never remove the script alone: the main-merge guard fails if the flow
+   still accepts only the branch ref.
+4. **image-building-pipeline.** Update `kernel_source` (tag, commit,
+   `patches_commit`, `kernel_release`, `package_version`, `dtb_deb_dir`), the
+   fixtures, the symbol lists and the Kconfig fragment.
+5. **CeraUI and apt-worker.** Qualify the exact new package names.
+6. **Two-board qualification.** Rock 5B+ and Orange Pi 5 Plus, on the final
+   artifact set.
+7. **docs.ceralive.tv**, in English and es-419.
+
+## Deferred 7.2 policy
+
+The owner deferred this decision to cutover.
+
+- **A. Drop 7.2 at cutover.** Freeze the 7.2 line at the last 7.2 island tag and
+  this repository's last 7.2 `main` commit. Fixes go to 7.4 only.
+- **B. Two maintained lines.** Keep 7.2 and 7.4 branches alive in both
+  repositories, with separate release flows and twice the gates.
+- **C. Dual-kernel `main`.** One `main` carrying both pins and both series.
+
+**Recommendation: A.** Devices take kernels through one APT channel and one
+image line, so only one kernel is ever in production. B doubles every gate,
+ledger and island release for a line no device would run after the update. C
+breaks the one-pin rule (`kernel-pin.env` owns every coordinate) that every
+gate here relies on. The owner decides at cutover.
+
+## Emergency 7.2 fix path
+
+Until cutover, island `main` and this repository's `main` stay releasable for
+7.2. An urgent 7.2 fix lands on `main` as it does today; nothing on
+`rebase/v7.4` or `release/linux-7.4` blocks it. Carry the same fix onto the 7.4
+branches afterwards if it still applies.
+
+## Downstream inventory
+
+This is the rest-of-chain inventory, observed 2026-11-11, copied from its source
+record without edits except heading levels and the removal of local file names.
+It is a follow-up list, not work done here. Cutover step numbers refer to the
+[Cutover runbook](#cutover-runbook). Paths are relative to each repository at
+the revision in the source-revisions table:
+[image-building-pipeline](https://github.com/CERALIVE/image-building-pipeline),
+[CeraUI](https://github.com/CERALIVE/CeraUI),
+[apt-worker](https://github.com/CERALIVE/apt-worker),
+[cerastream](https://github.com/CERALIVE/cerastream),
+[ceralive-docs](https://github.com/CERALIVE/ceralive-docs),
+[ceralive-website](https://github.com/CERALIVE/ceralive-website),
+[ceralive](https://github.com/CERALIVE/ceralive),
+[rk3588-media-island](https://github.com/CERALIVE/rk3588-media-island) and this
+repository.
+
+### Findings that change the follow-up work
+
+- Production image pins are v7.2 / 8d3ae59288f1e7d58d76558a6ee96d533bc5019f, patches bc7e44fa35d3eded23567dd48e65f6dc799f4b34, release 7.2.0-ceralive-rk3588 and package 7.2.0-ceralive8. edge-test inherits source pins but has its own release/package/DTB identities. Final 7.4 coordinates and a fresh monotonic revision must be derived at cutover, not invented here.
+- The image currency watcher has executable v7.2-only parser, remote ref filter, extraction and issue key at ci/upstream-watch.py:239-245. Updating only the manifest will make it fail. Update the watcher on the selected support line while preserving issue-only behavior.
+- No 7.2 package literal occurs in CeraUI or apt-worker production code. The actual runtime validators are anchored version-generic identities; they already admit linux-image-7.4.0-ceralive-rk3588. Required work is new cross-version regression coverage, signed metadata/floors and real staging/rollback proof, not blind replacement of every old fixture.
+- CeraUI already filters output cards structurally using playback/capture PCM nodes (audio.ts:274-276 and :772). The proposed third-name microphone leak is a risk to qualify, not a demonstrated defect. Preserve signal-less zero-PCM HDMI-RX input rows. cerastream uses Audio/Source provider selection and capture-PCM intersection as well as a legacy static exclusion list.
+- Upstream DT labels become RK3588 HDMI0/1. Actual sanitized ALSA IDs and PipeWire/WirePlumber names were not measured here and must not be guessed. Existing headless profile rules narrowly match HDMIIN/receiver nodes, not the two HDMI transmitters.
+- ceralive-docs EN/es-419 pages and website messages contain no explicit current 7.2 kernel-version claim. The sole scoped docs version hit is dated drill evidence in src/data/features.yaml:412. Preserve that history; update paired audio/update guidance and compatibility snapshots only when release facts change. Dependency lockfile versions, SVG coordinates and rig geometry are unrelated matches.
+- Board checklist ticks and old passes are artifact-bound historical records. Re-run both boards under 7.4; exit 77, telemetry gaps, compile success and old 7.2 results are never a new hardware pass.
+
+### Source revisions
+
+| Checkout | HEAD observed |
+| --- | --- |
+| ceralive | 014ecf881f2c55a595939475b8b2a5322a20a026 |
+| image-building-pipeline | 4d3d5abb28d71b3f6bc2c37e470fb1329f4fe8cd |
+| CeraUI | 31b06d54ff2e338805d84602a292e9dc95d8de2e |
+| apt-worker | ad4018c792636e0b56e01d4c41c463b8b9ca4a73 |
+| cerastream | c3052b490c0dd11d75391816a44b3d96e8230e2c |
+| ceralive-docs | cb47b6e7bbb17e1a27db059283a1a8a0cbc71cfd |
+| ceralive-website | c89c310867c239b98b9a3e5dd03059641930708d |
+| rk3588-kernel-patches | bc7e44fa35d3eded23567dd48e65f6dc799f4b34 |
+| rk3588-media-island (GitHub, no local checkout) | 63609f578ea1c1b7c10e2ae39664ca2f639a94b3 |
+
+### Primary inventory
+
+Every row gives a repository, exact source path:line, observed literal, required follow-up (including gates that must remain intact), and owning cutover step. No edits listed here were performed.
+
+| Repo | Path:line | Current literal (exact source line) | Required 7.4 change or retained gate | Cutover step |
+| --- | --- | --- | --- | --- |
+| image-building-pipeline | manifests/families/rk3588.yaml:82 | <code>  - linux-image-7.2.0-ceralive-rk3588</code> | Change production identity to linux-image-7.4.0-ceralive-rk3588 with the final 7.4 kernelrelease. | 4 |
+| image-building-pipeline | manifests/families/rk3588.yaml:225 | <code>      tag: v7.2</code> | Pin final v7.4 at cutover; the prepared branch rc is not the production final. | 4 |
+| image-building-pipeline | manifests/families/rk3588.yaml:226 | <code>      commit: 8d3ae59288f1e7d58d76558a6ee96d533bc5019f</code> | Replace with the verified peeled commit of the selected final v7.4 tag; recheck both source and mirror. | 4 |
+| image-building-pipeline | manifests/families/rk3588.yaml:305 | <code>      patches_commit: bc7e44fa35d3eded23567dd48e65f6dc799f4b34</code> | Pin the immutable 40-character merged 7.4 consumer main SHA after cutover step 2. | 4 |
+| image-building-pipeline | manifests/families/rk3588.yaml:332 | <code>      local_version: -ceralive-rk3588</code> | Retain -ceralive-rk3588; derive, do not guess, make kernelrelease. | 4 |
+| image-building-pipeline | manifests/families/rk3588.yaml:333 | <code>      kernel_release: 7.2.0-ceralive-rk3588</code> | Probe and record 7.4.0-ceralive-rk3588 against final source, series and resolved config. | 4 |
+| image-building-pipeline | manifests/families/rk3588.yaml:334 | <code>      package_version: 7.2.0-ceralive8</code> | Choose an unused monotonic 7.4.0-ceraliveN version; do not rename or rebuild any published 7.2 artifact. | 4 |
+| image-building-pipeline | manifests/families/rk3588.yaml:341 | <code>      dtb_deb_dir: /usr/lib/linux-image-7.2.0-ceralive-rk3588/rockchip</code> | Use /usr/lib/linux-image-7.4.0-ceralive-rk3588/rockchip; retain /boot/dtb/rockchip target mapping. | 4 |
+| image-building-pipeline | manifests/families/rk3588.yaml:368 | <code>    extends: edge</code> | Preserve extends: edge so debug source coordinates remain inherited. | 4 |
+| image-building-pipeline | manifests/families/rk3588.yaml:371 | <code>      - linux-image-7.2.0-ceralive-rk3588-test</code> | Change debug package to linux-image-7.4.0-ceralive-rk3588-test, never interchangeable with production. | 4 |
+| image-building-pipeline | manifests/families/rk3588.yaml:380 | <code>        - manifests/kernel/rk3588-edge.fragment</code> | Re-resolve production fragment then debug fragment; retain symbol survival checks. | 4 |
+| image-building-pipeline | manifests/families/rk3588.yaml:391 | <code>      local_version: -ceralive-rk3588-test</code> | Retain -ceralive-rk3588-test and independently derive debug kernelrelease. | 4 |
+| image-building-pipeline | manifests/families/rk3588.yaml:392 | <code>      kernel_release: 7.2.0-ceralive-rk3588-test</code> | Probe 7.4.0-ceralive-rk3588-test independently with both fragments. | 4 |
+| image-building-pipeline | manifests/families/rk3588.yaml:393 | <code>      package_version: 7.2.0-ceralive1+test1</code> | Use an unused 7.4.0-ceraliveN+testM debug version; preserve non-shipping status. | 4 |
+| image-building-pipeline | manifests/families/rk3588.yaml:395 | <code>      dtb_deb_dir: /usr/lib/linux-image-7.2.0-ceralive-rk3588-test/rockchip</code> | Move debug DTB source directory to /usr/lib/linux-image-7.4.0-ceralive-rk3588-test/rockchip. | 4 |
+| image-building-pipeline | manifests/kernel/rk3588-edge.fragment:144 | <code># CONFIG_VIDEO_ROCKCHIP_RGA is not set</code> | Re-resolve against 7.4 and keep native VIDEO_ROCKCHIP_RGA forbidden; no Kconfig mutual exclusion with other compatible owners. | 4 |
+| image-building-pipeline | manifests/kernel/rk3588-edge.fragment:562 | <code># Every symbol below was read against the pinned v7.2 tree and its resolved</code> | Audit all declared symbols against 7.4 Kconfig; prove survival, Bluetooth/UHID, networking and platform pruning anew. | 4 |
+| image-building-pipeline | manifests/kernel/required-symbols.list:212 | <code># Maximum-stable v7.2 transport closure; each tristate stays modular.</code> | Re-derive 7.4 required module and transport closure; do not copy old measured counts. | 4 |
+| image-building-pipeline | manifests/kernel/forbidden-symbols.list:200 | <code>CONFIG_VIDEO_ROCKCHIP_RGA</code> | Retain strict ownership and forbidden-symbol gate at the new resolved config. | 4 |
+| image-building-pipeline | manifests/kernel/forbidden-symbols.list:203 | <code>CONFIG_NFT_COUNTER</code> | Recheck whether CONFIG_NFT_COUNTER remains absent at 7.4; keep exact symbol checks and update only if source evidence requires it. | 4 |
+| image-building-pipeline | tests/fixtures/kernel-firmware-v7.2.json:3 | <code>  "provenance": {"kernel_source_commit":"8d3ae59288f1e7d58d76558a6ee96d533bc5019f","patches_commit":"6996f96bc883f637ddac11f81871a256632f3f48","kernel_release":"7.2.0-ceralive-rk3588","kernel_package_version":"7.2.0-ceralive1","kernel_deb_sha256":"2096bc8b7efbe8f596d0c773124ebe3af2833dae1237dec6331b535975cee8c0","built_modules_sha256":"f546c8f87b465b76f29e603d673995b4486e051de6cee35d0204427c8ffce71e","firmware_package":"armbian-firmware-full","firmware_version":"26.8.3","firmware_archive_sha256":"13d10a85a1fa02a989eb2c3e9696f3c931bc9cf2b6059e435c4bd2c75ec53d19"},</code> | Keep historical revision-1 provenance intact; capture a separate real 7.4 module/firmware inventory, package hashes and derived counts. | 4 |
+| image-building-pipeline | tests/kernel-only-build.test.sh:380 | <code>python3 - "${ROOT}/tests/fixtures/kernel-firmware-v7.2.json" "${RECORDED}" \</code> | Wire a new 7.4 fixture through the same closure test; retain old provenance coverage and exact hashes. | 4 |
+| image-building-pipeline | tests/kernel-only-build.test.sh:390 | <code>assert sys.argv[6] == '7.2.0-ceralive8'</code> | Update production-pin assertion to the chosen 7.4 package version; retain exact equality and separate historical fixture assertions. | 4 |
+| image-building-pipeline | tests/registry.tsv:71 | <code>tests/fixtures/kernel-firmware-v7.2.json	fixture	support	not-executed	real pinned v7.2 module metadata and full-firmware 26.8.3 file inventory, no blobs</code> | Register the new fixture as support/not-executed, leaving historical fixture provenance explicit. | 4 |
+| image-building-pipeline | lib/shared/slot-reserve.sh:25 | <code>  # Linux v7.2 fs/ext4/super.c: ext4_statfs excludes r_blocks AND s_resv_clusters.</code> | Recheck ext4_statfs accounting on 7.4 before updating the source note; retain 512 MiB reserve and inode gates. | 4 |
+| image-building-pipeline | docs/rauc-build-from-source.md:11 | <code>Debian trixie ships RAUC &#96;1.13-3+deb13u1&#96;. That version cannot mount a</code> | Preserve the dated RAUC 1.13 incompatibility record and source-built 1.15.2 decision; qualify the 7.4 verity path rather than claiming the old failure is fixed by a kernel bump. | 4 |
+| image-building-pipeline | docs/kernel-build-from-source.md:23 | <code>&#124; &#96;edge&#96; &#124; mainline 7.2 &#124; &#96;linux-stable&#96; &#96;v7.2&#96; &#124; [&#96;CERALIVE/rk3588-kernel-patches&#96;](https://github.com/CERALIVE/rk3588-kernel-patches) &#124; **the production default** (VEPU580 encoder + HDMI-RX) &#124;</code> | Update current production track to 7.4; keep dated 7.2 qualification statements historical. | 4 |
+| image-building-pipeline | docs/kernel-build-from-source.md:471 | <code>The production source pin is &#96;7.2.0-ceralive8&#96;, adding nftables reject for</code> | Update current source package pin only with actual released 7.4 coordinates and truthful qualification. | 4 |
+| image-building-pipeline | docs/kernel-release.md:15 | <code>The production source pin is now &#96;7.2.0-ceralive8&#96;, adding nftables reject for</code> | Update source pin and new release examples/receipts after 7.4 qualification; preserve old drill records. | 4 |
+| image-building-pipeline | docs/kernel-currency-watch.md:1 | <code># Kernel Currency Watch: Mainline 7.2 + MPP Userspace</code> | Update current track title and operating description to 7.4 while retaining dated measurements. | 4 |
+| image-building-pipeline | ci/upstream-watch.py:239 | <code>    kernel = re.search(r"(?m)^\s+tag: (v7\.2(?:\.\d+)?)\s*$", family)</code> | Replace the production-only v7.2 parser with the selected 7.4 line or derive the tracked line from the pin; remain issue-only. | 4 |
+| image-building-pipeline | ci/upstream-watch.py:243 | <code>                    "refs/tags/v7.2.*"]).decode()</code> | Track refs/tags/v7.4.* at cutover, consistent with the chosen 7.2 support policy. | 4 |
+| image-building-pipeline | ci/upstream-watch.py:244 | <code>    stable = re.findall(r"refs/tags/(v7\.2\.\d+)\s*$", refs, re.M)</code> | Update stable-tag extraction to 7.4; do not auto-bump or build. | 4 |
+| image-building-pipeline | ci/upstream-watch.py:245 | <code>    if finding := tag_issue("kernel-v7.2", "Linux stable v7.2.x", kernel[1], stable + [kernel[1]]):</code> | Move issue key/title to the selected 7.4 maintenance line and adapt exact self-check coverage. | 4 |
+| CeraUI | apps/backend/src/modules/system/package-layer.ts:25 | <code>export function classifyPackageLayer(name: string): PackageLayer {</code> | Preserve exact lookup and platform default; do not add a linux-image prefix to the app roster. Add cross-version regression coverage for 7.4. | 5 |
+| CeraUI | apps/backend/src/modules/system/apt-all-packages.ts:159 | <code>		const allowed = origin !== null && !held.has(pair.name);</code> | Preserve exact held-package membership, authenticated origin and non-actionable held rows for the new kernel identity. | 5 |
+| CeraUI | apps/backend/src/modules/system/update-orchestrator/kernel-state.ts:15 | <code>	.regex(/^linux-image-[0-9]+\.[0-9]+\.[0-9]+-ceralive-rk3588$/);</code> | Already accepts linux-image-7.4.0-ceralive-rk3588; retain anchored identity validation and reject headers/debug variants. | 5 |
+| CeraUI | apps/backend/src/modules/system/update-orchestrator/kernel-packages.ts:90 | <code>	const result = await run(["dpkg", "--compare-versions", left, "gt", right], {</code> | Keep dpkg version comparison; add 7.2-to-7.4 upgrade and reverse downgrade cases without weakening comparisons. | 5 |
+| CeraUI | apps/backend/src/modules/system/update-orchestrator/kernel-packages.ts:109 | <code>		const key = &#96;${record.package}=${record.version}&#96;;</code> | Preserve exact package=version key and hash/size collision checks for both old and new package names. | 5 |
+| CeraUI | apps/backend/src/modules/system/update-orchestrator/kernel-packages.ts:174 | <code>	const name = &#96;linux-image-${release.stdout.trim()}&#96;;</code> | Already derives exact package from uname -r; qualify new booted release and signed candidate identity. | 5 |
+| CeraUI | apps/backend/src/modules/system/update-orchestrator/os-kernel-admission.ts:69 | <code>	if (await greater(booted.version, candidate.version))</code> | Keep os_kernel_downgrade refusal for a 7.4 booted overlay offered a 7.2 OS kernel; qualify new signed floor/sidecars. | 5 |
+| CeraUI | apps/backend/src/tests/helpers/kernel-update-fixture.ts:8 | <code>	package: "linux-image-7.2.0-ceralive-rk3588",</code> | Add a 7.4 exact identity fixture and keep 7.2 migration/rollback controls; all 71 literal occurrences are listed below. | 5 |
+| apt-worker | scripts/reindex.sh:124 | <code>       "${KERNEL_PACKAGE:-}" =~ ^linux-image-[0-9]+\.[0-9]+\.[0-9]+-ceralive-rk3588$ &&</code> | Generic identity grammar already admits 7.4; pass the exact new package, version, tag and digest together. | 5 |
+| apt-worker | scripts/reindex.sh:413 | <code>    if [[ "$key" =~ /linux-image-[0-9]+\.[0-9]+\.[0-9]+-ceralive-rk3588_.*\.deb$ ]]; then</code> | Retain anchored kernel archive family recognition and immutable publication key behavior for 7.4. | 5 |
+| apt-worker | scripts/health-check.sh:139 | <code>      if [[ "$pkg" =~ ^linux-image-[0-9]+\.[0-9]+\.[0-9]+-ceralive-rk3588$ ]]; then</code> | Qualify exact 7.4 package health checks; no package prefix roster widening. | 5 |
+| apt-worker | test/publish-kernel.test.sh:178 | <code>  export KERNEL_PACKAGE=linux-image-7.2.0-ceralive-rk3588 VERSION="${3:-7.2.0-ceralive3}"</code> | Add 7.4 publication fixtures and cross-name/version checks while retaining immutable 7.2 rejection/race controls. | 5 |
+| apt-worker | docs/agents/kernel-component-publishing.md:103 | <code>  "package": "linux-image-7.2.0-ceralive-rk3588",</code> | Update new release examples to exact 7.4 package identity without rewriting prior publication records. | 5 |
+| image-building-pipeline | mkosi/runtime/ceralive-kernel-stage.sh:299 | <code>  [[ "${PACKAGE}" =~ ^linux-image-[0-9]+[.][0-9]+[.][0-9]+-ceralive-rk3588$ &&</code> | Generic grammar already accepts 7.4; exercise exact package/release/version and .deb control identity together. | 5 |
+| image-building-pipeline | mkosi/runtime/ceralive-kernel-stage.sh:307 | <code>  [[ "${board_regex}" == ^*\$ && "${PACKAGE}" =~ ${board_regex} &&</code> | Retain board package eligibility and DTB identity gates; qualify 7.4 against both board-boot contracts. | 5 |
+| image-building-pipeline | mkosi/runtime/ceralive-kernel-stage.sh:322 | <code>  gate_other_slot_pending &#124;&#124; die "${REFUSE_REASON}"</code> | Retain inactive other-slot, healthy-state and pending-operation admission gates with new kernel. | 5 |
+| image-building-pipeline | mkosi/runtime/ceralive-kernel-stage.sh:414 | <code>  "${RAUC_BIN}" status mark-good other >/dev/null &#124;&#124; die mark_good_failed</code> | Only OTHER is marked eligible by the stager; BOOTED remains healthcheck-owned. Re-prove install/activation/rollback/restore at cutover. | 6 |
+| CeraUI | apps/backend/src/modules/streaming/audio.ts:274 | <code>export function isPlaybackOnlyCard(entries: readonly string[]): boolean {</code> | Direction is already structural and independent of card name; qualify renamed playback-only cards, do not assume a runtime bug. | 5 |
+| CeraUI | apps/backend/src/modules/streaming/audio.ts:772 | <code>		if (isPlaybackOnlyCard(card.entries)) continue;</code> | Preserve isPlaybackOnlyCard filtering and the zero-PCM HDMI-RX row; add the observed 7.4 names to regression fixtures. | 5 |
+| CeraUI | apps/backend/src/tests/audio-card-scan-drift.test.ts:48 | <code>	{ dir: "card2", id: "hdmi0", entries: ["controlC2", "id", "pcmC2D0p"] },</code> | Add separate observed 7.4 output-card rows alongside hdmi0/hdmi1; assert outputs stay absent from the microphone picker. | 5 |
+| CeraUI | apps/backend/docs/agents/anti-patterns.md:122 | <code>- Don't decide a sound card's DIRECTION from its card id — &#96;rockchiphdmi0&#96;/&#96;rockchiphdmi1&#96; and &#96;hdmi0&#96;/&#96;hdmi1&#96; are the same two HDMI output blocks under two kernel vocabularies, so a name list alone puts speakers in the microphone picker. Ask &#96;isPlaybackOnlyCard&#96;. And don't "simplify" that to &#96;!hasCapturePcmNode&#96;: a card with NO PCM node has claimed no direction, and it is the signal-less HDMI-RX INPUT — dropping it deletes a row the operator legitimately picked.</code> | Document third 7.4 vocabulary and retain structural direction rule; actual ALSA card IDs must be captured on boards. | 5 |
+| cerastream | crates/cerastream-core/src/sources/monitor.rs:37 | <code>    "rockchiphdmi0",</code> | Static legacy exclusions have no new 7.4 names; verify Audio/Source provider filtering before deciding whether aliases need code changes. | 5 |
+| cerastream | crates/cerastream-core/src/sources/monitor.rs:194 | <code>        monitor.add_filter(Some("Audio/Source"), None);</code> | Keep Audio/Source-only discovery; compare PipeWire and ALSA enumeration on 7.4. | 6 |
+| cerastream | crates/cerastream-core/src/sources/alsa_hotplug.rs:59 | <code>fn capture_card_ids(cards: &str, pcm: &str) -> BTreeSet<String> {</code> | ALSA path already intersects cards with capture PCMs; add renamed-output no-capture fixtures, not an unproven blacklist fix. | 5 |
+| image-building-pipeline | mkosi/runtime/pipewire/10-ceralive-headless.conf:273 | <code># the two HDMI TRANSMITTER cards (&#96;platform-hdmi0-sound&#96;, &#96;platform-hdmi1-sound&#96;) match</code> | Existing playback device.name exclusions are documented as outside HDMI-RX rules. Confirm actual SPA device/node names after rename. | 6 |
+| image-building-pipeline | mkosi/runtime/pipewire/10-ceralive-headless.conf:280 | <code>        alsa.id = "HDMIIN"</code> | Keep HDMIIN capture-only profile scope and three alternatives; change only with measured 7.4 matching drift. | 4 |
+| image-building-pipeline | tests/runtime-services.bats:2998 | <code>  run grep -E 'alsa_card\.platform-sound&#124;platform-hdmi0-sound&#124;platform-hdmi1-sound' "$body"</code> | Extend direction/profile isolation checks with observed 7.4 names while retaining current transmitter exclusions. | 4 |
+| ceralive-docs | src/content/docs/configure/audio.mdx:25 | <code>&#124; A device &#124; A specific audio input, such as a USB microphone or a camera's own audio. Accessories you plug in carry an **External** badge. &#124;</code> | Recheck EN picker guidance with renamed outputs filtered and HDMI Input retained; update only changed visible behavior. | 7 |
+| ceralive-docs | src/content/docs/es/configure/audio.mdx:26 | <code>&#124; Un dispositivo &#124; Una entrada de audio específica, como un micrófono USB o el audio de la propia cámara. Los accesorios que conectas llevan la etiqueta **Externo**. &#124;</code> | Mirror any audio guidance change in es-419 with canonical CeraUI labels and tú style. | 7 |
+| ceralive-docs | src/content/docs/hardware/audio-devices.mdx:27 | <code>&#124; HDMI audio &#124; Your camera records sound, or has a microphone plugged into it &#124; The sound arrives on the same cable as the picture. &#124;</code> | Update EN HDMI audio qualification only after named two-board 7.4 evidence; do not transfer 7.2 results. | 7 |
+| ceralive-docs | src/content/docs/es/hardware/audio-devices.mdx:27 | <code>&#124; Audio HDMI &#124; Tu cámara graba sonido o tiene un micrófono conectado &#124; El sonido llega por el mismo cable que la imagen. &#124;</code> | Publish matching es-419 HDMI audio qualification and limitations with EN. | 7 |
+| ceralive-docs | src/content/docs/configure/updates.mdx:253 | <code>   Check which kernel version the device is running.</code> | No kernel version literal to replace; verify new kernel display and upgrade/rollback instructions at release. | 7 |
+| ceralive-docs | src/content/docs/es/configure/updates.mdx:272 | <code>   **Kernel actualizado**. Revisa qué versión del kernel usa el transmisor.</code> | No kernel version literal to replace; maintain paired es-419 update/rollback guidance. | 7 |
+| ceralive-docs | src/data/features.yaml:412 | <code>  evidence: 'CeraUI v2026.11.1 (77fae5e) en.json settings.updates.kernel.title, settings.updates.kernel.installNow, settings.updates.phase.kernelRolledBack; the 2026.11.3 beta image pins CeraUI v2026.11.1 and its capability gate advertises kernel-apt-stage from CeraUI 2026.10.1; bench drills of kernels 7.2.0-ceralive3 (2026-11-02) and 7.2.0-ceralive4 (2026-11-04) on Rock 5B+ and Orange Pi 5+ passed install, forced rollback and restore; kernels are published on the stable APT channel only, images on beta first'</code> | Dated 7.2 drill evidence is historical. Add 7.4 evidence only after qualification; preserve feature-row metadata contracts. | 7 |
+| ceralive-website | messages/en.json:42 | <code>	"download_kernel_source": "Kernel patches",</code> | Kernel patches is a version-neutral source label; no forced 7.4 replacement is needed. | 7 |
+| ceralive-website | messages/es.json:42 | <code>	"download_kernel_source": "Parches del kernel",</code> | Parches del kernel is version-neutral; change only if the release changes the claim. | 7 |
+| ceralive-website | src/config/compat-snapshot.json:388 | <code>				"en": "HDMI audio on the Orange Pi 5+",</code> | HDMI audio qualification claim consumes the docs snapshot; refresh from qualified 7.4 source only if facts change. | 7 |
+| ceralive | versions.yaml:595 | <code>  pin: v2026.9.5</code> | Bump to the actual released 7.4-line island tag at cutover, never during this preparation plan; retain kernel-source-island kind. | 3 |
+| ceralive | versions.yaml:716 | <code>#   rk3588-kernel-patches         MAINLINE / Armbian &#96;edge&#96; 7.2</code> | Update the current mainline/edge track comment to 7.4; keep patch repo out of version/package pins. | 4 |
+| ceralive | docs/governance/critical-constraints.md:178 | <code>**The two RK3588 kernel-patch repos are SIBLINGS, not one repo — and neither has a &#96;versions.yaml&#96; pin.** &#96;rk3588-kernel-patches&#96; is scoped **exclusively** to the mainline / Armbian &#96;edge&#96; 7.2 production track (VEPU580 encoder, HDMI-RX EDID/plugout/audio, plus the first-party DT sound card). &#96;rk3588-vendor-kernel-patches&#96; carries the Armbian &#96;vendor&#96; 6.1 BSP HDMI-RX audio fix; the pipeline no longer consumes it and the shipped image does not build it, but the repository is **active, not archived** — it takes pull requests and is deliberately preserved for anyone building their own vendor-kernel image (notice landed in [CERALIVE/rk3588-vendor-kernel-patches#6](https://github.com/CERALIVE/rk3588-vendor-kernel-patches/pull/6)). Its workspace checkout was moved out of this tree in the same step, so &#96;rk3588-vendor-kernel-patches/&#96; is a GitHub reference, not a sibling directory. Neither one's patches apply to the other's tree, so **do not merge them and do not cross-post content**; the mainline repo's &#96;AGENTS.md&#96; says so in as many words about this exact vendor fix. Both produce **patch text only** — no &#96;.deb&#96;, no kernel, no image artifact — so both are absent from &#96;REPOS&#96; and from &#96;versions.yaml&#96;, for the same reason &#96;ceralive-infra&#96; is: there is nothing for the image pipeline to fetch or pin. Do not add either to &#96;fetch-debs.sh&#96;. The vendor repo's patch source is &#96;armbian/linux-rockchip&#96; PR #487, which is **OPEN, not merged**, pinned by commit SHA rather than by the PR ref. If it ever merges, the pin is simply resolved upstream — that does not archive the repo, which stays open for contributions either way.</code> | Update current mainline production scope to 7.4 in owning root policy; retain separate vendor lineage. | 4 |
+| ceralive | docs/governance/critical-constraints.md:249 | <code>- **Kernel.** The mainline/&#96;edge&#96; 7.2 track is **confirmed as the permanent production</code> | Update present production kernel statement only at qualified cutover; historical 2026-09-21 7.2 records remain scoped. | 7 |
+| ceralive | docs/governance/critical-constraints.md:566 | <code>- **The v7.2 maximum-stable Kconfig closure is pinned** in</code> | Replace current v7.2 closure wording with evidence-backed 7.4 closure, retain exact fail-build gates. | 4 |
+| rk3588-kernel-patches | docs/BOARD-QUALIFICATION.md:311 | <code>## 2. The &#96;system-uncached&#96; dma-heap exists and is the right one</code> | Repeat section 2a-2f on each board: exact system-uncached node, distinct heap, clean registration, permissions, meaningful alloc and non-CMA control (0009). | 6 |
+| rk3588-kernel-patches | docs/BOARD-QUALIFICATION.md:462 | <code>## 3. &#96;mpph264enc&#96; REGISTERS</code> | Repeat section 3: plugin registration/list, missing-heap log absence, SoC identity and nonzero hardware H.264 output. | 6 |
+| rk3588-kernel-patches | docs/BOARD-QUALIFICATION.md:544 | <code>## 4. Imported dma-buf lengths over 64 KiB are complete (the &#96;0008&#96; leg)</code> | Repeat section 4: full dma-buf imports over 64 KiB, guard present but quiet, large-frame/4K check; do not apply retired-driver instrumentation blindly. | 6 |
+| rk3588-kernel-patches | docs/BOARD-QUALIFICATION.md:610 | <code>## 5. Determinism — the same input encodes to the same bytes</code> | Repeat section 5 fixed-input determinism at 1080p/4K, across reboot and memory pressure, recording all encoder settings. | 6 |
+| rk3588-kernel-patches | docs/BOARD-QUALIFICATION.md:729 | <code>## 6. Output correctness — it decodes clean and CABAC parses</code> | Repeat section 6 all-output decode/CABAC, >=10-minute soak, pixel correctness and memory pressure; compare current island PSNR oracle verdicts. | 6 |
+| rk3588-kernel-patches | docs/BOARD-QUALIFICATION.md:842 | <code>## 7. Dual-core encoder — both cores bind, and both do work</code> | Repeat section 7 both cores/CCU/IOMMUs bound, per-core IRQ/work/clock transitions, dual-output correctness and determinism. | 6 |
+| rk3588-kernel-patches | docs/BOARD-QUALIFICATION.md:1012 | <code>## 8. HDMI-RX audio — claims are valid ONLY on named hardware</code> | Capture actual HDMI-IN card/PCM identities, non-silent recording, format/rate/channels and source lock/unplug/replug behavior on each board. | 6 |
+| rk3588-kernel-patches | docs/BOARD-QUALIFICATION.md:1256 | <code>      &#96;0002&#96;'s sequence still required for a 4K60 EDID to be re-read?** Run with</code> | KEEP 0002 pending same-artifact A/B at new V4L2_SET_EDID_HPD_LOW_JIFFIES hold; include 4K60 EDID reread and B1-B7, no retirement from apply/compile. | 6 |
+| rk3588-kernel-patches | docs/EDID-STREAMING-GUARD.md:3 | <code>Member &#96;0040&#96; rejects &#96;VIDIOC_S_EDID&#96; with &#96;-EBUSY&#96; while</code> | Exercise 0040 EBUSY before all mutations, both valid-write and zero-block clear while streaming; bytes/count unchanged and idle write/clear succeeds. | 6 |
+| rk3588-kernel-patches | docs/EVAL-0002-EDID.md:3 | <code>**Verdict: KEEP &#96;0002&#96;. There is nothing to adopt.**</code> | Retain KEEP verdict until new 7.4 board A/B proves retirement prerequisites. | 6 |
+
+### Verified upstream changes and separate 7.2 candidate
+
+These line numbers are at each named upstream commit, reconstructed from its returned patch hunks, not at a moving branch tip. The commit pages are linked from the drift inventory above. The e8554ac860356f1f4cd9bce454271dce1ed35fc1 commit carries Cc: stable and fixes the first-lock timing-query color-depth window; it remains a separate optional 7.2 backport decision.
+
+| Repo | Path:line | Current literal (exact source line) | Required 7.4 change or retained gate | Cutover step |
+| --- | --- | --- | --- | --- |
+| torvalds/linux @ d1b7c3228041f4b3ad888abe6a31f6494279e979 | arch/arm64/boot/dts/rockchip/rk3588-base.dtsi:379 | <code>		simple-audio-card,name = "RK3588 HDMI0";</code> | Capture raw ALSA name, sanitized card ID, SPA names and PCM direction on both 7.4 boards; extend existing regression fixtures. Raw DT name is not assumed to equal persisted card ID. | 6 |
+| torvalds/linux @ d1b7c3228041f4b3ad888abe6a31f6494279e979 | arch/arm64/boot/dts/rockchip/rk3588-extra.dtsi:14 | <code>		simple-audio-card,name = "RK3588 HDMI1";</code> | Capture raw ALSA name, sanitized card ID, SPA names and PCM direction on both 7.4 boards; extend existing regression fixtures. Raw DT name is not assumed to equal persisted card ID. | 6 |
+| torvalds/linux @ c9c245a186ba9d65ae52a1742f387e070360b0c9 | drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c:520 | <code>		msleep(jiffies_to_msecs(V4L2_SET_EDID_HPD_LOW_JIFFIES));</code> | Re-run 0002 EDID A/B under the new HZ/7 HPD hold, keep 0002 until hardware decides. | 6 |
+| torvalds/linux @ 4c66c423593e26273ea0d644906ed007630c6f6d | drivers/pmdomain/rockchip/pm-domains.c:769 | <code>			dev_err(dev, "failed to get clock %d: %d\n", i - 1,</code> | Boot both boards and verify media-domain attachments, all clocks/IOMMUs and no unresolved probe defer or non-ENOENT clock lookup failure. | 6 |
+| torvalds/linux @ e8554ac860356f1f4cd9bce454271dce1ed35fc1 | drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c:457 | <code>	color_depth = hdmirx_get_colordepth(hdmirx_dev);</code> | Record as a separate production-7.2 emergency backport candidate (Cc: stable); no backport is performed here, and 0026/0041 context revisions must retain payload. | 1 |
+
+### Two-board qualification inventory
+
+All rows below belong to cutover step 6 and are UNRUN here. Harnesses are inventoried from island 63609f578ea1c1b7c10e2ae39664ca2f639a94b3; consumer sections are inventoried from bc7e44fa35d3eded23567dd48e65f6dc799f4b34. Use the actual final 7.4 artifacts and record exact board/image/kernel/island/consumer/userspace/config identities for every receipt. Production and edge-test remain separate. Run fault seams only under their existing debug/authorization preconditions; no such action happened in this task.
+
+| Repo | Path:line | Current literal (exact source line) | Required 7.4 change or retained gate | Cutover step |
+| --- | --- | --- | --- | --- |
+| rk3588-media-island | tests/board/fault-matrix.sh:10 | <code>readonly ROWS=(invalid-descriptor malformed-ioctls invalid-dimensions unsupported-format</code> | Run all 16 MPP rows, especially iommu-fault and recovery/healthy-session invariants; run RGA IOMMU, IRQ, hang and reset rows separately. | 6 |
+| rk3588-media-island | tests/board/fault-controls-probe.sh:50 | <code>readonly ROWS=(session-alloc clock-enable service-attach ccu-attach irq-request)</code> | Run all five session/clock/service/CCU/IRQ controls; separately request idle-iommu-fault, which --row all does not run. | 6 |
+| rk3588-media-island | tests/board/fault-controls-probe.sh:464 | <code>row_idle_iommu_fault() (</code> | Prove idle fault fired/consumed once, zero errno, reset knob and clean recovery encode; retain stale-fault behavioral question from todo 11. | 6 |
+| rk3588-media-island | tests/board/soak.sh:5 | <code># soak.sh — long-duration media soak: sample every 60 s into a CSV, then assert</code> | Run full-duration media soak and retain raw CSV/slopes, telemetry gaps, IOMMU maps, dma-bufs, fd/thread/RSS/slab/fps/drop/core-share rules; no relaxed thresholds. | 6 |
+| rk3588-media-island | tests/board/decode-truth.sh:53 | <code>#   decode-truth.sh [--all] [--work DIR] [--seconds N]</code> | Run source-kind matrix, recording engine and autoplug selected decoder, frames and backend truth; no software fallback qualification. | 6 |
+| rk3588-media-island | tests/board/encode-psnr-oracle.sh:22 | <code>#        CLEAN  every run's mean >= 35 dB AND <= 2 frames < 35 dB in every run</code> | Fixed-QP H.264/H.265 repetitions: mean >=35 dB and no more than two frames below 35 dB per run; preserve CLEAN/DIRTY criterion. | 6 |
+| rk3588-media-island | tests/board/rga-psnr-oracle.sh:5 | <code>readonly FRAMES=600 WIDTH=360 HEIGHT=640 PSNR_FLOOR=35</code> | 600-frame crop/scale/transpose oracle at async depths 2 and 0, mean PSNR >=35 dB; preserve hardware/driver evidence. | 6 |
+| rk3588-media-island | tests/board/dual-core-matrix.sh:304 | <code>	if [[ $SCENARIO == all &#124;&#124; $SCENARIO == 1 ]]; then run_case 1-2x4k30-h265 fixtures-one case_1; fi</code> | Six workloads: 2x4K30 HEVC, 4x1080p60 AVC, mixed, one process, auto-tile off/on and starvation; record both-core work and throughput/fairness. | 6 |
+| rk3588-media-island | tests/board/README.md:50 | <code>   &#96;0&#96; ran and passed · &#96;1&#96; ran and failed · &#96;2&#96; usage · &#96;77&#96; hardware-gated.</code> | Exit 77 is hardware-gated, never pass; bind every result to board, boot, candidate hashes, kernel, userspace and resolved config. | 6 |
+
+### Exhaustive matching-literal inventory
+
+The source record also enumerates every hit of six scoped `git grep` queries,
+with complete source lines. Re-run those searches at cutover rather than trust
+an old line number. Hit counts at the revisions above:
+
+| Scope | Hits |
+|---|---:|
+| Image tests and CI: every `7.2.0-ceralive` and `kernel-firmware-v7.2` reference | 261 |
+| CeraUI: every `linux-image-7.2` / `7.2.0-ceralive` occurrence | 71 |
+| apt-worker: every `linux-image-7.2` / `7.2.0-ceralive` occurrence | 26 |
+| Image engineering, config and runtime: scoped 7.2 and output-card-name hits | 208 |
+| Docs EN/es-419 and feature evidence: scoped kernel-version hits | 1 |
+| Website messages, config, components, content and data | 0 |
+
+These are dispositions, not instructions to rewrite history: production-bound
+expectations need new 7.4 counterparts, while dated fixtures and 7.2
+migration and rollback controls stay as they are.
+
+## 7.2-side follow-ups
+
+[`e8554ac860356f1f4cd9bce454271dce1ed35fc1`](https://github.com/torvalds/linux/commit/e8554ac860356f1f4cd9bce454271dce1ed35fc1)
+carries `Cc: stable` and fixes a v7.2 window in which the pixel clock is
+computed from a stale colour depth on first lock; `0002` widens that window. It
+is a backport candidate for production 7.2. It is not done here.
+
+## User docs (Rule G)
+
+This branch ships no device image and no user-visible behaviour, so the English
+and es-419 pages on docs.ceralive.tv and the ceralive.tv claims move at cutover
+step 7, not now. The [Downstream inventory](#downstream-inventory) lists the
+pages and claims to recheck.
+
+## Known limits
+
+- `scripts/preflight.sh` accepts `vX.Y` and `vX.Y-rcN` only. Stable point tags
+  (`vX.Y.Z`) are rejected.
+- The rules file and ledger names follow `KERNEL_TAG`, so both are renamed on
+  every rc refresh.
+- The frozen candidate matrix in `docs/UPSTREAM-STATUS.md` still lists U3
+  (`0010`) and U5 (`0011`) as `Disposition: IN`. That state is known and stale:
+  re-capturing the matrix changes the digest frozen in
+  `.github/workflows/patch-apply.yml` (`--source-sha256`), so it is a separate
+  change.

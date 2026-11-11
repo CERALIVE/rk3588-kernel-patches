@@ -16,7 +16,7 @@ Parent: [workspace AGENTS.md](https://github.com/CERALIVE/ceralive/blob/master/A
 
 ## ROLE
 
-Mainline/edge RK3588 production patch series for the pinned 7.2 kernel.
+Mainline/edge RK3588 production patch series for the pinned 7.4 kernel.
 Patch text only; image-building-pipeline builds the kernel. Vendor 6.1 is separate.
 
 ## STRUCTURE
@@ -65,7 +65,7 @@ Read the [full CI contract](docs/agents/ci.md) and workflow for candidate-matrix
 
 ## HARD RULES
 
-- Mainline/edge 7.2 only: VEPU580, HDMI-RX and first-party DT sound card; vendor 6.1 stays a separate repo, never cross-posted.
+- Mainline/edge 7.4 only: VEPU580, HDMI-RX and first-party DT sound card; vendor 6.1 stays a separate repo, never cross-posted.
 - Patch text only: no .deb, no image REPOS entry, no versions.yaml pin; no kernel build or hardware access here.
 - Downstream patches_commit pins an immutable 40-character SHA; consumers pin the same kernel tag.
 - kernel-pin.env owns every coordinate; workflows read it, never restate pins; verify commit AND annotated tag object.

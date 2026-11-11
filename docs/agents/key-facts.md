@@ -270,7 +270,7 @@ the exact island commit and the island's `docs/FAULT-CAMPAIGN.md` row.
 
 **`0009` is the retained `system-uncached` heap, and its NAME is a userspace
 ABI.** Its board validation was measured on v7.1.7 and is historical at this
-v7.2 base. `librockchip-mpp` hard-codes the `system-uncached` dma-heap
+v7.4-rc2 base. `librockchip-mpp` hard-codes the `system-uncached` dma-heap
 name, which mainline does not register — so `mpph264enc` never registered at
 all (defect 1) — and MPP performs no CPU cache maintenance on a heap it
 believes is uncached, so cached memory under that name produced non-deterministic
@@ -317,7 +317,7 @@ transcript.
 `armbian/linux-rockchip` commit zeroes `capture.channels_min/max` for every
 `hdmi-audio-codec` instance with no TX/RX discrimination, which breaks HDMI-RX
 capture on the **vendor** BSP (`rk-6.1-rkr6.1`). Mainline — including the pinned
-`v7.2` — already carries the upstream `no_i2s_playback` / `no_i2s_capture` /
+`v7.4-rc2` — already carries the upstream `no_i2s_playback` / `no_i2s_capture` /
 `no_spdif_*` pdata flags and only clears a direction when the registering driver
 asks. There is nothing to fix here, and a backport of that vendor-side fix would
 not even apply. Do not add one — the vendor-side fix lives in its own sibling
@@ -327,16 +327,18 @@ send vendor-track investigations to that sibling and do not duplicate them here.
 
 `rebase/*.rules` are context-only for ALL lanes. At a base bump, `ceralive/`-lane patches MAY be revised in place (payload changes) to preserve their documented intent on the new base; every such revision is recorded hunk-by-hunk in `docs/REBASE-<tag>.md` with an intent-preservation note, and is verified by the post-apply assertions and the bump's compile evidence. Payload drift in `upstream/` or `backports/` lanes remains behavioural: resolve ONLY by a new `ceralive/` fixup patch at a fresh ordinal (the 0008-fixes-0001 pattern) or STOP and report. `upstream/` bytes are never edited.
 
-**This repo pins a FINAL TAG; Armbian's `bleedingedge` arm still names a release
-candidate.** The branch this repo derives its mapping from is `bleedingedge`, and
-`config/sources/mainline-kernel.conf.sh` pins it to `tag:v7.2-rc7` because
-Armbian's roll-over-once-7.2-ships TODO has not been actioned. `v7.2` final was
-tagged one day *before* the recorded framework revision, so the rc is simply
-stale, and gating this series on a kernel nobody will run would be the wrong
-trade. This repo therefore pins `v7.2` = `8d3ae59288f1e7d58d76558a6ee96d533bc5019f`,
-tag object `237a1c39e8dfd3e1c6f1f023eea37a48ec04cc63`. The `MAJOR.MINOR` — and so
-the config and patch-directory names — is identical either way, which is what
-makes the substitution safe. `apply.sh` refuses to run if the tag in the tree does
+**The `rebase/v7.4` branch pins a release candidate on purpose; `main` pins a
+final tag.** The branch pins `v7.4-rc2` = `7475ea8b58616b33c04afb976cf0fbaad9dd63fb`,
+tag object `fd9230005e85472b81c1c7c16afe93dd878996b1`, so the series is ready
+before 7.4 ships. `scripts/preflight.sh` accepts `vX.Y` and `vX.Y-rcN`, never
+`vX.Y.Z`, and the [rc-to-final refresh](../REBASE-v7.4-rc2.md#rc-to-final-refresh)
+moves the pin to `v7.4` final before cutover. Production `main` still pins the
+final `v7.2` = `8d3ae59288f1e7d58d76558a6ee96d533bc5019f`, tag object
+`237a1c39e8dfd3e1c6f1f023eea37a48ec04cc63`, chosen over the `tag:v7.2-rc7` that
+Armbian's `bleedingedge` arm still named in
+`config/sources/mainline-kernel.conf.sh` after `v7.2` final shipped. The
+`MAJOR.MINOR`, and so the config and patch-directory names, is identical for an
+rc and its final tag, which is what makes the substitution safe. `apply.sh` refuses to run if the tag in the tree does
 not resolve to the pinned commit *and* the pinned tag object, so a moved or
 re-created tag fails loudly instead of going green against the wrong source.
 **Downstream consumers must pin the same tag.**

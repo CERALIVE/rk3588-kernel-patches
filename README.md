@@ -11,10 +11,10 @@ are preserved in the [agent contract index](docs/agents/README.md).
 
 | | |
 |---|---|
-| **Target kernel** | `v7.2` (`8d3ae59288f1e7d58d76558a6ee96d533bc5019f`) |
-| **Why that kernel** | Armbian rk3588 `bleedingedge` → `KERNEL_MAJOR_MINOR=7.2` — derived in [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md). Armbian itself still points that branch at `tag:v7.2-rc7`; we pin the **final** release deliberately. |
+| **Target kernel** | `v7.4-rc2` (`7475ea8b58616b33c04afb976cf0fbaad9dd63fb`) on the `rebase/v7.4` branch; production `main` stays on `v7.2` until cutover |
+| **Why that kernel** | The newest 7.4 tag when this rebase started, pinned ahead of the final release so the series is ready when 7.4 ships; `KERNEL_MAJOR_MINOR=7.4`, derived in [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md). The pin moves to `v7.4` final through the rc-to-final refresh in [`docs/REBASE-v7.4-rc2.md`](docs/REBASE-v7.4-rc2.md#rc-to-final-refresh). |
 | **Boards** | Radxa Rock 5B+, Orange Pi 5+ (both `BOARDFAMILY=rockchip-rk3588`) |
-| **Status** | **27 active members across 51 slots**, targeting `v7.4-rc2`; full-series apply remains pending the remaining rebase work. Nine byte-verified members carry `rk3588-media-island v2026.9.5`, which closes an RGA job-lifecycle race that could corrupt memory under sustained composition load. Rock 5B+ `edge-test` qualification passed on 2026-09-19 (8 clean + 8 engine-restart cycles + a 300 s soak with encoder/decoder/RGA loaded, no kernel fault report) and the board was restored to production. |
+| **Status** | **27 active members across 51 slots**, targeting `v7.4-rc2`; 26 apply with plain `git am`, and island member `0033` waits for the 7.4-line island release ([ledger](docs/REBASE-v7.4-rc2.md)). Nine byte-verified members carry `rk3588-media-island v2026.9.5`, which closes an RGA job-lifecycle race that could corrupt memory under sustained composition load. Rock 5B+ `edge-test` qualification passed on 2026-09-19 (8 clean + 8 engine-restart cycles + a 300 s soak with encoder/decoder/RGA loaded, no kernel fault report) and the board was restored to production. |
 
 ## What's in the series
 
@@ -60,7 +60,7 @@ burned.
 | *0006* | retired hdmirx audio sound card | `retired/` | Replaced by v4 shared one-cell DAI card plus Rock enablement in 0049. |
 | *0007* | — | — | **Retired ordinal.** Was a `backports/` backport of mainline `8d4346ecd495`, the IOMMU `MMU_AUTO_GATING` fix. That commit is in the `v7.2` base, so carrying it twice is what the retirement avoids — the fix is still there, it just is not ours any more. Slot burned like `0004`'s: [`docs/UPSTREAM-STATUS.md` § retired ordinals](docs/UPSTREAM-STATUS.md#retired-ordinals-0007-0023-0024-0025); the archived file: [`retired/REGISTRY.md`](retired/REGISTRY.md). |
 | *0008* | retired rkvenc DMA max segment size | `retired/` | Historical standalone-rkvenc fix; intent is re-expressed and tested in the island. |
-| `0009` | `system-uncached` dma-heap | `ceralive/` | Registers the exact heap name Rockchip MPP userspace requires. Its v7.1.7 board validation is historical at this v7.2 base. |
+| `0009` | `system-uncached` dma-heap | `ceralive/` | Registers the exact heap name Rockchip MPP userspace requires. Its v7.1.7 board validation is historical at this v7.4-rc2 base. |
 | *0010* | retired naneng-combphy RTERM erratum | `retired/` | Merged in v7.4-rc1 as `d68e47a06c5cdc90cbd29ce2e74fa61eab5d47cc`; the base carries its identical payload. |
 | *0011* | retired dw-hdmi-qp N/CTS helper | `retired/` | Merged in v7.4-rc1 as `a9f09b5ea0c3db1e2d4c0f8d3ebdd612d8aa0366`; the base carries its identical payload. |
 | `0012` | dw-hdmi-qp audio `-EOPNOTSUPP` | `backports/` | **Unmerged lore posting** (`PATCHv1`, Detlev Casanova, two independent `Tested-by`). Stops the audio hooks returning `-ENODEV` with no mode set, which ASoC logs as a fault — hundreds of lines on an idle board, in the same dmesg buffer `0005`/`0006` are diagnosed from. |
@@ -229,12 +229,12 @@ gates patch application only.
 ## Use with `armbian-build`
 
 Armbian applies user patches from `userpatches/`, in lexical order, per kernel
-family. For `bleedingedge` on rk3588 the family directory is `rockchip64-7.2`:
+family. For `bleedingedge` on rk3588 the family directory is `rockchip64-7.4`:
 
 ```bash
 git clone --depth 1 https://github.com/armbian/build
-mkdir -p build/userpatches/kernel/archive/rockchip64-7.2/
-cp patches/*.patch build/userpatches/kernel/archive/rockchip64-7.2/
+mkdir -p build/userpatches/kernel/archive/rockchip64-7.4/
+cp patches/*.patch build/userpatches/kernel/archive/rockchip64-7.4/
 cd build && ./compile.sh BOARD=rock-5b-plus BRANCH=bleedingedge
 ```
 
@@ -252,7 +252,7 @@ as a patch.
 > [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md).
 
 > The family directory is derived, not guessed. It comes from
-> `KERNEL_MAJOR_MINOR=7.2` + `LINUXFAMILY=rockchip64`; see
+> `KERNEL_MAJOR_MINOR=7.4` + `LINUXFAMILY=rockchip64`; see
 > [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md). Upstream's README says
 > `rockchip64-6.19`, which was right for the kernel *they* targeted.
 
@@ -265,14 +265,14 @@ as a patch.
 ```bash
 scripts/preflight.sh --head     # has Armbian moved the branch we pin?
 # edit KERNEL_TAG / KERNEL_TAG_OBJECT / KERNEL_COMMIT together
-cp rebase/v7.2.rules rebase/<new-tag>.rules     # seed, then re-decide every rule
+cp rebase/<newest>.rules rebase/<new-tag>.rules  # seed if a rule is needed, then re-decide every rule
 scripts/apply.sh                # resolve conflicts per the rule below
 # then write docs/REBASE-<new-tag>.md — a verdict per ordinal, hunks for every revision
 ```
 
 A member whose fix the new base already carries is **retired**, not deleted: move
 it to [`retired/`](retired/REGISTRY.md), add its row, and leave the ordinal burned.
-That is what happened to `0007` at `v7.2`.
+That is what happened to `0007` at `v7.2`, and to five members at `v7.4-rc2`.
 
 **The rule for conflicts.** `rebase/*.rules` are context-only for ALL lanes. At a base bump, `ceralive/`-lane patches MAY be revised in place (payload changes) to preserve their documented intent on the new base; every such revision is recorded hunk-by-hunk in `docs/REBASE-<tag>.md` with an intent-preservation note, and is verified by the post-apply assertions and the bump's compile evidence. Payload drift in `upstream/` or `backports/` lanes remains behavioural: resolve ONLY by a new `ceralive/` fixup patch at a fresh ordinal (the 0008-fixes-0001 pattern) or STOP and report. `upstream/` bytes are never edited.
 
@@ -289,14 +289,14 @@ main reason this fork exists — `patches/` is generated from all four source la
 by `scripts/build-series.py`, which adds the consumer's mailbox headers and drops
 the `.DS_Store` noise from the old imported files.
 
-**The series is re-anchored for `v7.2`.** Upstream targeted `v6.19-rc8`. Each base
-move gets its own ledger, and the current one is
-[`docs/REBASE-v7.2.md`](docs/REBASE-v7.2.md): a verdict per ordinal, the reverse/
-forward apply probes behind it, and every revised hunk with the intent it
-preserves. Two members needed work at this base — `0009` was adapted to `v7.2`'s
-modularised system heap, and `0018`'s added note re-cites the base's own
-no-unload statement — while `0007` was retired outright because `8d4346ecd495` is
-in the base. Everything else applies unchanged. The two earlier ledgers,
+**The series is re-anchored for `v7.4-rc2`.** Upstream targeted `v6.19-rc8`. Each
+base move gets its own ledger, and the current one is
+[`docs/REBASE-v7.4-rc2.md`](docs/REBASE-v7.4-rc2.md): a verdict per ordinal, the
+reverse/forward apply probes behind it, every revised hunk with the intent it
+preserves, and the cutover runbook. Five members were retired because `v7.4-rc1`
+merged them (`0010`, `0011`, `0042`, `0043`, `0051`), and `0026`/`0041` changed
+context lines only. The earlier ledgers,
+[`docs/REBASE-v7.2.md`](docs/REBASE-v7.2.md),
 [`docs/REBASE-v7.1.7.md`](docs/REBASE-v7.1.7.md) and
 [`docs/REBASE-v7.1.5.md`](docs/REBASE-v7.1.5.md), are kept as the record of the
 bases before this one.
@@ -323,7 +323,7 @@ encoded non-deterministically. `0009` registers a second heap under exactly
 that name — non-cacheable mappings, a one-time cache clean at allocation, and
 skipped CPU-sync only for that heap — reusing the `system_heap.c` extension
 point `system_cc_shared` already has. Its board evidence was measured on v7.1.7
-and is explicitly historical at the current v7.2 base.
+and is explicitly historical at the current v7.4-rc2 base.
 
 ### Why not the `sfqr0414` fork
 
