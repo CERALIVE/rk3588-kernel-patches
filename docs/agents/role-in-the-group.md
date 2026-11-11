@@ -4,11 +4,12 @@
 
 Holds the **mainline-track RK3588 kernel patch series** for CeraLive: the
 `rk3588-media-island` release series, HDMI-RX fixes, a `system-uncached` dma-heap,
-seven backported **unmerged lore postings**, and board Type-C policy patches —
+three backported **unmerged lore postings**, and board Type-C policy patches —
 assembled as one `git am` mailbox series pinned to an exact kernel tag.
 
-The base is **`v7.2`**. **32 members are active across
-50 slots** — `0004` was never published, and seventeen retired ordinals stay
+The production base is **`v7.2`**; this branch targets **`v7.4-rc2`**.
+**27 members are active across
+51 slots** — `0004` was never published, and twenty-three retired ordinals stay
 burned. Board evidence quoted anywhere in this repo was measured at the previous
 `v7.1.7` base and is historical here.
 

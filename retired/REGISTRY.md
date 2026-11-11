@@ -84,6 +84,11 @@ upstream, superseded, or scoped out.
 
 | Patch | Lane | Ordinal | Retired | Kernel tag | Reason |
 |-------|------|---------|---------|------------|--------|
+| `0010-phy-rockchip-naneng-combphy-force-rterm-det-rdy.patch` | `backports` | 10 | 2026-11-11 | `v7.4-rc2` | Merged commit is in the base: d68e47a06c5cdc90cbd29ce2e74fa61eab5d47cc, merged@v7.4-rc1; Message-ID 1788158204-161347-1-git-send-email-shawn.lin@rock-chips.com; ordered payload identical |
+| `0011-dw-hdmi-qp-acr-n-cts-helper.patch` | `backports` | 11 | 2026-11-11 | `v7.4-rc2` | Merged commit is in the base: a9f09b5ea0c3db1e2d4c0f8d3ebdd612d8aa0366, merged@v7.4-rc1; Message-ID 86fcf349-0a7a-4618-9001-612371b0f71b@symple.nz; ordered payload identical |
+| `0042-hdmirx-audio-v4-1.patch` | `backports` | 42 | 2026-11-11 | `v7.4-rc2` | Merged commit is in the base: ee6a964dca657dc23fc5c34e80a0133b80cce3ed, merged@v7.4-rc1; Message-ID 20260721064115.64809-2-royalnet026@gmail.com; source reverse-applies alone on the pristine base |
+| `0043-hdmirx-audio-v4-2.patch` | `backports` | 43 | 2026-11-11 | `v7.4-rc2` | Merged commit is in the base: d667a3c4d003b53d107ce957c5f4a38f1082f5d5, merged@v7.4-rc1; Message-ID 20260721064115.64809-3-royalnet026@gmail.com; source reverse-applies alone on the pristine base |
+| `0051-hdmirx-no-signal-is-not-an-error.patch` | `ceralive` | 51 | 2026-11-11 | `v7.4-rc2` | Equivalent commit is in the base: 760e3b055c501ba3b99626846851339d88558b6a, merged@v7.4-rc1; only the two v4l2_dbg calls' wrapping differs; upstream commit has no Link: tag or Message-ID |
 | `0005-rockchip-rk3588-hdmirx-audio.patch` | `upstream` | 5 | 2026-09-05 | `v7.2` | Replaced by unmerged audio v4 `0042`–`0045` and deltas `0046`–`0049`; per-behavior decisions in UPSTREAM-STATUS.md |
 | `0006-rk3588-hdmirx-audio-sound-card.patch` | `ceralive` | 6 | 2026-09-05 | `v7.2` | Shared v4 card replaces incompatible zero-cell wiring; `0049` preserves Rock family enablement |
 | `0017-hdmirx-audio-lifecycle-and-clock-errors.patch` | `ceralive` | 17 | 2026-09-05 | `v7.2` | Clock and lifetime hardening re-expressed against v4 by `0046`–`0048`; old test controls remain historical |

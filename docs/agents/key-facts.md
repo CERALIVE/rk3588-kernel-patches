@@ -20,8 +20,10 @@ all loaded (8 clean composition cycles + 8 engine-restart cycles + a 300 s soak)
 and no kernel fault report; the board was restored to its production slot. The
 deliberately untouched, stale MPP hardening checker boundary is unchanged.
 
-**HDMI-RX audio now uses v4 plus explicit deltas (`0042`–`0049`).** Canonical
-mail and diff bodies are byte-preserved; `0005`, `0006`, and `0017` are archived.
+**HDMI-RX audio now uses upstream v4 binding/driver plus explicit DT and deltas
+(`0044`–`0049`).** Canonical mail and diff bodies are byte-preserved; `0005`,
+`0006`, `0017`, `0042` and `0043` are archived. The base absorbed `0042`/`0043`
+in v7.4-rc1; the DT side remains carried.
 The ACR byte-order concern does not survive v4, but remove-time work draining and
 clock-error handling do. `0046`–`0048` rework those gaps plus multichannel routing
 and invalid-rate backoff. `0049` preserves Rock family card enablement and codec
@@ -229,8 +231,10 @@ begin at the actual next ordinal, `0031`, and end at `0039`; no retired slot was
 reused and `0004` remains visible. Ten standalone-rkvenc members plus the earlier
 `0007` and `0023`–`0025` retirements leave fourteen burned slots. With the `0040`
 EDID guard, `0041` AVI colorimetry, audio v4 migration (`0042`–`0049`, retiring
-`0005`/`0006`/`0017`) and the `0050` pmdomain idle-request unwind, that yields
-**32 active members across 50 slots**.
+`0005`/`0006`/`0017`), `0050` pmdomain idle-request unwind, and `0051` no-signal
+log change, followed by `0029`'s retirement and the five upstream-absorbed
+retirements (`0010`/`0011`/`0042`/`0043`/`0051`), that yields
+**27 active members across 51 slots**, with twenty-three retired ordinals.
 `SERIES_TOTAL` is the slot ceiling, never the
 member count, and retirement never shrinks it.
 

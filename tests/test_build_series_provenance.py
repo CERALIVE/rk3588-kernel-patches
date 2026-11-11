@@ -29,7 +29,7 @@ VALID_DIGESTS = ("a" * 64, "b" * 64, "c" * 64)
 # is chosen because it is always present in this lane.
 STAND_IN_MAIL = "backports/README.md"
 STAND_IN_MAIL_SHA256 = hashlib.sha256((ROOT / STAND_IN_MAIL).read_bytes()).hexdigest()
-SOURCE_FIXTURE = "0010-phy-rockchip-naneng-combphy-force-rterm-det-rdy.patch"
+SOURCE_FIXTURE = "0012-dw-hdmi-qp-audio-eopnotsupp.patch"
 
 
 def pin() -> dict[str, str]:

@@ -330,116 +330,6 @@ SERIES: tuple[Patch, ...] = (
         ),
     ),
     Patch(
-        filename="0010-phy-rockchip-naneng-combphy-force-rterm-det-rdy.patch",
-        ordinal=10,
-        subject=(
-            "phy: rockchip: naneng-combphy: force RX-termination detect ready "
-            "for the TX-detect erratum"
-        ),
-        provenance=LORE_POSTING,
-        author="Shawn Lin <shawn.lin@rock-chips.com>",
-        date="Wed, 25 Mar 2026 15:23:03 +0800",
-        origin=BACKPORTS,
-        lore=LorePosting(
-            lore_msgid="1774423383-36599-1-git-send-email-shawn.lin@rock-chips.com",
-            revision="v1",
-            posted_date="Wed, 25 Mar 2026 15:23:03 +0800",
-            upstream_subject=(
-                "phy: rockchip: naneng-combphy: Fix TX detect RX termination errata"
-            ),
-            thread_compressed_sha256=(
-                "edcf4285fd7f02670ae5329f48d79a4536ede75439aa3ec60a497be4b47926eb"
-            ),
-            thread_mbox_sha256=(
-                "c59343ef5f34882d49a1830272cbd293a08cad248cca8b1ff45494d0dd0d9abb"
-            ),
-            canonical_patch_sha256=(
-                "b2ef18765558fb27ddbb00c14ed3fc40e93bbc200a45e337e864326973df249b"
-            ),
-            canonical_mail="backports/lore/U3/01.mbox",
-            review_state=(
-                "posted 2026-03-25, author Signed-off-by only; Vinod Koul asked for a "
-                "Fixes: tag and an erratum reference on 2026-05-10 and the author has "
-                "not answered. No Reviewed-by, no Nacked-by, no reroll."
-            ),
-            note=(
-                "Matrix alias U3. Some naneng-combphy revisions fail to detect the peer",
-                "receiver's RTERM at critical temperatures, so a PCIe link that should",
-                "come up simply does not. The posting sets FORCE_RTERM_DET_RDY in",
-                "PHYREG26 for every SoC whose cfg opts in, RK3588 included -- and RK3588",
-                "is where CeraLive's NVMe and USB3 capture links live.",
-                "",
-                "Screened against v7.1.7: applies with no fuzz base-only AND stacked on",
-                "top of this series, touches one file no other member touches, and",
-                "introduces no symbol the base lacks (rockchip_combphy_updatel and the",
-                "RK3568_PHYREG* block are already there; PHYREG26 is defined by the",
-                "patch itself). Zero prerequisites.",
-                "",
-                "The two mainline commits that landed on this file since the posting --",
-                "0b31f297557f (Consolidate SSC configuration) and be2b5b17b705 (Always",
-                "configure SSC spread direction) -- are both absent from v7.1.7 and",
-                "neither touches the RTERM path, so no landed fix supersedes this.",
-                "",
-                "The open maintainer question is about the commit message, not the",
-                "payload: a Fixes: tag and an erratum reference change what the log says,",
-                "not what the register write does. That is why this is carried and the",
-                "still-being-argued candidates in the same screening round are not.",
-            ),
-        ),
-    ),
-    Patch(
-        filename="0011-dw-hdmi-qp-acr-n-cts-helper.patch",
-        ordinal=11,
-        subject=(
-            "drm/bridge: dw-hdmi-qp: use drm_hdmi_acr_get_n_cts() for audio N/CTS"
-        ),
-        provenance=LORE_POSTING,
-        author="Simon Wright <simon@symple.nz>",
-        date="Thu, 21 May 2026 19:36:47 +1200",
-        origin=BACKPORTS,
-        lore=LorePosting(
-            lore_msgid="86fcf349-0a7a-4618-9001-612371b0f71b@symple.nz",
-            revision="v3",
-            posted_date="Thu, 21 May 2026 19:36:47 +1200",
-            upstream_subject=(
-                "[PATCH v3] drm/bridge: dw-hdmi-qp: use drm_hdmi_acr_get_n_cts() "
-                "helper for audio N/CTS"
-            ),
-            thread_compressed_sha256=(
-                "70168ad154f4c2e92c2042ba96ff2e185a65a83c6f1710f28160b59e772960c9"
-            ),
-            thread_mbox_sha256=(
-                "9b2beae10fd643d26a1f286e33825fd8e36ba3c521acd3f9ed1e6f4bb753d54c"
-            ),
-            canonical_patch_sha256=(
-                "c20e395c4c8a67b3aff0a18bd28fbffedba8f91f42eb99fda2bc7ad2e83c1108"
-            ),
-            canonical_mail="backports/lore/U5/01.mbox",
-            review_state=(
-                "Reviewed-by and Tested-by Cristian Ciocaltea (Collabora), 2026-06-03, "
-                "on the patch itself: \"The patch looks good to me.\" No change was "
-                "requested and no reroll followed."
-            ),
-            note=(
-                "Matrix alias U5. A STANDALONE posting: no cover letter and no sibling",
-                "patches -- the thread is the patch plus one review reply, and this",
-                "series records it that way rather than inventing a 0/N identity for it.",
-                "",
-                "dw-hdmi-qp carried its own pre-computed N/CTS table, which disagrees",
-                "with the shared helper for several TMDS rates and silently produces the",
-                "wrong audio clock regeneration. The posting deletes the private table",
-                "and calls drm_hdmi_acr_get_n_cts(), which v7.1.7 already exports from",
-                "drivers/gpu/drm/display/drm_hdmi_helper.c -- so the symbol it needs is",
-                "in the base and there are zero prerequisites.",
-                "",
-                "Screened against v7.1.7: applies with no fuzz base-only AND stacked.",
-                "The only mainline commit on this file since the posting is fb145be7964d",
-                "(Use the common TMDS char rate constant), which does not touch the N/CTS",
-                "path and does not supersede this.",
-            ),
-        ),
-    ),
-    Patch(
         filename="0012-dw-hdmi-qp-audio-eopnotsupp.patch",
         ordinal=12,
         subject=(
@@ -1091,10 +981,6 @@ SERIES += tuple(
         ),
     )
     for sequence, subject, digest in (
-        (1, "dt-bindings: media: snps,dw-hdmi-rx: add #sound-dai-cells",
-         "c7d70a9ee87e89686f39a8fe781c6bc8b4cc6fab9a9541f5734056a1f2b759df"),
-        (2, "media: synopsys: hdmirx: add HDMI audio capture support",
-         "eb5cce68daa6c43dcceed6aedbcce5a7231ca0865f72f9032cffe3b134aceee0"),
         (3, "arm64: dts: rockchip: add HDMI RX audio on RK3588",
          "0d5af3cd3ad6c2edcd89ff0ef4f16ff43335ec1c0f444ed132ebdde65af44de4"),
         (4, "arm64: dts: rockchip: enable HDMI RX audio capture on Orange Pi 5 Plus",
@@ -1225,62 +1111,6 @@ SERIES += (
             "NIU that refuses to idle, and the only runs known to have reached",
             "it are the refuted crash trials described above.",
             "Intended for upstream submission to linux-pm; retire when the",
-            "base absorbs it.",
-        ),
-    ),
-)
-
-SERIES += (
-    Patch(
-        filename="0051-hdmirx-no-signal-is-not-an-error.patch",
-        ordinal=51,
-        subject=(
-            "media: synopsys: hdmirx: an absent source is not an error"
-        ),
-        provenance=NULL_OID,
-        author="Andres Cera <andres.cera@hotmail.com>",
-        date="Sat, 12 Sep 2026 16:00:00 +0000",
-        origin=CERALIVE,
-        rationale=(
-            "MOTIVATION. hdmirx_query_dv_timings() logs at v4l2_err when the",
-            "port has no link and again when the signal is not locked. Neither",
-            "is an error. Both are the ordinary resting state of an HDMI input",
-            "with nothing plugged into it, and the ioctl already reports each",
-            "one to its caller as -ENOLINK or -ENOLCK. The log line duplicates",
-            "a return code at KERN_ERR, which reaches the console at every",
-            "loglevel a product would ship.",
-            "",
-            "MEASURED, NOT ASSUMED. On an idle Orange Pi 5 Plus running",
-            "7.2.0-ceralive-rk3588 with no HDMI source attached, 1476 of 1623",
-            "dmesg lines were 'port has no link' and a further 138 were 'signal",
-            "is not locked' -- 99.5 percent of the kernel's entire log output",
-            "for a 13-hour uptime, from one polling path. The caller is an",
-            "ordinary capability query: the userspace engine calls",
-            "VIDIOC_QUERY_DV_TIMINGS on every device enumeration, which is by",
-            "design and is not the defect.",
-            "",
-            "WHY IT MATTERS BEYOND TIDINESS. The image is gaining",
-            "CONFIG_PSTORE_CONSOLE so that a silent SoC reset leaves the",
-            "console behind in a reserved DRAM ring. That ring is small and it",
-            "wraps. A repeated no-signal message emitted at error level is",
-            "exactly what evicts the messages preceding a fault, so shipping",
-            "the forensics feature alongside this printk would produce a",
-            "flight recorder whose contents are almost entirely its own noise.",
-            "",
-            "WHAT CHANGES, AND WHAT DOES NOT. Only the log level and its",
-            "gating. Both sites become v4l2_dbg at level 1 behind the driver's",
-            "existing 'debug' module parameter, which the file already uses in",
-            "62 other places, so the diagnostic is still one module parameter",
-            "away when an integrator wants it. The return values, the control",
-            "flow and every other message are untouched, so no caller and no",
-            "userspace contract can observe this change.",
-            "",
-            "PROVENANCE. First-party CeraLive change to mainline code. No",
-            "upstream counterpart exists and no Fixes: tag is claimed: the",
-            "levels are as the driver was merged, and this is a product",
-            "judgement about what deserves KERN_ERR on a shipping device",
-            "rather than a defect in the original author's reasoning.",
-            "Intended for upstream submission to linux-media; retire when the",
             "base absorbs it.",
         ),
     ),

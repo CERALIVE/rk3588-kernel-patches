@@ -22,7 +22,7 @@
   lore fetch — Anubis answers `Mozilla/5.0` with an HTTP 200 challenge page, so
   the spoof is what breaks it, not what gets you through
 - Don't renumber to close a retired ordinal's slot, and don't read `SERIES_TOTAL`
-  as a member count — it is 50 slots holding 32 members
+  as a member count — it is 51 slots holding 27 members
 - Don't rename, alias, symlink or `mknod` the `system-uncached` heap — the name is
   a userspace ABI and an alias is a corruption trap, not a workaround
 - Don't tick anything in `docs/BOARD-QUALIFICATION.md` without a pasted transcript,

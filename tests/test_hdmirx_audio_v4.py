@@ -125,7 +125,7 @@ class AudioHelpers(unittest.TestCase):
         cls.addClassCleanup(cls.temp.cleanup)
         directory = Path(cls.temp.name)
         cls.binary = directory / "audio-test"
-        upstream = additions("backports/0043-hdmirx-audio-v4-2.patch")
+        upstream = additions("retired/0043-hdmirx-audio-v4-2.patch")
         clock = additions("ceralive/0046-hdmirx-audio-clock-errors-and-rates.patch")
         lifecycle = additions("ceralive/0047-hdmirx-audio-worker-lifetime.patch")
         channels = additions("ceralive/0048-hdmirx-audio-channel-routing.patch")

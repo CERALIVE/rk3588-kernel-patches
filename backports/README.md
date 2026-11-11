@@ -4,9 +4,9 @@ The third source lane. `upstream/` is Ross Cawston's import, `ceralive/` is
 first-party work, and this is everything else: a patch lifted from mainline, a
 stable tree, or a posting on lore that the pinned kernel does not carry yet.
 
-Seven active members today: `0010`, `0011`, `0012`, and the four HDMI-RX audio
-v4 members `0042`–`0045`, all **unmerged lore postings**. `0007` is archived in
-`retired/` because the base absorbed its mainline commit. The lane exists so that a backport does not get
+Three active members today: `0012` and HDMI-RX audio v4 DT members `0044`–`0045`,
+all **unmerged lore postings**. `0007`, `0010`, `0011`, `0042` and `0043` are
+archived in `retired/` because the base absorbed their mainline commits. The lane exists so that a backport does not get
 dropped into `upstream/`, which would break the one claim this repository cannot
 afford to lose — that `upstream/` is byte-identical to what was published at
 `UPSTREAM_PATCHES_REV`.

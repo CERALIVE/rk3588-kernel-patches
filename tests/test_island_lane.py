@@ -136,7 +136,12 @@ class TestIslandProvenance(unittest.TestCase):
 
 class TestSlotAndMembershipInvariants(unittest.TestCase):
     def test_series_total_is_the_highest_slot_not_member_count(self) -> None:
-        self.assertEqual(bs.SERIES_TOTAL, max(patch.ordinal for patch in bs.SERIES))
+        active = {patch.ordinal for patch in bs.SERIES}
+        retired = {
+            entry.ordinal for entry in bs.load_retired().values()
+            if entry.ordinal is not None
+        }
+        self.assertEqual(bs.SERIES_TOTAL, max(active | retired))
         self.assertGreater(bs.SERIES_TOTAL, len(bs.SERIES))
 
     def test_ordinal_above_series_total_is_refused(self) -> None:
