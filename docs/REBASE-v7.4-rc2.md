@@ -226,9 +226,14 @@ boards can answer them.
 Pending. This ledger records apply and source evidence only.
 
 - Full-series kernel compile on `v7.4-rc2` with the island branch's series
-  substituted for the island lane: pending (plan todo 6).
-- All consumer gates on the real island lane, after the 7.4-line island
-  release: pending (plan todos 14, 5 and 7).
+  substituted for the island lane: no digest is recorded in this ledger yet
+  (plan todo 6; both compile digests are added with plan todo 7).
+- Island local gates, push of `release/linux-7.4` and green island CI: pending
+  (plan todo 13).
+- Owner-gated 7.4-line island release: pending (plan todo 14).
+- Island lane moved to that release, and all consumer gates on the real island
+  lane: pending (plan todos 5 and 7).
+- Two-board qualification: pending, at cutover step 6.
 
 For this bump, no board validation is claimed. A tree that applies is not a tree that builds,
 and a tree that builds is not a board that works.
@@ -285,8 +290,11 @@ Run this for the next rc or for `v7.4` final, in this order.
 6. **Island release, only if step 4 changed the island series.** Cut a new
    owner-gated, non-latest 7.4-line island release, then move this repository's
    island lane to it.
-7. **Consumer gates.** Re-run every consumer gate on the real island lane and
-   push.
+7. **Consumer gates: repeat plan todo 7.** On the real island lane, run every
+   command in `AGENTS.md` COMMANDS, ending with `scripts/apply.sh` exit 0 and all
+   post-apply assertions. Re-run the full-kernel build recipe with the real lane,
+   add both compile digests to this ledger, then push `rebase/v7.4` and require
+   the push-triggered `patch-apply` run to conclude `success` at that head.
 
 ## Cutover runbook
 
@@ -340,7 +348,8 @@ branches afterwards if it still applies.
 ## Downstream inventory
 
 This is the rest-of-chain inventory, observed 2026-11-11, copied from its source
-record without edits except heading levels and the removal of local file names.
+record without edits except heading levels, the removal of local file names and
+the grouping of the exhaustive literal hits.
 It is a follow-up list, not work done here. Cutover step numbers refer to the
 [Cutover runbook](#cutover-runbook). Paths are relative to each repository at
 the revision in the source-revisions table:
@@ -353,6 +362,21 @@ the revision in the source-revisions table:
 [ceralive](https://github.com/CERALIVE/ceralive),
 [rk3588-media-island](https://github.com/CERALIVE/rk3588-media-island) and this
 repository.
+
+### Cutover ownership
+
+The source record assigns each rest-of-chain item to a cutover step, with the
+same numbering as the [Cutover runbook](#cutover-runbook):
+
+1. Owner decides the 7.2 support policy; consider the separate emergency 7.2 pixel-clock backport.
+2. Merge the 7.4 consumer branch into kernel-patches main.
+3. Merge the island 7.4 branch into island main, restore the consumer-ref main guard and decide branch-release flow; align the root island registry with the actual released tag.
+4. Update image pipeline source pins, production/debug identities, config and firmware closure, tests, engineering docs and root production policy references.
+5. Qualify CeraUI/apt-worker exact identities and package/update contracts, plus userspace audio regression coverage.
+6. Qualify both Radxa Rock 5B+ and Orange Pi 5 Plus using the actual final artifact set.
+7. Publish affected user docs in English and es-419 and affected website claims with the release.
+
+The final two clauses added to steps 3-5 above are inventory ownership assignments for items the seven-step runbook did not name explicitly; they do not change its order or authorize any action. Root policy changes must follow the workspace root-first policy workflow before dependent release changes.
 
 ### Findings that change the follow-up work
 
@@ -501,22 +525,56 @@ All rows below belong to cutover step 6 and are UNRUN here. Harnesses are invent
 
 ### Exhaustive matching-literal inventory
 
-The source record also enumerates every hit of six scoped `git grep` queries,
-with complete source lines. Re-run those searches at cutover rather than trust
-an old line number. Hit counts at the revisions above:
+The source record enumerates every hit of six scoped `git grep` queries. Hits
+that share a repository, disposition and cutover step are grouped below; each
+group keeps its recorded disposition verbatim and every `path:line`. These are
+dispositions, not instructions to rewrite history: production-bound
+expectations need new 7.4 counterparts, while dated fixtures and 7.2 migration
+and rollback controls stay as they are.
 
-| Scope | Hits |
-|---|---:|
-| Image tests and CI: every `7.2.0-ceralive` and `kernel-firmware-v7.2` reference | 261 |
-| CeraUI: every `linux-image-7.2` / `7.2.0-ceralive` occurrence | 71 |
-| apt-worker: every `linux-image-7.2` / `7.2.0-ceralive` occurrence | 26 |
-| Image engineering, config and runtime: scoped 7.2 and output-card-name hits | 208 |
-| Docs EN/es-419 and feature evidence: scoped kernel-version hits | 1 |
-| Website messages, config, components, content and data | 0 |
+#### 1. Image tests and CI: all 7.2.0-ceralive and kernel-firmware-v7.2 references
 
-These are dispositions, not instructions to rewrite history: production-bound
-expectations need new 7.4 counterparts, while dated fixtures and 7.2
-migration and rollback controls stay as they are.
+- **image-building-pipeline, cutover step 4, 256 hits.** Add or migrate production-bound fixtures and exact expected values to the chosen 7.4 identity; retain 7.2 downgrade/rollback/historical controls and test strength. If adapted, report every expectation before/after.
+  Hits: `ci/fixtures/kernel-log/accept-clean-production-boot.log:2`; `ci/fixtures/kernel-log/reject-hung-task.log:1,3`; `ci/fixtures/kernel-log/reject-lockdep-circular.log:1,5`; `ci/fixtures/kernel-log/reject-lockdep-recursive.log:1,5`; `tests/boot-artifacts.bats:16,45,116,127,156,158,175,194,202,224,245,254,343,348,354,360,365,366,373,392,400,419,433,446,458`; `tests/bsp-package-resolution.test.sh:438`; `tests/dtb-prune-contract.bats:167,173,191,208,229,233,248,250`; `tests/edge-test-variant.test.sh:109,111,112,174,329,331`; `tests/fixtures/kernel-stage-contract/failed-state.json:1`; `tests/fixtures/kernel-stage-contract/pending-overlay.json:1`; `tests/fixtures/kernel-stage-contract/staged-state.json:1`; `tests/kernel-artifact-reuse.test.sh:16,19,20,22,24,72,73,126,127,129,152,153,155,159,168,169,175,176,192,193,203`; `tests/kernel-bench-report.test.sh:18,34,40,42`; `tests/kernel-boot-staging.bats:10,14,42,49,58,85`; `tests/kernel-freeze-guardrails.test.sh:274,280,287,293,295,317,327,335,349,355,612`; `tests/kernel-only-build.test.sh:29,117,119,380,390,392`; `tests/kernel-producer-identity.test.sh:15`; `tests/kernel-release-command.test.sh:13,17,61,71,101,102,161,185,188,195`; `tests/kernel-release-workflow.test.sh:39,40,69,71,76,81,93,173,175,182,195,196,198,208,209,215,223,237,242,243,244,245,246,249,251,260,268,283,289,294,295,296,297,303,306,308,314,316,319`; `tests/kernel-stage-real.test.sh:62,63,108,160,161`; `tests/kernel-stage.test.sh:28,29,186,187,239,240,244`; `tests/kernel-state-machine.bats:35,36,89,204,335`; `tests/kernel-version-monotonic.test.sh:13,14,17,19,28,31,34,35,41,45,48,52,53,55,57,59,61,62,64,65,66,68,76,82`; `tests/lib/kernel-release-fixtures.sh:35,36,69,153`; `tests/lib/kernel-stage-fixture.sh:48,59`; `tests/manifests/fixtures/production-baseline/orange-pi-5-plus.params:15,21,23,26,30`; `tests/manifests/fixtures/production-baseline/rock-5b-plus.params:15,21,23,26,30`; `tests/package-contract.bats:668,686,2198,2210`; `tests/publish-release.test.sh:112,114,643,647,652,654,656,667,669,677,696,698,699,700,702,713,716,722,732,737,744,748,754,760,765,768,772,776,783,788,793,798`; `tests/publisher-dry-run.test.sh:82,84`; `tests/registry.tsv:71`; `tests/variant-contract.bats:71,74,561,615,616,624,683,684,853,860,875,923`
+
+- **image-building-pipeline, cutover step 4, 3 hits.** Update present-tense production identity/track at cutover; preserve dated 7.2 receipts. Re-prove Kconfig, firmware, allocator and hardware assumptions instead of replacing version text blindly.
+  Hits: `ci/run-rk3588-hardware-drill.sh:171`; `ci/verify-hardware-receipt.py:299,312`
+
+- **image-building-pipeline, cutover step 4, 2 hits.** Retain historical measured v7.2 provenance; add real 7.4 closure fixture and route its caller/registry to the new production evidence. Do not relabel old hashes.
+  Hits: `tests/fixtures/kernel-firmware-v7.2.json:3,4`
+
+#### 2. CeraUI: every linux-image-7.2 / 7.2.0-ceralive occurrence
+
+- **CeraUI, cutover step 5, 59 hits.** Add 7.4 exact-identity, upgrade, downgrade and rollback fixtures as applicable; preserve existing 7.2 controls and exact assertion strength.
+  Hits: `apps/backend/src/tests/apt-all-annotation-discovery.test.ts:61`; `apps/backend/src/tests/apt-all-packages.test.ts:214,494`; `apps/backend/src/tests/apt-parser-sweep.test.ts:79`; `apps/backend/src/tests/fixtures/apt/opi-nginx-20261022.txt:20,46`; `apps/backend/src/tests/fixtures/kernel-state-contract/failed-state.json:4,5`; `apps/backend/src/tests/fixtures/kernel-state-contract/pending-overlay.json:13,14`; `apps/backend/src/tests/fixtures/kernel-state-contract/staged-state.json:4,5`; `apps/backend/src/tests/helpers/kernel-update-fixture.ts:8,9`; `apps/backend/src/tests/kernel-orchestrator.test.ts:62`; `apps/backend/src/tests/kernel-packages.test.ts:26,40,51,58,64,72,83,93,99,100,118,197`; `apps/backend/src/tests/kernel-state-contract.test.ts:93,94`; `apps/backend/src/tests/kernel-state.test.ts:48`; `apps/backend/src/tests/os-kernel-admission.test.ts:75,122,182`; `apps/frontend/src/lib/updates/kernel-update-actions.test.ts:28,29,32,33,149`; `apps/frontend/src/lib/updates/kernel-update-view.test.ts:16,17,20,21,49`; `apps/frontend/src/main/dialogs/updates/KernelSection.test.ts:16,17,21`; `apps/frontend/tests/e2e/helpers/update-wire.ts:133,134,137,138`; `apps/frontend/tests/e2e/visual/kernel-updates.visual.spec.ts:106,107,113,117,118,127,129,144,171`
+
+- **CeraUI, cutover step 5, 12 hits.** Preserve dated physical 7.2 capture/measurement as historical evidence; add separate 7.4 capture if this contract needs qualification.
+  Hits: `apps/backend/src/tests/audio-card-vocabulary.test.ts:19`; `apps/backend/src/tests/fixtures/modems/fibocom-fm350-gl/candidate-capture.txt:1820`; `apps/backend/src/tests/fixtures/modems/fibocom-fm350-gl/installed-capture.txt:1671`; `apps/backend/src/tests/fixtures/modems/huawei-e3372-a/candidate-capture.txt:1466`; `apps/backend/src/tests/fixtures/modems/huawei-e3372-a/installed-capture.txt:1317`; `apps/backend/src/tests/fixtures/modems/huawei-e3372-b/candidate-capture.txt:1386`; `apps/backend/src/tests/fixtures/modems/huawei-e3372-b/installed-capture.txt:1237`; `apps/backend/src/tests/fixtures/modems/zte-mf79u/candidate-capture.txt:1502`; `apps/backend/src/tests/fixtures/modems/zte-mf79u/installed-capture.txt:1353`; `apps/backend/src/tests/fixtures/real-device/README.md:152`; `apps/backend/src/tests/fixtures/real-device/opi-singleton-proc.txt:1`; `docs/COMPOSITION-LIFECYCLE.md:89`
+
+#### 3. apt-worker: every linux-image-7.2 / 7.2.0-ceralive occurrence
+
+- **apt-worker, cutover step 5, 9 hits.** Use exact 7.4 package/version/tag in new operating examples; preserve past release history.
+  Hits: `docs/agents/kernel-component-publishing.md:48,76,86,101,103,104,136,137,138`
+
+- **apt-worker, cutover step 5, 17 hits.** Add a 7.4 exact publication fixture; retain all 7.2 immutable-key, wrong-control, authorization, race and downgrade controls.
+  Hits: `test/publish-kernel.test.sh:178,280,281,306,307,338,361,379,380,407,426,430,447,490,493,508,537`
+
+#### 4. Image engineering/config/runtime: all scoped 7.2 and output-card-name hits
+
+- **image-building-pipeline, cutover step 4, 6 hits.** Unrelated application/tool version, not the Linux base: retain unchanged; no 7.4 replacement.
+  Hits: `README.md:34`; `docs/DEVICE-BRINGUP.md:48`; `docs/RELEASE-PROCESS.md:247,248`; `docs/agents/key-facts.md:3661`; `docs/trixie-package-resolution.md:226`
+
+- **image-building-pipeline, cutover step 4, 202 hits.** Update present-tense production identity/track at cutover; preserve dated 7.2 receipts. Re-prove Kconfig, firmware, allocator and hardware assumptions instead of replacing version text blindly.
+  Hits: `README.md:111,344,345,346,347,1124,1275,1276,1443,1444,1761,1762,1824,1859`; `docs/DEFERRED.md:233,404,430`; `docs/DEVICE-BRINGUP.md:266,273,320,664`; `docs/RELEASE-PROCESS.md:127,139`; `docs/agents/key-facts.md:24,1631,1632,1796,1873,1874,1875,1882,1883,1885,2054,2064,2307,2317,2330,2331,2340,2368,2380,2664,2678,2684,2729,2730,2734,2739,2743,2745,2801,2819,2827,2863,2927,3020,3313,3315,5029,5034,5788,5802,5848,5981`; `docs/agents/kiosk-stack.md:24,55`; `docs/agents/known-issues-deferred.md:82`; `docs/agents/where-to-look.md:70`; `docs/bluetooth-firmware-closure.md:139,148,209`; `docs/cog-display-addon.md:272,280`; `docs/cog-display-hw-checklist.md:251`; `docs/hardware-gated-completion.md:435`; `docs/healthcheck-dpkg-recovery.md:27`; `docs/kernel-build-from-source.md:23,69,221,234,252,270,282,283,284,301,471,498,882,1075,1140,1141,1161,1196,1204,1254,1278,1304`; `docs/kernel-currency-watch.md:1,3,17,21,29,91`; `docs/kernel-freeze-contract.md:52,72,114,140,141,209,239`; `docs/kernel-release.md:14,15,30,150,153,221,232`; `docs/kernel-staging.md:10,11`; `docs/kernel-track-decision.md:5,28,29,33,44`; `docs/kernel-tracks.md:11,16,44,98,124`; `docs/kiosk-display.md:160,195`; `docs/modem-matrix.md:119`; `docs/notes/sharing-kernel-capability.md:8,288`; `docs/ota-bookworm-trixie-transition.md:34`; `docs/rauc-build-from-source.md:12,16`; `docs/size-notes.md:279,290`; `docs/trixie-package-resolution.md:280`; `lib/shared/slot-reserve.sh:25`; `manifests/boards/orange-pi-5-plus.yaml:29`; `manifests/families/rk3588.yaml:8,33,55,56,82,202,204,205,206,217,225,254,282,300,317,319,322,323,333,334,341,371,383,385,392,393,395`; `manifests/kernel/forbidden-symbols.list:40,42,55,202`; `manifests/kernel/required-symbols.list:212,290`; `manifests/kernel/rk3588-edge-test.fragment:10,11,46,124,130`; `manifests/kernel/rk3588-edge.fragment:184,413,505,562,646,713,846,851`; `manifests/packages/shared.list:413`; `manifests/rk3588-bluetooth-firmware-roots.txt:2`; `manifests/rk3588-userspace-deb-versions.txt:56,57`; `mkosi/LAYER-MAP.md:56`; `mkosi/app/cog-display.sysext.conf:106`; `mkosi/platform/boot/README.md:134`; `mkosi/runtime/ceralive-fan-kickstart.sh:9,13,54`; `mkosi/runtime/pipewire/10-ceralive-headless.conf:168,273`
+
+#### 5. Docs EN/es-419 and feature evidence: scoped kernel-version hits
+
+- **ceralive-docs, cutover step 7, 1 hits.** Preserve dated 7.2 drill evidence; append 7.4 qualification only when proved and publish affected EN/es-419 guidance together.
+  Hits: `src/data/features.yaml:412`
+
+#### 6. Website messages/config/components/content/data: scoped kernel-version hits
+
+No matches (`git grep` exit 1).
 
 ## 7.2-side follow-ups
 
@@ -538,8 +596,13 @@ pages and claims to recheck.
   (`vX.Y.Z`) are rejected.
 - The rules file and ledger names follow `KERNEL_TAG`, so both are renamed on
   every rc refresh.
-- The frozen candidate matrix in `docs/UPSTREAM-STATUS.md` still lists U3
-  (`0010`) and U5 (`0011`) as `Disposition: IN`. That state is known and stale:
-  re-capturing the matrix changes the digest frozen in
-  `.github/workflows/patch-apply.yml` (`--source-sha256`), so it is a separate
-  change.
+- The frozen 2026-08 candidate matrix in `docs/UPSTREAM-STATUS.md` still lists
+  U3 (`0010`) and U5 (`0011`) as `Disposition: IN`. That state is known and
+  stale, and kept on purpose. The matrix records one screening round (screening
+  base `v7.1.7`, last checked 2026-08-10), anchored by its
+  `Discovery snapshot sha256:` line, which `scripts/validate-candidate-matrix.py`
+  compares with the `--source-sha256` value in
+  `.github/workflows/patch-apply.yml`. Editing only the two `Disposition` fields
+  would still validate, but it would rewrite that round's findings. Recording the
+  retirements truthfully means re-capturing the matrix, which records a new
+  discovery round with its own snapshot line, and that is a separate change.
