@@ -1,10 +1,9 @@
 diff --git a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
 --- a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
 +++ b/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c
-@@ -205,7 +206,19 @@ struct snps_hdmirx_dev {
+@@ -205,6 +206,18 @@ struct snps_hdmirx_dev {
  	u32 edid_blocks_written;
  	u32 cur_fmt_fourcc;
- 	u32 color_depth;
 -	spinlock_t rst_lock; /* to lock register access */
 +	/*
 +	 * RAW, and it has to be. Every MMIO access in this driver funnels

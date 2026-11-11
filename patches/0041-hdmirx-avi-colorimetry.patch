@@ -57,10 +57,9 @@ diff --git a/drivers/media/platform/synopsys/hdmirx/snps_hdmirx.c b/drivers/medi
  struct snps_hdmirx_dev {
  	struct device *dev;
  	struct hdmirx_stream stream;
-@@ -214,6 +225,7 @@ struct snps_hdmirx_dev {
+@@ -214,5 +225,6 @@ struct snps_hdmirx_dev {
  	u32 edid_blocks_written;
  	u32 cur_fmt_fourcc;
- 	u32 color_depth;
 +	struct hdmirx_colorimetry colorimetry;
  	/*
  	 * RAW, and it has to be. Every MMIO access in this driver funnels
