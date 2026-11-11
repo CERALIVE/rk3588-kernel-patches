@@ -25,7 +25,7 @@ from: https://lore.kernel.org/all/20260721064115.64809-5-royalnet026@gmail.com/t
   canonical_patch_sha256   3dd74a8ee37dfbe2612c7f49f06ffdd4b0fa9b46159d1558fcf9f91ed6b69144
     (this posting's canonical mail, archived at backports/lore/hdmirx-audio-v4/04.mbox)
 
-Backported into the CeraLive series for v7.2. The source of record is
+Backported into the CeraLive series for v7.4-rc2. The source of record is
 backports/0045-hdmirx-audio-v4-4.patch; patches/ is generated from it by
 scripts/build-series.py, and scripts/verify-payload-parity.py holds it to
 the same added/removed-line parity every other lane gets.

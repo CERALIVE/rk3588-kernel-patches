@@ -4,7 +4,7 @@
 # First-party (ceralive/): 0009, 0018, 0026, 0027, 0028, 0030, 0040, 0041, 0046, 0047, 0048, 0049, 0050, 0051.
 # Backports (backports/): 0010, 0011, 0012, 0042, 0043, 0044, 0045 -- 0007 is a merged commit, the rest are unmerged lore postings.
 # All of them continue the same counter.
-# Target kernel: v7.2 (8d3ae59288f1e7d58d76558a6ee96d533bc5019f)
+# Target kernel: v7.4-rc2 (7475ea8b58616b33c04afb976cf0fbaad9dd63fb)
 # Retired slot 1: 0001-rockchip-rk3588-vepu580-encoder-support-v3.patch -- see retired/REGISTRY.md
 # Retired slot 5: 0005-rockchip-rk3588-hdmirx-audio.patch -- see retired/REGISTRY.md
 # Retired slot 6: 0006-rk3588-hdmirx-audio-sound-card.patch -- see retired/REGISTRY.md

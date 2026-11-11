@@ -29,7 +29,8 @@ done
 
 if [[ -n "${KERNEL_TAG:-}" ]]; then
 	tag_version="${KERNEL_TAG#v}"
-	if [[ ! "${KERNEL_TAG}" =~ ^v[0-9]+\.[0-9]+$ ]]; then
+	tag_version="${tag_version%-rc*}"
+	if [[ ! "${KERNEL_TAG}" =~ ^v[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]]; then
 		fail "KERNEL_TAG has invalid upstream-style version: ${KERNEL_TAG}"
 	fi
 	if [[ "${KERNEL_PATCHDIR:-}" != "patch/kernel/archive/rockchip64-${tag_version}" ]]; then

@@ -40,7 +40,7 @@ immediately exercised behaviour change. Do not change try-power-role,
 power-role, data-role, connector or FUSB302 status, voltage/current
 values, or any other PDO flag on the Orange Pi.
 
-First-party: authored by CeraLive against v7.2, with no upstream
+First-party: authored by CeraLive against v7.4-rc2, with no upstream
 counterpart in rockchip-rk3588-mainline-patches. The source of record
 is ceralive/0030-rk3588-orangepi-5-plus-typec-dual-role-power.patch
 and patches/ is generated from it by scripts/build-series.py.

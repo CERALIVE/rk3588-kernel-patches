@@ -7,7 +7,7 @@ Serialize control paths; disarm and drain before HPD, clocks or codec removal.
 Reconciliation evidence: docs/UPSTREAM-STATUS.md.
 Code-only qualification; no new board evidence is claimed.
 
-First-party: authored by CeraLive against v7.2, with no upstream
+First-party: authored by CeraLive against v7.4-rc2, with no upstream
 counterpart in rockchip-rk3588-mainline-patches. The source of record
 is ceralive/0047-hdmirx-audio-worker-lifetime.patch
 and patches/ is generated from it by scripts/build-series.py.

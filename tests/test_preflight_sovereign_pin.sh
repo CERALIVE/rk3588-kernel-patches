@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="${ROOT}/scripts/preflight.sh"
+# shellcheck source=../kernel-pin.env
+source "${ROOT}/kernel-pin.env"
 tmp="$(mktemp -d)"
 trap 'rm -rf "${tmp}"' EXIT
 
@@ -12,15 +14,15 @@ set -euo pipefail
 if [[ "${MOCK_GIT_MODE:-ok}" == unresolvable ]]; then
 	exit 0
 fi
-printf '%s refs/tags/v7.2^{}\n' "${MOCK_RESOLVED_COMMIT}"
+printf '%s refs/tags/%s^{}\n' "${MOCK_RESOLVED_COMMIT}" "${MOCK_KERNEL_TAG}"
 EOF
 chmod +x "${tmp}/git"
 
 make_pin() {
-	local dir="$1" commit="${2:-8d3ae59288f1e7d58d76558a6ee96d533bc5019f}" patchdir="${3:-patch/kernel/archive/rockchip64-7.2}" armbian_revision="${4:-pinned-revision}"
+	local dir="$1" commit="${2:-${KERNEL_COMMIT}}" patchdir="${3:-${KERNEL_PATCHDIR}}" armbian_revision="${4:-pinned-revision}" tag="${5:-${KERNEL_TAG}}"
 	mkdir -p "${dir}"
 	cat >"${dir}/kernel-pin.env" <<EOF
-KERNEL_TAG="v7.2"
+KERNEL_TAG="${tag}"
 KERNEL_COMMIT="${commit}"
 KERNEL_PATCHDIR="${patchdir}"
 KERNELSOURCE="https://example.invalid/linux.git"
@@ -65,10 +67,10 @@ chmod +x "${dir}/scripts/curl"
 }
 
 run_case() {
-	local name="$1" expected="$2" mode="${3:-ok}" commit="${4:-8d3ae59288f1e7d58d76558a6ee96d533bc5019f}" patchdir="${5:-patch/kernel/archive/rockchip64-7.2}" armbian_mode="${6:-no-drift}" armbian_revision="${7:-pinned-revision}" expected_output="${8:-}"
+	local name="$1" expected="$2" mode="${3:-ok}" commit="${4:-${KERNEL_COMMIT}}" patchdir="${5:-${KERNEL_PATCHDIR}}" armbian_mode="${6:-no-drift}" armbian_revision="${7:-pinned-revision}" expected_output="${8:-}" tag="${9:-${KERNEL_TAG}}"
 	local dir="${tmp}/${name}"
-	make_pin "${dir}" "${commit}" "${patchdir}" "${armbian_revision}"
-	if MOCK_GIT_MODE="${mode}" MOCK_RESOLVED_COMMIT="8d3ae59288f1e7d58d76558a6ee96d533bc5019f" \
+	make_pin "${dir}" "${commit}" "${patchdir}" "${armbian_revision}" "${tag}"
+	if MOCK_GIT_MODE="${mode}" MOCK_RESOLVED_COMMIT="${KERNEL_COMMIT}" MOCK_KERNEL_TAG="${tag}" \
 		MOCK_ARMBIAN_MODE="${armbian_mode}" \
 		PATH="${tmp}:${dir}/scripts:${PATH}" "${dir}/scripts/preflight.sh" >"${tmp}/${name}.out" 2>&1; then
 		actual=0
@@ -96,22 +98,28 @@ run_case drifted-upstream 0 ok '' '' drift drifted-revision 'KERNEL_MAJOR_MINOR 
 # Local coordinates remain a blocking contract.
 run_case inconsistent-patchdir 1 ok '' patch/kernel/archive/rockchip64-7.3
 run_case unresolvable-commit 1 unresolvable
+run_case final-tag 0 ok '' patch/kernel/archive/rockchip64-7.4 '' '' '' v7.4
+run_case rc-tag 0 ok '' patch/kernel/archive/rockchip64-7.4 '' '' '' v7.4-rc2
+run_case rc-patchdir 1 ok '' patch/kernel/archive/rockchip64-7.4-rc2 '' '' '' v7.4-rc2
+run_case invalid-tag 1 ok '' patch/kernel/archive/rockchip64-7.4 '' '' '' v7.4-foo
+run_case stable-point-tag 1 ok '' patch/kernel/archive/rockchip64-7.4 '' '' '' v7.4.1
 
-# Exercise the real apply gate against a clean fake kernel tree whose v7.2 tag
+# Exercise the real apply gate against a clean fake kernel tree whose pinned tag
 # does not match the broken commit pin. The apply script must reject it before
 # applying any patch.
 apply_fixture="${tmp}/apply-repo"
 GIT_MASTER=1 git -C "${ROOT}" worktree add --detach "${apply_fixture}" HEAD >/dev/null
 cleanup_apply_fixture() { GIT_MASTER=1 git -C "${ROOT}" worktree remove --force "${apply_fixture}" >/dev/null 2>&1 || true; }
 trap 'cleanup_apply_fixture; rm -rf "${tmp}"' EXIT
-python3 - "${apply_fixture}/kernel-pin.env" <<'PY'
+cp "${ROOT}/kernel-pin.env" "${apply_fixture}/kernel-pin.env"
+python3 - "${apply_fixture}/kernel-pin.env" "${KERNEL_COMMIT}" <<'PY'
 from pathlib import Path
 import sys
 
 pin = Path(sys.argv[1])
 text = pin.read_text()
 text = text.replace(
-    'KERNEL_COMMIT="8d3ae59288f1e7d58d76558a6ee96d533bc5019f"',
+    f'KERNEL_COMMIT="{sys.argv[2]}"',
     'KERNEL_COMMIT="deadbeefdeadbeefdeadbeefdeadbeefdeadbeef"',
 )
 pin.write_text(text)
@@ -127,7 +135,7 @@ PY
 done
 fake_kernel="${tmp}/fake-kernel"
 mkdir -p "${fake_kernel}"
-(cd "${fake_kernel}" && GIT_MASTER=1 git init -q && GIT_MASTER=1 git config user.name test && GIT_MASTER=1 git config user.email test@example.invalid && touch placeholder && GIT_MASTER=1 git add placeholder && GIT_MASTER=1 git commit -q -m initial && GIT_MASTER=1 git tag -a v7.2 -m v7.2)
+(cd "${fake_kernel}" && GIT_MASTER=1 git init -q && GIT_MASTER=1 git config user.name test && GIT_MASTER=1 git config user.email test@example.invalid && touch placeholder && GIT_MASTER=1 git add placeholder && GIT_MASTER=1 git commit -q -m initial && GIT_MASTER=1 git tag -a "${KERNEL_TAG}" -m "${KERNEL_TAG}")
 if (cd "${apply_fixture}" && scripts/apply.sh "${fake_kernel}") >"${tmp}/apply-failure.out" 2>&1; then
 	echo "FAIL apply-verification-failure: apply.sh unexpectedly succeeded" >&2
 	cat "${tmp}/apply-failure.out" >&2
