@@ -10,10 +10,10 @@ from tests import ROOT, load_script
 
 bs = load_script("build-series.py", "ceralive_build_series_island")
 
-RELEASE_TAG = "v2026.9.5"
-RELEASE_COMMIT = "836db6127239962183a38c9bf13e08c4ad99b05c"
+RELEASE_TAG = "v2026.11.0"
+RELEASE_COMMIT = "be51bf100a1335ceb783689b13d045e896117c80"
 RELEASE_ASSET_SHA256 = (
-    "364c4afd3ad6058c21fc3a9b78b0df7c553670e73010a965fde3d2ac0edc6e44"
+    "9837d111db63f02c577eef8f05041e586a72c0ecce2713591bfe044278152343"
 )
 SOURCE_FIXTURE = "0031-rk3588-media-island-drivers.patch"
 MERGED_MARKER_RE = re.compile(r"^commit [0-9a-f]{40} upstream\.$", re.MULTILINE)

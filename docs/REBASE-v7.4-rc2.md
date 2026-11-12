@@ -20,11 +20,11 @@ evidence. Board qualification happens at cutover, on both boards.
 | Rules file | None. No `rebase/v7.4-rc2.rules` exists: the only context drift hit two first-party members, revised in place (C26.1, C41.1) |
 | Active series | 27 members; slot total remains 51 |
 | Retirements in this bump | `0010`, `0011`, `0042`, `0043`, `0051`, each merged in `v7.4-rc1` |
-| Result | 26 of 27 members apply with plain `git am`; island member `0033` fails until the 7.4-line island release lands |
+| Result | All 27 members apply with plain `git am` through `scripts/apply.sh`, including every post-apply assertion, with island `v2026.11.0`; branch CI must confirm the pushed commit |
 
 ## Disposition table
 
-All 32 members of the `main` series (the series before this bump) were probed
+At the initial probe, before the island release update below, all 32 members of the `main` series (the series before this bump) were probed
 again, in order, against a clean `v7.4-rc2` tree. For each ordinal, the final
 text of every earlier active member was already applied. **pre** is the
 generated patch from `main`; **post** is the generated patch on this branch.
@@ -72,6 +72,19 @@ Every `pre rev` of `1` on a kept member shows its fix is not already in the
 base. Two drops, `0011` and `0051`, neither apply nor reverse-apply, so their
 retirement rests on the identity proof in the next section, not on an apply
 result.
+
+### Island release update, 2026-11-12
+
+| Lane | Current disposition | Evidence and remaining gates |
+|---|---|---|
+| Island `0031`-`0039` | KEEP, byte-preserved `v2026.11.0`, a 7.4-line pre-release at `be51bf100a1335ceb783689b13d045e896117c80` (`be51bf1`) | Published asset `rk3588-media-island-v2026.11.0.mbox.tar`, SHA-256 `9837d111db63f02c577eef8f05041e586a72c0ecce2713591bfe044278152343`; the independent verifier matches all nine members. `0033` now applies with the real lane. |
+
+IS-9 is in its after-publish state: the former `v2026.9.5` failure at `0033`
+is resolved by the published release. The real 27-member series passes
+`scripts/apply.sh` on pristine `v7.4-rc2`, including every post-apply assertion.
+Branch CI must still confirm the pushed commit before IS-9 is fully closed.
+Compile digests are added by plan todo 7. No board qualification is claimed.
+The initial disposition table above remains the historical pre-release probe.
 
 ## Hunk-by-hunk ledger
 

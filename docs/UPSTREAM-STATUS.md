@@ -179,7 +179,9 @@ a verified row from a skipped one.
 The active series now has 27 members across 51 slots. Ten standalone-rkvenc
 members moved byte-unchanged to `retired/` after `rk3588-media-island v2026.9.0`
 re-expressed their intent as maintained source and permanent tests. The nine
-island rows name the release components; their exact tag, commit and asset digest
+island rows carry `v2026.11.0`, the 7.4-line pre-release at
+`be51bf100a1335ceb783689b13d045e896117c80`, without a board qualification claim.
+Their exact tag, commit and asset digest
 are enforced in `scripts/build-series.py` and independently byte-verified by
 `scripts/verify-island-provenance.py`.
 
@@ -195,15 +197,15 @@ are enforced in `scripts/build-series.py` and independently byte-verified by
 | `0027` hdmirx SCDC ratio recovery | `ceralive/` | `first-party-no-upstream` | Mainline distinguishes absent SCDC data or adds equivalent recovery | 2026-08-26 | Active |
 | `0028` Rock 5B+ dual-role-power PDOs | `ceralive/` | `first-party-no-upstream` | Mainline carries equivalent fixed-PDO capability | 2026-08-27 | Active |
 | `0030` Orange Pi 5 Plus dual-role-power PDOs | `ceralive/` | `first-party-no-upstream` | Mainline carries equivalent fixed-PDO capability | 2026-08-27 | Active |
-| `0031` media-island maintained source | `island/` | `first-party-no-upstream` | A later island release replaces or removes this source component | 2026-09-19 | From `rk3588-media-island v2026.9.5` |
-| `0032` media-island build hooks | `island/` | `first-party-no-upstream` | Mainline integration removes the out-of-tree hooks | 2026-09-19 | From `rk3588-media-island v2026.9.5` |
-| `0033` Rockchip IOMMU provider exports | `island/` | `first-party-no-upstream` | Mainline exports equivalent provider APIs | 2026-09-19 | From `rk3588-media-island v2026.9.5` |
-| `0034` IOMMU DMA IOVA accessor | `island/` | `first-party-no-upstream` | Mainline exposes an equivalent accessor | 2026-09-19 | From `rk3588-media-island v2026.9.5` |
-| `0035` MPP encoder DT nodes | `island/` | `first-party-no-upstream` | Mainline owns the encoder nodes with a usable production ABI | 2026-09-19 | From `rk3588-media-island v2026.9.5` |
-| `0036` MPP decoder DT ownership | `island/` | `first-party-no-upstream` | Decoder ownership returns to a production-capable mainline driver | 2026-09-19 | From `rk3588-media-island v2026.9.5` |
-| `0037` MPP JPEG decoder DT node | `island/` | `first-party-no-upstream` | Mainline provides the required JPEG decode path | 2026-09-19 | From `rk3588-media-island v2026.9.5` |
-| `0038` RGA3 DT ownership | `island/` | `first-party-no-upstream` | Mainline provides a production-capable multi-core RGA driver | 2026-09-19 | From `rk3588-media-island v2026.9.5`; owns RGA3 core0 and core1 |
-| `0039` RGA2 DT ownership | `island/` | `first-party-no-upstream` | Mainline provides a production-capable RGA2 driver | 2026-09-19 | From `rk3588-media-island v2026.9.5`; owns RGA2 |
+| `0031` media-island maintained source | `island/` | `first-party-no-upstream` | A later island release replaces or removes this source component | 2026-11-12 | From `rk3588-media-island v2026.11.0` |
+| `0032` media-island build hooks | `island/` | `first-party-no-upstream` | Mainline integration removes the out-of-tree hooks | 2026-11-12 | From `rk3588-media-island v2026.11.0` |
+| `0033` Rockchip IOMMU provider exports | `island/` | `first-party-no-upstream` | Mainline exports equivalent provider APIs | 2026-11-12 | From `rk3588-media-island v2026.11.0` |
+| `0034` IOMMU DMA IOVA accessor | `island/` | `first-party-no-upstream` | Mainline exposes an equivalent accessor | 2026-11-12 | From `rk3588-media-island v2026.11.0` |
+| `0035` MPP encoder DT nodes | `island/` | `first-party-no-upstream` | Mainline owns the encoder nodes with a usable production ABI | 2026-11-12 | From `rk3588-media-island v2026.11.0` |
+| `0036` MPP decoder DT ownership | `island/` | `first-party-no-upstream` | Decoder ownership returns to a production-capable mainline driver | 2026-11-12 | From `rk3588-media-island v2026.11.0` |
+| `0037` MPP JPEG decoder DT node | `island/` | `first-party-no-upstream` | Mainline provides the required JPEG decode path | 2026-11-12 | From `rk3588-media-island v2026.11.0` |
+| `0038` RGA3 DT ownership | `island/` | `first-party-no-upstream` | Mainline provides a production-capable multi-core RGA driver | 2026-11-12 | From `rk3588-media-island v2026.11.0`; owns RGA3 core0 and core1 |
+| `0039` RGA2 DT ownership | `island/` | `first-party-no-upstream` | Mainline provides a production-capable RGA2 driver | 2026-11-12 | From `rk3588-media-island v2026.11.0`; owns RGA2 |
 | `0040` HDMI-RX streaming EDID guard | `ceralive/` | `first-party-no-upstream` | Equivalent guard merges and the pinned base absorbs it | 2026-09-05 | Send upstream; rejects writes and clears before mutation; shared `stream->vlock` serializes ioctls; board gate deferred, see `EDID-STREAMING-GUARD.md` |
 | `0041` HDMI-RX AVI colorimetry on the capture format | `ceralive/` | `first-party-no-upstream` | The base reports source colorimetry instead of a hardcoded sRGB | 2026-09-05 | **Send upstream.** `hdmirx_set_fmt()` hardcoded sRGB/DEFAULT; the AVI InfoFrame's C, EC, Q and YQ were unpacked and discarded. Mapping is one pure function, unit-tested row by row in `tests/test_hdmirx_avi_colorimetry.py`; `rk_hdmirx.c` is the behavioural reference, no vendor code copied. Timing and format selection untouched; board gate deferred |
 | `0044` RK3588 shared HDMI-IN card | `backports/` | `sent-v4` | Posting merges and the base absorbs it | 2026-09-05 | Canonical v4 3/4; RK3588 HDMI-IN |

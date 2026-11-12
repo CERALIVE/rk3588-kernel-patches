@@ -14,7 +14,7 @@ are preserved in the [agent contract index](docs/agents/README.md).
 | **Target kernel** | `v7.4-rc2` (`7475ea8b58616b33c04afb976cf0fbaad9dd63fb`) on the `rebase/v7.4` branch; production `main` stays on `v7.2` until cutover |
 | **Why that kernel** | The newest 7.4 tag when this rebase started, pinned ahead of the final release so the series is ready when 7.4 ships; `KERNEL_MAJOR_MINOR=7.4`, derived in [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md). The pin moves to `v7.4` final through the rc-to-final refresh in [`docs/REBASE-v7.4-rc2.md`](docs/REBASE-v7.4-rc2.md#rc-to-final-refresh). |
 | **Boards** | Radxa Rock 5B+, Orange Pi 5+ (both `BOARDFAMILY=rockchip-rk3588`) |
-| **Status** | **27 active members across 51 slots**, targeting `v7.4-rc2`; 26 apply with plain `git am`, and island member `0033` waits for the 7.4-line island release ([ledger](docs/REBASE-v7.4-rc2.md)). Nine byte-verified members carry `rk3588-media-island v2026.9.5`, which closes an RGA job-lifecycle race that could corrupt memory under sustained composition load. Rock 5B+ `edge-test` qualification passed on 2026-09-19 (8 clean + 8 engine-restart cycles + a 300 s soak with encoder/decoder/RGA loaded, no kernel fault report) and the board was restored to production. |
+| **Status** | **27 active members across 51 slots** apply with plain `git am` to `v7.4-rc2` ([ledger](docs/REBASE-v7.4-rc2.md)). Nine byte-verified members carry `rk3588-media-island v2026.11.0`, a 7.4-line pre-release at `be51bf100a1335ceb783689b13d045e896117c80`. Compile digests are added by plan todo 7; no board qualification is claimed for this lane. |
 
 ## What's in the series
 
