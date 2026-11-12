@@ -367,7 +367,15 @@ and a tree that builds is not a board that works.
 
 ## rc-to-final refresh
 
-Run this for the next rc or for `v7.4` final, in this order.
+Run this for the next rc or for `v7.4` final, in this order. Set these three
+absolute paths once in the shell you use for every step; each block below
+changes into the checkout it needs, so the blocks run in order as written:
+
+```sh
+CONSUMER=<absolute path of this repository's checkout, on rebase/v7.4>
+ISLAND=<absolute path of an rk3588-media-island checkout, on release/linux-7.4>
+LINUX=<absolute path of a kernel clone that has the new tag>
+```
 
 1. **Consumer pin.** Resolve the new tag on every remote and require one tag
    object and one peeled commit:
@@ -396,6 +404,7 @@ Run this for the next rc or for `v7.4` final, in this order.
 3. **Consumer regenerate and push.**
 
    ```sh
+   cd "$CONSUMER"
    python3 scripts/build-series.py
    python3 scripts/build-series.py --check
    git mv docs/REBASE-v7.4-rc2.md docs/REBASE-<new-tag>.md
@@ -416,8 +425,9 @@ Run this for the next rc or for `v7.4` final, in this order.
    tag, and that the island series is still generated and in parity:
 
    ```sh
-   # island checkout; $LINUX is a kernel clone that has <new-tag>
+   cd "$ISLAND"
    $EDITOR kernel-pin.env
+   TREE="$(mktemp -d)/linux"
    git -C "$LINUX" worktree add --detach "$TREE" <new-commit>
    git -C "$TREE" am "$ISLAND"/patches/*.patch
    python3 scripts/build-series.py --check
@@ -432,6 +442,7 @@ Run this for the next rc or for `v7.4` final, in this order.
    pin from step 3, then run the island `AGENTS.md` COMMANDS:
 
    ```sh
+   cd "$ISLAND"
    until curl -fsSL https://raw.githubusercontent.com/CERALIVE/rk3588-kernel-patches/rebase/v7.4/kernel-pin.env \
      | grep -qx 'KERNEL_TAG="<new-tag>"'; do sleep 30; done
    shellcheck -S style -e SC1091 -x tests/board/*.sh tests/board/lib/*.sh scripts/*.sh
@@ -485,6 +496,7 @@ Run this for the next rc or for `v7.4` final, in this order.
    member's slug changed, `git mv` the old file first:
 
    ```sh
+   cd "$CONSUMER"
    T=$(mktemp -d)
    gh release download v<CalVer> --repo CERALIVE/rk3588-media-island \
      --pattern '*.mbox.tar' --dir "$T"
@@ -503,6 +515,7 @@ Run this for the next rc or for `v7.4` final, in this order.
    assertions passing:
 
    ```sh
+   cd "$CONSUMER"
    python3 scripts/build-series.py --check
    python3 scripts/verify-payload-parity.py
    python3 scripts/verify-island-provenance.py
@@ -516,24 +529,31 @@ Run this for the next rc or for `v7.4` final, in this order.
    ```
 
    Then rebuild the kernel from the verified tree with the recipe in
-   [Compile evidence](#compile-evidence). `$FRAGMENT` is
-   `manifests/kernel/rk3588-edge.fragment` from image-building-pipeline; record
-   the image commit you take it from:
+   [Compile evidence](#compile-evidence). Set `FRAGMENT` to the absolute path of
+   `manifests/kernel/rk3588-edge.fragment` in an image-building-pipeline
+   checkout, and record the image commit you take it from. `scripts/apply.sh`
+   clones the verified tree into the new absolute `KTREE` path. The build runs
+   in a subshell, so the shell stays in the consumer checkout afterwards:
 
    ```sh
-   set -o pipefail
+   cd "$CONSUMER"
+   FRAGMENT=<absolute path of manifests/kernel/rk3588-edge.fragment>
+   KTREE="$(mktemp -d)/linux"
    scripts/apply.sh --keep "$KTREE"
-   cd "$KTREE"
-   make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
-   scripts/kconfig/merge_config.sh -m .config "$FRAGMENT"
-   make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
-   nice -n 19 make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
-     Image modules rockchip/rk3588-rock-5b-plus.dtb rockchip/rk3588-orangepi-5-plus.dtb 2>&1 | tee build.log
-   rm -- arch/arm64/boot/dts/rockchip/rk3588-rock-5b-plus.dtb arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dtb
-   nice -n 19 make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CHECK_DTBS=y \
-     rockchip/rk3588-rock-5b-plus.dtb rockchip/rk3588-orangepi-5-plus.dtb 2>&1 | tee dtbs_check.log
-   sha256sum .config arch/arm64/boot/dts/rockchip/rk3588-rock-5b-plus.dtb \
-     arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dtb build.log dtbs_check.log
+   (
+     set -eo pipefail
+     cd "$KTREE"
+     make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+     scripts/kconfig/merge_config.sh -m .config "$FRAGMENT"
+     make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+     nice -n 19 make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+       Image modules rockchip/rk3588-rock-5b-plus.dtb rockchip/rk3588-orangepi-5-plus.dtb 2>&1 | tee build.log
+     rm -- arch/arm64/boot/dts/rockchip/rk3588-rock-5b-plus.dtb arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dtb
+     nice -n 19 make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CHECK_DTBS=y \
+       rockchip/rk3588-rock-5b-plus.dtb rockchip/rk3588-orangepi-5-plus.dtb 2>&1 | tee dtbs_check.log
+     sha256sum .config arch/arm64/boot/dts/rockchip/rk3588-rock-5b-plus.dtb \
+       arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dtb build.log dtbs_check.log
+   )
    ```
 
    Add both compile digests (`build.log` and `dtbs_check.log`) and the artifact
@@ -541,6 +561,7 @@ Run this for the next rc or for `v7.4` final, in this order.
    push-triggered `patch-apply` run to conclude `success` at that head:
 
    ```sh
+   cd "$CONSUMER"
    git push origin rebase/v7.4
    gh run list --repo CERALIVE/rk3588-kernel-patches --branch rebase/v7.4 \
      --workflow patch-apply --limit 1 --json headSha,conclusion
@@ -631,11 +652,16 @@ Until cutover, island `main` and this repository's `main` stay releasable for
 `rebase/v7.4` or `release/linux-7.4` blocks it. Carry the same fix onto the 7.4
 branches afterwards if it still applies.
 
-One catch on the island side: island `main`'s shellcheck gate is red under the
-hosted ShellCheck `0.11.0`, which reports SC2329 for the deliberately uncalled
-`wait()` sentinel in `tests/board/fault-matrix.sh` (local `0.10.0` passes).
-The island's v7.4 ledger records this failure as inherited from `main`. A 7.2
-fix PR or release on island `main` must therefore first carry the
+One catch on the island side. The hosted ShellCheck `0.11.0` job failed with
+SC2329 for the deliberately uncalled `wait()` sentinel in
+`tests/board/fault-matrix.sh` on island `release/linux-7.4`: `ci` run
+`42971229300` at `b4d430db10a1377222983d1c739623566a6f3311`, and run
+`42980524397` at `a9dd8eb0820429a3e56b29dad8f280390f8ac6c4` (local `0.10.0`
+passes). Island `main`'s copy of that file is byte-identical
+(`git diff 63609f5 b4d430d -- tests/board/fault-matrix.sh` is empty), so a
+`main` CI run is expected to fail the same way. No run on `main` itself has
+shown it yet. A 7.2 fix PR or release on island `main` must therefore first
+carry the
 declaration-scoped annotation from island commit
 [`8cdbdcb`](https://github.com/CERALIVE/rk3588-media-island/commit/8cdbdcb371197849b4ab25ee231a24b5f56bc2fe),
 which adds SC2329 to that declaration's existing SC2317 annotation and changes

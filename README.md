@@ -406,7 +406,9 @@ for its software evidence and the unchanged MPP-checker limitation. Its historic
 Rock 5B+ `edge-test` qualification passed on 2026-09-19 with encoder, decoder and RGA all
 loaded — 8 clean composition cycles, 8 engine-restart cycles and a 300 s soak
 with no kernel fault report. Those results apply only to that historical release;
-no board qualification or compile result is claimed for `v2026.11.0`.
+no board qualification is claimed for `v2026.11.0`. Its real-lane compile
+receipts (both builds, their digests and the accepted image findings) are in
+the ledger's [Compile evidence](docs/REBASE-v7.4-rc2.md#compile-evidence) section.
 This repository proves asset provenance and patch
 application, not hardware behavior. A bounded re-reset is not a qualified
 recovery path.
