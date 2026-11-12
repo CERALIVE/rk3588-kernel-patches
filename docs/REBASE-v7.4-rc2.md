@@ -367,14 +367,21 @@ and a tree that builds is not a board that works.
 
 ## rc-to-final refresh
 
-Run this for the next rc or for `v7.4` final, in this order. Set these three
-absolute paths once in the shell you use for every step; each block below
-changes into the checkout it needs, so the blocks run in order as written:
+Run this for the next rc or for `v7.4` final, in this order. Paste the setup
+block once into the shell you use for every step and fill in each value. Its
+last line stops with an error that names any value left empty, and every later
+block repeats the check for the values it uses. Each block changes into the
+checkout it needs, so the blocks run in order as written:
 
 ```sh
-CONSUMER=<absolute path of this repository's checkout, on rebase/v7.4>
-ISLAND=<absolute path of an rk3588-media-island checkout, on release/linux-7.4>
-LINUX=<absolute path of a kernel clone that has the new tag>
+CONSUMER=   # absolute path of this repository's checkout, on rebase/v7.4
+ISLAND=     # absolute path of an rk3588-media-island checkout, on release/linux-7.4
+LINUX=      # absolute path of a kernel clone that has the new tag
+NEW_TAG=    # the new kernel tag that step 1 resolves, for example v7.4
+CALVER=     # the new island release version, YYYY.MINOR.PATCH with no leading v
+FRAGMENT=   # absolute path of manifests/kernel/rk3588-edge.fragment in an image-building-pipeline checkout
+: "${CONSUMER:?set CONSUMER}" "${ISLAND:?set ISLAND}" "${LINUX:?set LINUX}" \
+  "${NEW_TAG:?set NEW_TAG}" "${CALVER:?set CALVER}" "${FRAGMENT:?set FRAGMENT}"
 ```
 
 1. **Consumer pin.** Resolve the new tag on every remote and require one tag
@@ -404,31 +411,47 @@ LINUX=<absolute path of a kernel clone that has the new tag>
 3. **Consumer regenerate and push.**
 
    ```sh
+   : "${CONSUMER:?run the setup block first}" "${NEW_TAG:?run the setup block first}"
    cd "$CONSUMER"
+   OLD_TAG=$(git show HEAD:kernel-pin.env | sed -n 's/^KERNEL_TAG="\(.*\)"$/\1/p')
+   : "${OLD_TAG:?KERNEL_TAG not found in the committed kernel-pin.env}"
+   grep -qx "KERNEL_TAG=\"$NEW_TAG\"" kernel-pin.env || echo "error: kernel-pin.env does not pin $NEW_TAG; finish step 1" >&2
+   git mv "docs/REBASE-$OLD_TAG.md" "docs/REBASE-$NEW_TAG.md"
+   if [ -e "rebase/$OLD_TAG.rules" ]; then git mv "rebase/$OLD_TAG.rules" "rebase/$NEW_TAG.rules"; fi
    python3 scripts/build-series.py
    python3 scripts/build-series.py --check
-   git mv docs/REBASE-v7.4-rc2.md docs/REBASE-<new-tag>.md
-   # only if a rules file exists for the old tag:
-   git mv rebase/v7.4-rc2.rules rebase/<new-tag>.rules
-   git commit
+   git add -- kernel-pin.env patches   # also add every member revised in step 2
+   git commit -m "pin: target $NEW_TAG for the 7.4 rebase"
    git push origin rebase/v7.4
    ```
 
+   `OLD_TAG` comes from the committed pin, which step 1 has not changed yet.
    `patches/series` embeds the kernel coordinates and `scripts/apply.sh` checks
    series integrity first, so regeneration belongs in the same commit. The new
    pin must be on GitHub before any island step.
-4. **Island mirror and conflicts.** In an island checkout on
-   `release/linux-7.4`, copy `KERNEL_TAG`, `KERNEL_TAG_OBJECT`, `KERNEL_COMMIT`
-   and `KERNEL_MIRROR` from this repository's `kernel-pin.env` into the island's
-   `kernel-pin.env`. Leave `CONSUMER_PIN_REF="rebase/v7.4"` as it is. Then prove
-   every island member applies with plain `git am` on a clean tree at the new
-   tag, and that the island series is still generated and in parity:
+4. **Island mirror and conflicts.** In the island checkout, replace the four
+   lines `KERNEL_TAG`, `KERNEL_TAG_OBJECT`, `KERNEL_COMMIT` and `KERNEL_MIRROR`
+   of `kernel-pin.env` with the same four lines from this repository's
+   `kernel-pin.env`. Whole lines are copied, so their trailing comments match
+   too, and every other island line, including `CONSUMER_PIN_REF="rebase/v7.4"`,
+   stays as it is. The `diff` must print nothing. Then prove every island member
+   applies with plain `git am` on a clean tree at the new tag, and that the
+   island series is still generated and in parity:
 
    ```sh
+   : "${CONSUMER:?run the setup block first}" "${ISLAND:?run the setup block first}" \
+     "${LINUX:?run the setup block first}" "${NEW_TAG:?run the setup block first}"
    cd "$ISLAND"
-   $EDITOR kernel-pin.env
+   PIN_KEYS='^KERNEL_(TAG|TAG_OBJECT|COMMIT|MIRROR)='
+   awk -v keys="$PIN_KEYS" 'NR == FNR { if ($0 ~ keys) { split($0, kv, "="); pin[kv[1]] = $0 } next }
+     { split($0, kv, "="); if ($0 ~ keys && (kv[1] in pin)) { print pin[kv[1]]; next } print }' \
+     "$CONSUMER/kernel-pin.env" kernel-pin.env > kernel-pin.env.new && mv -- kernel-pin.env.new kernel-pin.env
+   diff <(grep -E "$PIN_KEYS" "$CONSUMER/kernel-pin.env") <(grep -E "$PIN_KEYS" kernel-pin.env)
+   grep -qx "KERNEL_TAG=\"$NEW_TAG\"" kernel-pin.env || echo "error: the island mirror does not pin $NEW_TAG" >&2
+   NEW_COMMIT=$(sed -n 's/^KERNEL_COMMIT="\([0-9a-f]\{40\}\)".*/\1/p' kernel-pin.env)
+   : "${NEW_COMMIT:?KERNEL_COMMIT not found in kernel-pin.env}"
    TREE="$(mktemp -d)/linux"
-   git -C "$LINUX" worktree add --detach "$TREE" <new-commit>
+   git -C "$LINUX" worktree add --detach "$TREE" "$NEW_COMMIT"
    git -C "$TREE" am "$ISLAND"/patches/*.patch
    python3 scripts/build-series.py --check
    python3 scripts/verify-series-parity.py
@@ -442,9 +465,10 @@ LINUX=<absolute path of a kernel clone that has the new tag>
    pin from step 3, then run the island `AGENTS.md` COMMANDS:
 
    ```sh
+   : "${ISLAND:?run the setup block first}" "${NEW_TAG:?run the setup block first}"
    cd "$ISLAND"
    until curl -fsSL https://raw.githubusercontent.com/CERALIVE/rk3588-kernel-patches/rebase/v7.4/kernel-pin.env \
-     | grep -qx 'KERNEL_TAG="<new-tag>"'; do sleep 30; done
+     | grep -qx "KERNEL_TAG=\"$NEW_TAG\""; do sleep 30; done
    shellcheck -S style -e SC1091 -x tests/board/*.sh tests/board/lib/*.sh scripts/*.sh
    bash scripts/check-rga-memory.sh
    for script in tests/board/*.sh tests/dt/*.sh; do bash "$script" --self-test || exit; done
@@ -460,10 +484,11 @@ LINUX=<absolute path of a kernel clone that has the new tag>
    python3 -m unittest discover -s tests/uapi -v
    make -C tests/board CROSS_COMPILE=aarch64-linux-gnu- clean all
    make -C tests/board selftest
-   git commit
+   git add -- kernel-pin.env patches   # also add every source re-anchored in step 4
+   git commit -m "ci: mirror the $NEW_TAG kernel pin"
    git push origin release/linux-7.4
    gh run list --repo CERALIVE/rk3588-media-island --branch release/linux-7.4 \
-     --workflow ci --limit 1 --json headSha,conclusion
+     --workflow ci --commit "$(git rev-parse HEAD)" --json headSha,status,conclusion
    ```
 
    Continue only when that `ci` run concludes `success` at the pushed head.
@@ -476,45 +501,64 @@ LINUX=<absolute path of a kernel clone that has the new tag>
    builds the asset but publishes nothing:
 
    ```sh
+   : "${CALVER:?run the setup block first}"
    gh workflow run release.yml --repo CERALIVE/rk3588-media-island \
-     --ref release/linux-7.4 -f version=<CalVer> -f publish=false
+     --ref release/linux-7.4 -f version="$CALVER" -f publish=false
    ```
 
    Publishing is owner-gated. Before the next command, explain to the owner
-   what it does: it claims tag `v<CalVer>` at the verified `release/linux-7.4`
+   what it does: it claims tag `v$CALVER` at the verified `release/linux-7.4`
    commit and uploads the asset as a non-latest pre-release. A published tag is
    immutable, it can't be moved or reused, and this repository then pins its
    digest. Wait for the owner's explicit go-ahead. Never dispatch it without one:
 
    ```sh
+   : "${CALVER:?run the setup block first}"
    gh workflow run release.yml --repo CERALIVE/rk3588-media-island \
-     --ref release/linux-7.4 -f version=<CalVer> -f publish=true
+     --ref release/linux-7.4 -f version="$CALVER" -f publish=true
    ```
 
    Then move this repository's island lane to the new release in one commit.
    Asset members `0001`-`0009` become `island/0031`-`0039` byte for byte; if a
-   member's slug changed, `git mv` the old file first:
+   member's slug changed, `git mv` the old file first. The old tag, source
+   commit and asset SHA-256 are read from `scripts/verify-island-provenance.py:19-24`
+   and replaced by the new ones in all nine `Island(...)` entries in
+   `scripts/build-series.py`, in `TAG`, `COMMIT` and `ASSET_SHA256` there, and
+   in `RELEASE_TAG`, `RELEASE_COMMIT` and `RELEASE_ASSET_SHA256` in
+   `tests/test_island_lane.py`. The release's source commit comes from its
+   tag; its `targetCommitish` only names a branch. The `grep -c` must report
+   `9`, `1` and `1`:
 
    ```sh
+   : "${CONSUMER:?run the setup block first}" "${ISLAND:?run the setup block first}" \
+     "${CALVER:?run the setup block first}" "${NEW_TAG:?run the setup block first}"
    cd "$CONSUMER"
    T=$(mktemp -d)
-   gh release download v<CalVer> --repo CERALIVE/rk3588-media-island \
+   gh release download "v$CALVER" --repo CERALIVE/rk3588-media-island \
      --pattern '*.mbox.tar' --dir "$T"
-   sha256sum "$T"/rk3588-media-island-v<CalVer>.mbox.tar
-   tar -xf "$T"/rk3588-media-island-v<CalVer>.mbox.tar -C "$T"
+   NEW_ISHA=$(sha256sum "$T/rk3588-media-island-v$CALVER.mbox.tar" | cut -d' ' -f1)
+   git -C "$ISLAND" fetch origin "refs/tags/v$CALVER:refs/tags/v$CALVER"
+   NEW_ICOMMIT=$(git -C "$ISLAND" rev-parse "v$CALVER^{commit}")
+   tar -xf "$T/rk3588-media-island-v$CALVER.mbox.tar" -C "$T"
    for f in "$T"/000[1-9]-*.patch; do n=${f##*/}; cp -- "$f" "island/003${n:3:1}-${n#*-}"; done
+   OLD_ITAG=$(sed -n 's/^TAG: Final = "\(.*\)"$/\1/p' scripts/verify-island-provenance.py)
+   OLD_ICOMMIT=$(sed -n 's/^COMMIT: Final = "\([0-9a-f]\{40\}\)"$/\1/p' scripts/verify-island-provenance.py)
+   OLD_ISHA=$(sed -n '/^ASSET_SHA256: Final = ($/{n;s/^ *"\([0-9a-f]\{64\}\)"$/\1/p;}' scripts/verify-island-provenance.py)
+   : "${OLD_ITAG:?}" "${OLD_ICOMMIT:?}" "${OLD_ISHA:?}" "${NEW_ISHA:?}" "${NEW_ICOMMIT:?}"
+   LANE_FILES=(scripts/build-series.py scripts/verify-island-provenance.py tests/test_island_lane.py)
+   sed -i -e "s/\"${OLD_ITAG//./\\.}\"/\"v$CALVER\"/g" -e "s/$OLD_ICOMMIT/$NEW_ICOMMIT/g" \
+     -e "s/$OLD_ISHA/$NEW_ISHA/g" "${LANE_FILES[@]}"
+   grep -c -F "$NEW_ICOMMIT" "${LANE_FILES[@]}"
+   python3 scripts/build-series.py
+   git add -- island patches "${LANE_FILES[@]}"
+   git commit -m "island: carry rk3588-media-island v$CALVER for $NEW_TAG"
    ```
-
-   Set the new tag, source commit and asset SHA-256 in all nine `Island(...)`
-   entries in `scripts/build-series.py`, in `TAG`, `COMMIT` and `ASSET_SHA256`
-   at `scripts/verify-island-provenance.py:19-24`, and in `RELEASE_TAG`,
-   `RELEASE_COMMIT` and `RELEASE_ASSET_SHA256` in `tests/test_island_lane.py`.
-   Regenerate the headers with `python3 scripts/build-series.py`.
 7. **Consumer gates.** On the real island lane, run every command in
    `AGENTS.md` COMMANDS. `scripts/apply.sh` must exit 0 with all post-apply
    assertions passing:
 
    ```sh
+   : "${CONSUMER:?run the setup block first}"
    cd "$CONSUMER"
    python3 scripts/build-series.py --check
    python3 scripts/verify-payload-parity.py
@@ -529,15 +573,15 @@ LINUX=<absolute path of a kernel clone that has the new tag>
    ```
 
    Then rebuild the kernel from the verified tree with the recipe in
-   [Compile evidence](#compile-evidence). Set `FRAGMENT` to the absolute path of
-   `manifests/kernel/rk3588-edge.fragment` in an image-building-pipeline
-   checkout, and record the image commit you take it from. `scripts/apply.sh`
-   clones the verified tree into the new absolute `KTREE` path. The build runs
-   in a subshell, so the shell stays in the consumer checkout afterwards:
+   [Compile evidence](#compile-evidence). `FRAGMENT` from the setup block is
+   the image fragment; record the image commit you take it from.
+   `scripts/apply.sh` clones the verified tree into the new absolute `KTREE`
+   path. The build runs in a subshell, so the shell stays in the consumer
+   checkout afterwards:
 
    ```sh
+   : "${CONSUMER:?run the setup block first}" "${FRAGMENT:?run the setup block first}"
    cd "$CONSUMER"
-   FRAGMENT=<absolute path of manifests/kernel/rk3588-edge.fragment>
    KTREE="$(mktemp -d)/linux"
    scripts/apply.sh --keep "$KTREE"
    (
@@ -561,10 +605,13 @@ LINUX=<absolute path of a kernel clone that has the new tag>
    push-triggered `patch-apply` run to conclude `success` at that head:
 
    ```sh
+   : "${CONSUMER:?run the setup block first}" "${NEW_TAG:?run the setup block first}"
    cd "$CONSUMER"
+   git add -- "docs/REBASE-$NEW_TAG.md"
+   git commit -m "docs: add $NEW_TAG compile receipts to the rebase ledger"
    git push origin rebase/v7.4
    gh run list --repo CERALIVE/rk3588-kernel-patches --branch rebase/v7.4 \
-     --workflow patch-apply --limit 1 --json headSha,conclusion
+     --workflow patch-apply --commit "$(git rev-parse HEAD)" --json headSha,status,conclusion
    ```
 
 ## Cutover runbook
@@ -592,10 +639,11 @@ Run in this order. Nothing here happens before 7.4 is the production target.
    1. **Production island release (owner decision at cutover).** Every 7.4-line
       release so far is a non-latest pre-release cut from `release/linux-7.4`,
       and island Latest is still `v2026.9.5`. The owner chooses which release
-      production pins:
+      production pins. In the commands below, `CALVER` is that release's
+      version, set as in the refresh setup block:
       - **A. Promote the branch release.** At cutover, flip the release cut
         from the branch at the final pin to Latest
-        (`gh release edit v<CalVer> --repo CERALIVE/rk3588-media-island --prerelease=false --latest`).
+        (`gh release edit "v${CALVER:?set CALVER}" --repo CERALIVE/rk3588-media-island --prerelease=false --latest`).
         This saves one consumer PR, because the lane merged in step 2 already
         names it. The costs: the branch-release exception carries into
         production, and the island PR in this step must land as a merge commit
@@ -604,7 +652,7 @@ Run in this order. Nothing here happens before 7.4 is the production target.
       - **B. Re-release from `main`.** Once this step has restored the
         main-only release flow, cut a Latest release from island `main` at the
         final pin
-        (`gh workflow run release.yml --repo CERALIVE/rk3588-media-island --ref main -f version=<CalVer> -f publish=false`,
+        (`gh workflow run release.yml --repo CERALIVE/rk3588-media-island --ref main -f version="${CALVER:?set CALVER}" -f publish=false`,
         then `publish=true` after the owner's explicit go-ahead). Then open one
         follow-up PR here that moves the island lane to it, with the lane bump
         from step 6 of the [rc-to-final refresh](#rc-to-final-refresh).
