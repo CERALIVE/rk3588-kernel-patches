@@ -1,12 +1,17 @@
 # Upstream status and retire-on-merge tracking
 
-**Base pin at last check:** `v7.2` — see [`kernel-pin.env`](../kernel-pin.env).
+**Base pin at last check:** `v7.4-rc2` on the `rebase/v7.4` branch, from
+[`kernel-pin.env`](../kernel-pin.env); production `main` stays on `v7.2` until
+cutover.
 **Last full sweep:** 2026-08-26, at the `v7.2` base. **Rows added since:** `0027`
 (2026-08-13), `0028`–`0030` (2026-08-27), the nine island release members
 `0031`–`0039` (2026-09-03), `0040`–`0049` — the EDID streaming guard, AVI
 colorimetry, and the HDMI-RX audio v4 backport plus its four first-party deltas
 (2026-09-05, PR #16 / `d95a630`) — and `0050`, the pmdomain idle-request unwind
-(2026-09-12).
+(2026-09-12). **Rows changed since:** `0029` retired (2026-11-04); `0010`,
+`0011`, `0042`, `0043` and `0051` retired at the `v7.4-rc2` rebase, each merged
+in `v7.4-rc1` (2026-11-11); and the island lane `0031`-`0039` moved to the
+7.4-line pre-release `v2026.11.0` (2026-11-12). None of these is a sweep.
 **Previous full sweep:** 2026-08-08, at the `v7.1.7` base.
 **Collabora window check, 2026-09-06 (2026-08-29 → 2026-09-06):** the
 `notes-for-rockchip-3588` GitLab commit API listed ten commits in the window and

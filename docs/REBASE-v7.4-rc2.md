@@ -408,7 +408,43 @@ FRAGMENT=   # absolute path of manifests/kernel/rk3588-edge.fragment in an image
    tag. Resolve any newly failing member by the lane law before anything else:
    a context revision ledgered hunk by hunk, as in C26.1, for `ceralive/`; a
    fresh fixup ordinal or STOP for `upstream/` and `backports/`.
-3. **Consumer regenerate and push.**
+3. **Consumer regenerate and push.** First bring the docs to the new tag. The
+   ledger is renamed below, so every link to it changes with it. This block
+   rewrites the mechanical parts: the ledger file name in every link, the
+   ledger's title and its **This base** row, filled from `kernel-pin.env`.
+   Then it lists each remaining line that names the old tag, outside the
+   historical ledgers and in the ledger's header and **Base** table:
+
+   ```sh
+   : "${CONSUMER:?run the setup block first}" "${NEW_TAG:?run the setup block first}"
+   cd "$CONSUMER"
+   OLD_TAG=$(git show HEAD:kernel-pin.env | sed -n 's/^KERNEL_TAG="\(.*\)"$/\1/p')
+   NEW_OBJECT=$(sed -n 's/^KERNEL_TAG_OBJECT="\([0-9a-f]\{40\}\)".*/\1/p' kernel-pin.env)
+   NEW_COMMIT=$(sed -n 's/^KERNEL_COMMIT="\([0-9a-f]\{40\}\)".*/\1/p' kernel-pin.env)
+   : "${OLD_TAG:?KERNEL_TAG not found in the committed kernel-pin.env}" \
+     "${NEW_OBJECT:?finish step 1}" "${NEW_COMMIT:?finish step 1}"
+   { git grep -l -z -F "REBASE-$OLD_TAG.md" -- README.md AGENTS.md docs ':!docs/REBASE-*.md' || :; } \
+     | xargs -0 -r sed -i "s/REBASE-${OLD_TAG//./\\.}\.md/REBASE-$NEW_TAG.md/g"
+   sed -i -e "1s/\`${OLD_TAG//./\\.}\`/\`$NEW_TAG\`/" \
+     -e "s/^| \*\*This base\*\* | .*/| **This base** | **\`$NEW_TAG\`**, tag object \`$NEW_OBJECT\`, commit \`$NEW_COMMIT\` |/" \
+     "docs/REBASE-$OLD_TAG.md"
+   git grep -n -F "$OLD_TAG" -- README.md AGENTS.md docs ':!docs/REBASE-*.md' || :
+   awk '/^## /{n++} n<2' "docs/REBASE-$OLD_TAG.md" | grep -n -F "$OLD_TAG" || :
+   ```
+
+   Each listed line needs a judgment edit. A line that names `$OLD_TAG` as the
+   current pin or base moves to `$NEW_TAG`, with the table row or paragraph
+   around it: today that's the README's **Target kernel**, **Status** and
+   series sections, `docs/PREFLIGHT.md`, the **Base pin at last check** line in
+   `docs/UPSTREAM-STATUS.md`, `docs/agents/key-facts.md`,
+   `docs/agents/role-in-the-group.md` and the ledger's **Rules file** row. At
+   `v7.4` final, also reword the sentences around those lines that call the pin
+   a release candidate. A line that records something finished at `$OLD_TAG`
+   stays as history: the five retirements, a probe or apply result, a dated
+   sweep, and the ledger's intro sentence about where the rebase started. The
+   ledger's **Result** row keeps its last receipt until step 7 records the new
+   run. Re-run the last two commands until they print only history. Then
+   regenerate, commit and push:
 
    ```sh
    : "${CONSUMER:?run the setup block first}" "${NEW_TAG:?run the setup block first}"
@@ -420,7 +456,9 @@ FRAGMENT=   # absolute path of manifests/kernel/rk3588-edge.fragment in an image
    if [ -e "rebase/$OLD_TAG.rules" ]; then git mv "rebase/$OLD_TAG.rules" "rebase/$NEW_TAG.rules"; fi
    python3 scripts/build-series.py
    python3 scripts/build-series.py --check
-   git add -- kernel-pin.env patches   # also add every member revised in step 2
+   git add -- kernel-pin.env patches README.md AGENTS.md docs/PREFLIGHT.md docs/UPSTREAM-STATUS.md \
+     docs/agents "docs/REBASE-$NEW_TAG.md"   # also add every member revised in step 2
+   git diff --quiet -- README.md AGENTS.md docs || echo "error: a changed doc is not staged" >&2
    git commit -m "pin: target $NEW_TAG for the 7.4 rebase"
    git push origin rebase/v7.4
    ```
@@ -460,7 +498,38 @@ FRAGMENT=   # absolute path of manifests/kernel/rk3588-edge.fragment in an image
    If `git am` stops on a member, run `git -C "$TREE" am --abort`, re-anchor
    that member's island source, regenerate with `python3 scripts/build-series.py`
    and repeat this step on a fresh tree.
-5. **Island gates.** The island CI compares its pin with this repository's
+5. **Island gates.** First bring the island docs to the new tag. The
+   island's `docs/REBASE-v7.4.md` keeps its name, but its links to this
+   repository's ledger on GitHub follow the step 3 rename. This block rewrites
+   those links and the island ledger's title, then lists each remaining line
+   that names the old tag, including the island ledger's header and **Base
+   coordinates** section:
+
+   ```sh
+   : "${ISLAND:?run the setup block first}" "${NEW_TAG:?run the setup block first}"
+   cd "$ISLAND"
+   OLD_TAG=$(git show HEAD:kernel-pin.env | sed -n 's/^KERNEL_TAG="\(.*\)"$/\1/p')
+   : "${OLD_TAG:?KERNEL_TAG not found in the committed island kernel-pin.env}"
+   { git grep -l -z -F "REBASE-$OLD_TAG.md" -- README.md AGENTS.md docs || :; } \
+     | xargs -0 -r sed -i "s/REBASE-${OLD_TAG//./\\.}\.md/REBASE-$NEW_TAG.md/g"
+   sed -i "1s/\`${OLD_TAG//./\\.}\`/\`$NEW_TAG\`/" docs/REBASE-v7.4.md
+   git grep -n -F "$OLD_TAG" -- README.md AGENTS.md docs ':!docs/REBASE-v7.4.md' || :
+   awk '/^## /{n++} n<2' docs/REBASE-v7.4.md | grep -n -F "$OLD_TAG" || :
+   ```
+
+   Each listed line needs a judgment edit. Lines that name `$OLD_TAG` as the
+   pinned kernel move to `$NEW_TAG`, the tag object and commit beside them
+   too: today the README's **Target kernel** row, `docs/REFERENCES.md`'s
+   baseline and `KERNEL_*` tables, the pinned tree in `docs/CI.md` and
+   `docs/OWNERSHIP.md` (re-read each mainline node it names at the new tag),
+   `docs/agents/key-facts.md`, `docs/agents/where-to-look.md`, and the island
+   ledger's intro, **Base coordinates** table and frozen-`$K` paragraph. Lines
+   that record something finished at `$OLD_TAG` stay as history: a dated
+   `docs/UPSTREAM-STATUS.md` sweep, the audit and probe results in the island
+   ledger, and a published release's kernel (the README's `v2026.11.0` status).
+   Re-run the last two commands until they print only history.
+
+   The island CI compares its pin with this repository's
    `kernel-pin.env` at `CONSUMER_PIN_REF`, so wait until GitHub serves the new
    pin from step 3, then run the island `AGENTS.md` COMMANDS:
 
@@ -484,7 +553,9 @@ FRAGMENT=   # absolute path of manifests/kernel/rk3588-edge.fragment in an image
    python3 -m unittest discover -s tests/uapi -v
    make -C tests/board CROSS_COMPILE=aarch64-linux-gnu- clean all
    make -C tests/board selftest
-   git add -- kernel-pin.env patches   # also add every source re-anchored in step 4
+   git add -- kernel-pin.env patches README.md docs/REFERENCES.md docs/CI.md docs/OWNERSHIP.md \
+     docs/UPSTREAM-STATUS.md docs/agents docs/REBASE-v7.4.md   # also add every source re-anchored in step 4
+   git diff --quiet -- README.md AGENTS.md docs || echo "error: a changed doc is not staged" >&2
    git commit -m "ci: mirror the $NEW_TAG kernel pin"
    git push origin release/linux-7.4
    gh run list --repo CERALIVE/rk3588-media-island --branch release/linux-7.4 \
@@ -518,6 +589,35 @@ FRAGMENT=   # absolute path of manifests/kernel/rk3588-edge.fragment in an image
      --ref release/linux-7.4 -f version="$CALVER" -f publish=true
    ```
 
+   Bring the docs that name the old island release to the new one first. This
+   block lists each line that names the old release tag or its source commit,
+   outside the historical ledgers and in this ledger's header, **Base** table
+   and disposition section, and prints the values that replace them:
+
+   ```sh
+   : "${CONSUMER:?run the setup block first}" "${ISLAND:?run the setup block first}" \
+     "${CALVER:?run the setup block first}" "${NEW_TAG:?run the setup block first}"
+   cd "$CONSUMER"
+   OLD_ITAG=$(sed -n 's/^TAG: Final = "\(.*\)"$/\1/p' scripts/verify-island-provenance.py)
+   OLD_ICOMMIT=$(sed -n 's/^COMMIT: Final = "\([0-9a-f]\{40\}\)"$/\1/p' scripts/verify-island-provenance.py)
+   : "${OLD_ITAG:?}" "${OLD_ICOMMIT:?}"
+   git -C "$ISLAND" fetch origin "refs/tags/v$CALVER:refs/tags/v$CALVER"
+   echo "replace $OLD_ITAG with v$CALVER and $OLD_ICOMMIT with $(git -C "$ISLAND" rev-parse "v$CALVER^{commit}")"
+   git grep -n -F -e "$OLD_ITAG" -e "${OLD_ICOMMIT:0:7}" -- README.md AGENTS.md docs ':!docs/REBASE-*.md' || :
+   awk '/^## /{n++} n<3' "docs/REBASE-$NEW_TAG.md" | grep -n -F -e "$OLD_ITAG" -e "${OLD_ICOMMIT:0:7}" || :
+   ```
+
+   Each listed line needs a judgment edit. A line that names the release the
+   lane carries now moves to `v$CALVER`, its commit and asset digest too:
+   today the README's **Status** row and island lane section,
+   `docs/agents/key-facts.md`, the island note and the nine `island/` rows of
+   `docs/UPSTREAM-STATUS.md` (with today's **Last checked** date), and the
+   ledger's **Result** row. Add a new dated **Island release update** table
+   for `v$CALVER` beside the old one. A line that records the earlier move
+   stays as history: the dated **Island release update** row and the **Rows
+   changed since** entry in `docs/UPSTREAM-STATUS.md`. Re-run the last two
+   commands until they print only history.
+
    Then move this repository's island lane to the new release in one commit.
    Asset members `0001`-`0009` become `island/0031`-`0039` byte for byte; if a
    member's slug changed, `git mv` the old file first. The old tag, source
@@ -550,7 +650,9 @@ FRAGMENT=   # absolute path of manifests/kernel/rk3588-edge.fragment in an image
      -e "s/$OLD_ISHA/$NEW_ISHA/g" "${LANE_FILES[@]}"
    grep -c -F "$NEW_ICOMMIT" "${LANE_FILES[@]}"
    python3 scripts/build-series.py
-   git add -- island patches "${LANE_FILES[@]}"
+   git add -- island patches "${LANE_FILES[@]}" README.md AGENTS.md docs/UPSTREAM-STATUS.md \
+     docs/agents "docs/REBASE-$NEW_TAG.md"
+   git diff --quiet -- README.md AGENTS.md docs || echo "error: a changed doc is not staged" >&2
    git commit -m "island: carry rk3588-media-island v$CALVER for $NEW_TAG"
    ```
 7. **Consumer gates.** On the real island lane, run every command in
@@ -621,7 +723,38 @@ Run in this order. Nothing here happens before 7.4 is the production target.
 1. The owner decides the 7.2 policy (see [Deferred 7.2 policy](#deferred-72-policy)).
 2. **Consumer first.** Open the PR from `rebase/v7.4` into this repository's
    `main`. Its island lane already names the 7.4-line island tag, so it needs
-   nothing from island `main`.
+   nothing from island `main`. Before opening it, rewrite on `rebase/v7.4` the
+   statements that are only true while 7.4 lives on a branch. This lists them,
+   with the ledger's header:
+
+   ```sh
+   : "${CONSUMER:?set CONSUMER as in the refresh setup block}"
+   cd "$CONSUMER"
+   TAG=$(sed -n 's/^KERNEL_TAG="\(.*\)"$/\1/p' kernel-pin.env)
+   : "${TAG:?KERNEL_TAG not found in kernel-pin.env}"
+   git grep -n -i -E 'rebase/v7\.4|this branch|until cutover|stays on .v7\.2|production base' \
+     -- README.md AGENTS.md docs/PREFLIGHT.md docs/UPSTREAM-STATUS.md docs/agents || :
+   awk '/^## /{n++} n<1' "docs/REBASE-$TAG.md"
+   ```
+
+   Today that's the README's **Target kernel** row, `docs/PREFLIGHT.md`'s pin
+   summary, the **Base pin at last check** line in `docs/UPSTREAM-STATUS.md`,
+   `docs/agents/role-in-the-group.md`, `docs/agents/key-facts.md`'s
+   release-candidate paragraph and the ledger's header: after the merge, `main`
+   carries 7.4. A statement about the production image stays true until step
+   4 lands, because the image still builds 7.2 from its pinned
+   `patches_commit`: keep it, or reword "production `main`" to "the production
+   image". Flip those image statements in a follow-up docs PR once step 4 has
+   landed. Commit and push the flip before opening the PR:
+
+   ```sh
+   : "${CONSUMER:?set CONSUMER as in the refresh setup block}" "${TAG:?run the block above first}"
+   cd "$CONSUMER"
+   git add -- README.md docs/PREFLIGHT.md docs/UPSTREAM-STATUS.md docs/agents "docs/REBASE-$TAG.md"
+   git diff --quiet -- README.md AGENTS.md docs || echo "error: a changed doc is not staged" >&2
+   git commit -m "docs: describe 7.4 as the main line"
+   git push origin rebase/v7.4
+   ```
 3. **Island second.** Open the PR from `release/linux-7.4` into island `main`,
    and in the same PR restore `CONSUMER_PIN_REF="main"`. This repository's
    `main` now carries the 7.4 coordinates, so pin-equality passes, and the
@@ -633,6 +766,30 @@ Run in this order. Nothing here happens before 7.4 is the production target.
    calls. Never remove the script alone: the main-merge guard fails if the flow
    still accepts only the branch ref.
    When the 7.4 line becomes main, drop `--prerelease` together with `--latest=false` and the other branch-scoped release rules in island `release.yml`, and update the release flag self-test expectations in `scripts/check-release-ref.sh`.
+
+   In the same PR, rewrite the island statements that are only true while 7.4
+   lives on `release/linux-7.4`. This lists them, with the island ledger's
+   header:
+
+   ```sh
+   : "${ISLAND:?set ISLAND as in the refresh setup block}"
+   cd "$ISLAND"
+   git grep -n -i -E 'release/linux-7\.4|rebase/v7\.4|this branch|owner exception|still mirrors|stays on .v7\.2|latest release|until cutover' \
+     -- README.md AGENTS.md docs ':!docs/REBASE-v7.4.md' || :
+   awk '/^## /{n++} n<1' docs/REBASE-v7.4.md
+   ```
+
+   Today that's the two dated owner exceptions in `AGENTS.md`, the README's
+   **Target kernel** and **Status** rows and its release steps, the release and
+   owner-exception sections of `docs/CI.md`, `docs/agents/ci.md`,
+   `docs/agents/pr-targeting.md`, the `release/linux-7.4` and `main` lines of
+   `docs/agents/key-facts.md`, and `docs/REFERENCES.md`'s mirror note. Rewrite
+   each to match the flow this PR leaves: the main-only flow if it is
+   restored, or the kept branch flow described as production. Island Latest
+   stays `v2026.9.5` until step 3.1 below changes it, so leave lines about
+   Latest until then. The island `AGENTS.md` must stay within the workspace
+   budget (`python3 scripts/check-agents-budget.py --repo "$ISLAND"` from a
+   `ceralive` checkout).
 
    Step 3 then takes two more actions, in this order:
 
