@@ -773,9 +773,9 @@ Run in this order. Nothing here happens before 7.4 is the production target.
    island's guard requires that value. In the same PR, restore the main-only
    release flow, which option B in step 3.1 needs: `scripts/check-release-ref.sh`
    accepts exactly `refs/heads/main` and its self-test expectations are
-   updated. Keeping the branch-scoped flow, by removing the main-merge guard
-   together with that script and its CI and release self-test calls, was the
-   alternative that option A would have needed; it isn't taken. Never remove
+   updated. The other way considered, keeping the branch-scoped flow by
+   removing the main-merge guard together with that script and its CI and
+   release self-test calls, isn't taken. Never remove
    the script alone: the main-merge guard fails if the flow still accepts only
    the branch ref.
    The same merge brings the release version hardening to island `main`:
