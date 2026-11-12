@@ -14,7 +14,7 @@ are preserved in the [agent contract index](docs/agents/README.md).
 | **Target kernel** | `v7.4-rc2` (`7475ea8b58616b33c04afb976cf0fbaad9dd63fb`) on the `rebase/v7.4` branch; production `main` stays on `v7.2` until cutover |
 | **Why that kernel** | The newest 7.4 tag when this rebase started, pinned ahead of the final release so the series is ready when 7.4 ships; `KERNEL_MAJOR_MINOR=7.4`, derived in [`docs/PREFLIGHT.md`](docs/PREFLIGHT.md). The pin moves to `v7.4` final through the rc-to-final refresh in [`docs/REBASE-v7.4-rc2.md`](docs/REBASE-v7.4-rc2.md#rc-to-final-refresh). |
 | **Boards** | Radxa Rock 5B+, Orange Pi 5+ (both `BOARDFAMILY=rockchip-rk3588`) |
-| **Status** | **27 active members across 51 slots** apply with plain `git am` to `v7.4-rc2` ([ledger](docs/REBASE-v7.4-rc2.md)). Nine byte-verified members carry `rk3588-media-island v2026.11.0`, a 7.4-line pre-release at `be51bf100a1335ceb783689b13d045e896117c80`. Compile digests are added by plan todo 7; no board qualification is claimed for this lane. |
+| **Status** | **27 active members across 51 slots** apply with plain `git am` to `v7.4-rc2` ([ledger](docs/REBASE-v7.4-rc2.md)). Nine byte-verified members carry `rk3588-media-island v2026.11.0`, a 7.4-line pre-release at `be51bf100a1335ceb783689b13d045e896117c80`. The push-triggered `patch-apply` run `43144636857` succeeded at `07d3e460309b929f445833dc9465bcaea15259d7`, and the real-lane compile receipts are in the [ledger](docs/REBASE-v7.4-rc2.md#compile-evidence); no board qualification is claimed for this lane. |
 
 ## What's in the series
 

@@ -1,8 +1,18 @@
 # Preflight — sovereign pin checks and Armbian mapping observations
 
-Everything in [`kernel-pin.env`](../kernel-pin.env) was **read out of Armbian's
+On this branch, [`kernel-pin.env`](../kernel-pin.env) pins **`v7.4-rc2`**, tag
+object `fd9230005e85472b81c1c7c16afe93dd878996b1`, commit
+`7475ea8b58616b33c04afb976cf0fbaad9dd63fb`. CeraLive selected that tag
+independently from kernel.org, as the newest 7.4 tag when the rebase started;
+it isn't derived from Armbian. The [v7.4 rebase ledger](REBASE-v7.4-rc2.md)
+records how it was resolved. Preflight accepts `vX.Y` and `vX.Y-rcN` tags and
+rejects stable point tags (`vX.Y.Z`).
+
+The sections from [Resolved on 2026-08-26](#resolved-on-2026-08-26) onward are
+historical. They record the earlier v7.2 pin, which was **read out of Armbian's
 own configuration at a recorded revision**, not copied from a wiki or from a
-previous investigation. This page shows the derivation so it can be re-checked.
+previous investigation, and show that derivation so it can be re-checked.
+Armbian's mapping stays an informational observation for the current pin.
 
 Re-run it yourself at any time:
 
@@ -36,8 +46,9 @@ Future work may support multiple concurrently-pinned kernel versions and move
 toward a self-managed kernel release/versioning scheme independent of any
 upstream distro branch. The intended model is similar to `librga` and
 `gstreamer-rockchip`: cut an upstream-style project release against an
-explicitly pinned commit. This note is documentation only; this repository
-still has one v7.2 pin.
+explicitly pinned commit. This note is documentation only; each branch of this
+repository still has exactly one pin: `main` on `v7.2`, `rebase/v7.4` on
+`v7.4-rc2`.
 
 ---
 
@@ -60,8 +71,12 @@ against `KERNEL_TAG`. Two consequences follow, and both are deliberate:
   built against. `preflight.sh` prints both values and never fails on them —
   making that an assertion would gate a real pin on an unrelated Armbian UI
   decision.
-- **We pin the final release where Armbian pins a release candidate.** See
+- **For 7.2 we pinned the final release where Armbian pinned a release
+  candidate.** See
   [Why the pin is `v7.2` and not `v7.2-rc7`](#why-the-pin-is-v72-and-not-v72-rc7).
+  The 7.4 rebase deliberately pins an rc ahead of the final release and moves
+  to `v7.4` final through the ledger's
+  [rc-to-final refresh](REBASE-v7.4-rc2.md#rc-to-final-refresh).
 
 ---
 

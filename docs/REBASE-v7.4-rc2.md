@@ -20,7 +20,7 @@ evidence. Board qualification happens at cutover, on both boards.
 | Rules file | None. No `rebase/v7.4-rc2.rules` exists: the only context drift hit two first-party members, revised in place (C26.1, C41.1) |
 | Active series | 27 members; slot total remains 51 |
 | Retirements in this bump | `0010`, `0011`, `0042`, `0043`, `0051`, each merged in `v7.4-rc1` |
-| Result | All 27 members apply with plain `git am` through `scripts/apply.sh`, including every post-apply assertion, with island `v2026.11.0`; branch CI must confirm the pushed commit |
+| Result | All 27 members apply with plain `git am` through `scripts/apply.sh`, including every post-apply assertion, with island `v2026.11.0`; the push-triggered `patch-apply` run `43144636857` succeeded at `07d3e460309b929f445833dc9465bcaea15259d7` |
 
 ## Disposition table
 
@@ -82,8 +82,10 @@ result.
 IS-9 is in its after-publish state: the former `v2026.9.5` failure at `0033`
 is resolved by the published release. The real 27-member series passes
 `scripts/apply.sh` on pristine `v7.4-rc2`, including every post-apply assertion.
-Branch CI must still confirm the pushed commit before IS-9 is fully closed.
-Compile digests are added by plan todo 7. No board qualification is claimed.
+The push-triggered `patch-apply` run `43144636857` succeeded at
+`07d3e460309b929f445833dc9465bcaea15259d7`, which confirms the pushed commit.
+The compile receipts for both builds are in
+[Compile evidence](#compile-evidence). No board qualification is claimed.
 The initial disposition table above remains the historical pre-release probe.
 
 ## Hunk-by-hunk ledger
@@ -172,8 +174,11 @@ has a disposition; "board" means a source read cannot settle it.
 
 The local kernel object store lacked the four v7.3 rockchip-iommu commits, so
 their patch text was read from the pinned GitHub commit URLs above and the
-tagged `v7.4-rc2` source was audited directly. Local ancestry of those four is
-not verified; the other ten are ancestors of this base and absent from `v7.2`.
+tagged `v7.4-rc2` source was audited directly. On 2026-11-12 the GitHub compare
+API (`gh api repos/torvalds/linux/compare/<sha>...<tag> --jq .status`) reported
+all four as ancestors of `v7.3` and `v7.4-rc2` (status `ahead`) and not of
+`v7.2` (status `diverged`). The other ten are ancestors of this base and absent
+from `v7.2`.
 
 ## Content check of retained audio deltas
 
@@ -349,8 +354,9 @@ qualify the production configuration:
   `43138493135` succeeded at `0d45095a52e9a81bc198ebbe76f3845de0f4abdc`,
   and `43141161364` succeeded at `7b2ab409ed31218017ecd6bd209ec22bacc5ce09`.
 - **DONE, todo 7 local proof:** real-lane apply, compile and negative receipts
-  above, with final-tree consumer gate receipts. The ledger-only push's new CI
-  result is tracked separately; no completion result is claimed here.
+  above, with final-tree consumer gate receipts. The ledger-only push's
+  `patch-apply` run `43144636857` succeeded at
+  `07d3e460309b929f445833dc9465bcaea15259d7`.
 - **PENDING, image cutover:** the image pipeline is unchanged and still pins
   `v7.2` and consumer `bc7e44fa35d3eded23567dd48e65f6dc799f4b34`.
 - **PENDING, two-board qualification:** cutover step 6, including the island
@@ -402,20 +408,143 @@ Run this for the next rc or for `v7.4` final, in this order.
    `patches/series` embeds the kernel coordinates and `scripts/apply.sh` checks
    series integrity first, so regeneration belongs in the same commit. The new
    pin must be on GitHub before any island step.
-4. **Island mirror and conflicts.** Mirror the four values into the island
-   `kernel-pin.env`. Check that every island `patches/*` member still applies
-   with plain `git am` on the new tag; if one does not, re-anchor it and
-   regenerate the island series now.
-5. **Island gates.** Re-run the island's local gates. They wait for the consumer
-   raw URL to show the new pin, then push and require green CI.
-6. **Island release, only if step 4 changed the island series.** Cut a new
-   owner-gated, non-latest 7.4-line island release, then move this repository's
-   island lane to it.
-7. **Consumer gates: repeat plan todo 7.** On the real island lane, run every
-   command in `AGENTS.md` COMMANDS, ending with `scripts/apply.sh` exit 0 and all
-   post-apply assertions. Re-run the full-kernel build recipe with the real lane,
-   add both compile digests to this ledger, then push `rebase/v7.4` and require
-   the push-triggered `patch-apply` run to conclude `success` at that head.
+4. **Island mirror and conflicts.** In an island checkout on
+   `release/linux-7.4`, copy `KERNEL_TAG`, `KERNEL_TAG_OBJECT`, `KERNEL_COMMIT`
+   and `KERNEL_MIRROR` from this repository's `kernel-pin.env` into the island's
+   `kernel-pin.env`. Leave `CONSUMER_PIN_REF="rebase/v7.4"` as it is. Then prove
+   every island member applies with plain `git am` on a clean tree at the new
+   tag, and that the island series is still generated and in parity:
+
+   ```sh
+   # island checkout; $LINUX is a kernel clone that has <new-tag>
+   $EDITOR kernel-pin.env
+   git -C "$LINUX" worktree add --detach "$TREE" <new-commit>
+   git -C "$TREE" am "$ISLAND"/patches/*.patch
+   python3 scripts/build-series.py --check
+   python3 scripts/verify-series-parity.py
+   ```
+
+   If `git am` stops on a member, run `git -C "$TREE" am --abort`, re-anchor
+   that member's island source, regenerate with `python3 scripts/build-series.py`
+   and repeat this step on a fresh tree.
+5. **Island gates.** The island CI compares its pin with this repository's
+   `kernel-pin.env` at `CONSUMER_PIN_REF`, so wait until GitHub serves the new
+   pin from step 3, then run the island `AGENTS.md` COMMANDS:
+
+   ```sh
+   until curl -fsSL https://raw.githubusercontent.com/CERALIVE/rk3588-kernel-patches/rebase/v7.4/kernel-pin.env \
+     | grep -qx 'KERNEL_TAG="<new-tag>"'; do sleep 30; done
+   shellcheck -S style -e SC1091 -x tests/board/*.sh tests/board/lib/*.sh scripts/*.sh
+   bash scripts/check-rga-memory.sh
+   for script in tests/board/*.sh tests/dt/*.sh; do bash "$script" --self-test || exit; done
+   for tool in scripts/{build-series,verify-series-parity,check-compat-shims,check-dt-ownership,check-mpp-hardening,check-modernization,check-upstream-freshness}.py; do python3 "$tool" --self-test || exit; done
+   for script in scripts/{check-action-pins,check-module-contract,check-telemetry-contract,check-fault-seam-contract,vendor-backlog}.sh; do bash "$script" --self-test || exit; done
+   bash scripts/check-module-contract.sh
+   bash scripts/check-telemetry-contract.sh
+   bash scripts/check-fault-seam-contract.sh
+   python3 scripts/build-series.py --check
+   python3 scripts/verify-series-parity.py
+   python3 scripts/check-compat-shims.py
+   python3 scripts/check-dt-ownership.py
+   python3 -m unittest discover -s tests/uapi -v
+   make -C tests/board CROSS_COMPILE=aarch64-linux-gnu- clean all
+   make -C tests/board selftest
+   git commit
+   git push origin release/linux-7.4
+   gh run list --repo CERALIVE/rk3588-media-island --branch release/linux-7.4 \
+     --workflow ci --limit 1 --json headSha,conclusion
+   ```
+
+   Continue only when that `ci` run concludes `success` at the pushed head.
+6. **Island release.** Cut a new 7.4-line island release every time the pinned
+   kernel tag changes, and always at `v7.4` final, even when step 4 left the
+   series bytes unchanged. The release notes and source commit name the kernel
+   tag (the `v2026.11.0` notes say "Kernel tag `v7.4-rc2` from
+   `kernel-pin.env`"), so skipping the release would leave production on an
+   rc-gated pre-release. Validate first; `publish=false` runs every gate and
+   builds the asset but publishes nothing:
+
+   ```sh
+   gh workflow run release.yml --repo CERALIVE/rk3588-media-island \
+     --ref release/linux-7.4 -f version=<CalVer> -f publish=false
+   ```
+
+   Publishing is owner-gated. Before the next command, explain to the owner
+   what it does: it claims tag `v<CalVer>` at the verified `release/linux-7.4`
+   commit and uploads the asset as a non-latest pre-release. A published tag is
+   immutable, it can't be moved or reused, and this repository then pins its
+   digest. Wait for the owner's explicit go-ahead. Never dispatch it without one:
+
+   ```sh
+   gh workflow run release.yml --repo CERALIVE/rk3588-media-island \
+     --ref release/linux-7.4 -f version=<CalVer> -f publish=true
+   ```
+
+   Then move this repository's island lane to the new release in one commit.
+   Asset members `0001`-`0009` become `island/0031`-`0039` byte for byte; if a
+   member's slug changed, `git mv` the old file first:
+
+   ```sh
+   T=$(mktemp -d)
+   gh release download v<CalVer> --repo CERALIVE/rk3588-media-island \
+     --pattern '*.mbox.tar' --dir "$T"
+   sha256sum "$T"/rk3588-media-island-v<CalVer>.mbox.tar
+   tar -xf "$T"/rk3588-media-island-v<CalVer>.mbox.tar -C "$T"
+   for f in "$T"/000[1-9]-*.patch; do n=${f##*/}; cp -- "$f" "island/003${n:3:1}-${n#*-}"; done
+   ```
+
+   Set the new tag, source commit and asset SHA-256 in all nine `Island(...)`
+   entries in `scripts/build-series.py`, in `TAG`, `COMMIT` and `ASSET_SHA256`
+   at `scripts/verify-island-provenance.py:19-24`, and in `RELEASE_TAG`,
+   `RELEASE_COMMIT` and `RELEASE_ASSET_SHA256` in `tests/test_island_lane.py`.
+   Regenerate the headers with `python3 scripts/build-series.py`.
+7. **Consumer gates.** On the real island lane, run every command in
+   `AGENTS.md` COMMANDS. `scripts/apply.sh` must exit 0 with all post-apply
+   assertions passing:
+
+   ```sh
+   python3 scripts/build-series.py --check
+   python3 scripts/verify-payload-parity.py
+   python3 scripts/verify-island-provenance.py
+   python3 -m unittest discover -s tests
+   scripts/check-series-ledger.py --self-test
+   scripts/check-series-ledger.py --require-before U2:U1
+   scripts/check-series-ledger.py --exact docs/UPSTREAM-STATUS.md
+   tests/test_preflight_sovereign_pin.sh
+   scripts/preflight.sh
+   scripts/apply.sh
+   ```
+
+   Then rebuild the kernel from the verified tree with the recipe in
+   [Compile evidence](#compile-evidence). `$FRAGMENT` is
+   `manifests/kernel/rk3588-edge.fragment` from image-building-pipeline; record
+   the image commit you take it from:
+
+   ```sh
+   set -o pipefail
+   scripts/apply.sh --keep "$KTREE"
+   cd "$KTREE"
+   make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+   scripts/kconfig/merge_config.sh -m .config "$FRAGMENT"
+   make ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+   nice -n 19 make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+     Image modules rockchip/rk3588-rock-5b-plus.dtb rockchip/rk3588-orangepi-5-plus.dtb 2>&1 | tee build.log
+   rm -- arch/arm64/boot/dts/rockchip/rk3588-rock-5b-plus.dtb arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dtb
+   nice -n 19 make -j"$(nproc)" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CHECK_DTBS=y \
+     rockchip/rk3588-rock-5b-plus.dtb rockchip/rk3588-orangepi-5-plus.dtb 2>&1 | tee dtbs_check.log
+   sha256sum .config arch/arm64/boot/dts/rockchip/rk3588-rock-5b-plus.dtb \
+     arch/arm64/boot/dts/rockchip/rk3588-orangepi-5-plus.dtb build.log dtbs_check.log
+   ```
+
+   Add both compile digests (`build.log` and `dtbs_check.log`) and the artifact
+   table to [Compile evidence](#compile-evidence), commit, push, and require the
+   push-triggered `patch-apply` run to conclude `success` at that head:
+
+   ```sh
+   git push origin rebase/v7.4
+   gh run list --repo CERALIVE/rk3588-kernel-patches --branch rebase/v7.4 \
+     --workflow patch-apply --limit 1 --json headSha,conclusion
+   ```
 
 ## Cutover runbook
 
@@ -436,9 +565,44 @@ Run in this order. Nothing here happens before 7.4 is the production target.
    calls. Never remove the script alone: the main-merge guard fails if the flow
    still accepts only the branch ref.
    When the 7.4 line becomes main, drop `--prerelease` together with `--latest=false` and the other branch-scoped release rules in island `release.yml`, and update the release flag self-test expectations in `scripts/check-release-ref.sh`.
+
+   Step 3 then takes two more actions, in this order:
+
+   1. **Production island release (owner decision at cutover).** Every 7.4-line
+      release so far is a non-latest pre-release cut from `release/linux-7.4`,
+      and island Latest is still `v2026.9.5`. The owner chooses which release
+      production pins:
+      - **A. Promote the branch release.** At cutover, flip the release cut
+        from the branch at the final pin to Latest
+        (`gh release edit v<CalVer> --repo CERALIVE/rk3588-media-island --prerelease=false --latest`).
+        This saves one consumer PR, because the lane merged in step 2 already
+        names it. The costs: the branch-release exception carries into
+        production, and the island PR in this step must land as a merge commit
+        instead of the preferred squash, so the released commit is on island
+        `main`.
+      - **B. Re-release from `main`.** Once this step has restored the
+        main-only release flow, cut a Latest release from island `main` at the
+        final pin
+        (`gh workflow run release.yml --repo CERALIVE/rk3588-media-island --ref main -f version=<CalVer> -f publish=false`,
+        then `publish=true` after the owner's explicit go-ahead). Then open one
+        follow-up PR here that moves the island lane to it, with the lane bump
+        from step 6 of the [rc-to-final refresh](#rc-to-final-refresh).
+
+      **Recommendation: B.** It keeps releases from `main` only, squash merges
+      and Latest as production, for the cost of one mechanical PR. This is the
+      owner's decision to make at cutover. Nothing here takes it.
+   2. **Root `versions.yaml`.** In
+      [`ceralive/versions.yaml`](https://github.com/CERALIVE/ceralive/blob/master/versions.yaml),
+      bump the `rk3588-media-island` `pin:` (now `v2026.9.5`) to the production
+      release chosen above, keep its `kernel-source-island` kind, and change
+      the mainline/edge track comment to 7.4. Root policy changes follow the
+      workspace root-first PR flow, before the dependent image change.
 4. **image-building-pipeline.** Update `kernel_source` (tag, commit,
    `patches_commit`, `kernel_release`, `package_version`, `dtb_deb_dir`), the
-   fixtures, the symbol lists and the Kconfig fragment.
+   fixtures, the symbol lists and the Kconfig fragment. `patches_commit` is
+   the 40-character SHA of this repository's `main` that carries the
+   production island lane: the step 2 merge under option A, or the follow-up
+   PR's merge under option B.
 5. **CeraUI and apt-worker.** Qualify the exact new package names.
 6. **Two-board qualification.** Rock 5B+ and Orange Pi 5 Plus, on the final
    artifact set.
@@ -466,6 +630,16 @@ Until cutover, island `main` and this repository's `main` stay releasable for
 7.2. An urgent 7.2 fix lands on `main` as it does today; nothing on
 `rebase/v7.4` or `release/linux-7.4` blocks it. Carry the same fix onto the 7.4
 branches afterwards if it still applies.
+
+One catch on the island side: island `main`'s shellcheck gate is red under the
+hosted ShellCheck `0.11.0`, which reports SC2329 for the deliberately uncalled
+`wait()` sentinel in `tests/board/fault-matrix.sh` (local `0.10.0` passes).
+The island's v7.4 ledger records this failure as inherited from `main`. A 7.2
+fix PR or release on island `main` must therefore first carry the
+declaration-scoped annotation from island commit
+[`8cdbdcb`](https://github.com/CERALIVE/rk3588-media-island/commit/8cdbdcb371197849b4ab25ee231a24b5f56bc2fe),
+which adds SC2329 to that declaration's existing SC2317 annotation and changes
+no assertion.
 
 ## Downstream inventory
 

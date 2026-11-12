@@ -20,7 +20,10 @@ all loaded (8 clean composition cycles + 8 engine-restart cycles + a 300 s soak)
 and no kernel fault report; the board was restored to its production slot. The
 deliberately untouched, stale MPP hardening checker boundary is unchanged.
 That historical result does not qualify this 7.4 lane: no board qualification
-is claimed, and plan todo 7 adds the compile digests.
+is claimed. The real-lane compile receipts are in the
+[v7.4 ledger](../REBASE-v7.4-rc2.md#compile-evidence), and the push-triggered
+`patch-apply` run `43144636857` succeeded at
+`07d3e460309b929f445833dc9465bcaea15259d7`.
 
 **HDMI-RX audio now uses upstream v4 binding/driver plus explicit DT and deltas
 (`0044`–`0049`).** Canonical mail and diff bodies are byte-preserved; `0005`,
