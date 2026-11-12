@@ -236,17 +236,125 @@ boards can answer them.
 
 ## Compile evidence
 
-Pending. This ledger records apply and source evidence only.
+Both builds use the pinned `v7.4-rc2` base above, arm64 `defconfig`, the production
+fragment from image commit `e6b70f0da06a3ee82c9e0790225c80597ed05ab7`, and
+`olddefconfig`. The image inputs came from separate scratch clones. Both use GCC
+`aarch64-linux-gnu-gcc 16.2.0`, GNU binutils `2.47`, GNU Make `4.4.1`, Python
+`3.14.9` and dtschema `2026.9`, with `nice -n 19` and 28 make jobs. Neither
+build needed the conditional island fragment: `CONFIG_ROCKCHIP_MPP_SERVICE=m`
+and `CONFIG_ROCKCHIP_MULTI_RGA=m` already resolve.
 
-- Full-series kernel compile on `v7.4-rc2` with the island branch's series
-  substituted for the island lane: no digest is recorded in this ledger yet
-  (plan todo 6; both compile digests are added with plan todo 7).
-- Island local gates, push of `release/linux-7.4` and green island CI: pending
-  (plan todo 13).
-- Owner-gated 7.4-line island release: pending (plan todo 14).
-- Island lane moved to that release, and all consumer gates on the real island
-  lane: pending (plan todos 5 and 7).
-- Two-board qualification: pending, at cutover step 6.
+### Todo 6: substituted island compile receipt
+
+Consumer `fba2af51eb3539df4ca1038acbf07522742608ab`, with island members
+`0031`-`0039` substituted from island
+`b4d430db10a1377222983d1c739623566a6f3311`, applied all 27 members with plain
+`git am`. `Image`, all modules and both board DTBs built successfully: make and
+tee each exited `0` under `pipefail`; compiler errors and warnings were both
+`0`, including every series-touched file. Both `rk_vcodec.ko` and
+`rga_multicore.ko` existed. `CHECK_DTBS=y` make and tee also exited `0`.
+
+| Artifact | SHA-256 |
+|---|---|
+| `.config` | `ab1f01515ebcfe2dd4b8bac2c18210aaee63c36dd3229f59c1221d3da5a47749` |
+| `rockchip/rk3588-rock-5b-plus.dtb` | `22096a61e391ab53872c8c82b806c7290a2a3235dd99840a845b0cbf02dc0d29` |
+| `rockchip/rk3588-orangepi-5-plus.dtb` | `7113b6498847fac24920b6ffe50bb0ca262fa0cbd0c290e7b925f2d96247e6b4` |
+
+Receipt logs: todo 6 `build.log` SHA-256
+`bc6eba15574ee09340bbcfa823a25c99fd9e2da26dcc9ec683e193f864b95206`;
+`dtbs_check.log` SHA-256
+`3cd946e7141bfd850eda4faa1b180eb9ad6a1d126091b54281909706543238d0`.
+
+### Todo 7: real island lane compile receipt
+
+Consumer `7b2ab409ed31218017ecd6bd209ec22bacc5ce09` applied its own generated
+series through `scripts/apply.sh` to pristine `v7.4-rc2`: all 27 members and
+every post-apply assertion passed. The real lane carries island `v2026.11.0`
+at `be51bf100a1335ceb783689b13d045e896117c80`, using the published asset
+identified above. Every patch diff body matches todo 6; only the nine island
+mailbox headers differ.
+
+`Image`, all modules and both DTBs built successfully: make and tee each exited
+`0` under `pipefail`. The first compiler error is absent; compiler errors,
+compiler warnings and DTC warnings are all `0`, both globally and in
+series-touched files. Both island modules exist and match todo 6 byte-for-byte.
+`CHECK_DTBS=y` make and tee each exited `0`.
+
+| Artifact | SHA-256 | Comparison with todo 6 |
+|---|---|---|
+| `.config` | `ab1f01515ebcfe2dd4b8bac2c18210aaee63c36dd3229f59c1221d3da5a47749` | Identical |
+| `rockchip/rk3588-rock-5b-plus.dtb` | `22096a61e391ab53872c8c82b806c7290a2a3235dd99840a845b0cbf02dc0d29` | Identical |
+| `rockchip/rk3588-orangepi-5-plus.dtb` | `7113b6498847fac24920b6ffe50bb0ca262fa0cbd0c290e7b925f2d96247e6b4` | Identical |
+
+The ancillary `Image` digest differs: todo 6
+`57d0a3d69e44d8e0095ebb51d14ad64ee01398288e931646bf93b34580515322`,
+todo 7 `c734f6a5a5075f88992975418e5b47fa217235398adf3c1d049d56404d6ca9b1`.
+The recipe does not fix the embedded build timestamp: todo 6 built on
+2026-11-11 between 02:07:16 and 02:16:38 at UTC-05, while todo 7 embeds
+`#1 SMP PREEMPT_DYNAMIC Wed Nov 11 21:46:56 -05 2026`. This metadata changes
+the kernel image despite identical source diff bodies, configuration, island
+modules and DTBs. Todo 6's binary was removed, so no binary byte comparison is
+claimed.
+
+The applied tree retains the card name `RK3588 HDMI-IN` and output names
+`RK3588 HDMI0` / `RK3588 HDMI1`. The negative control regenerated the series
+after reverting a scratch copy to the `v7.2` coordinates: integrity, payload
+and release provenance passed, then `git am` failed at member `0026`,
+`snps_hdmirx.c:205` (`scripts/apply.sh` exit `1`). The v7.2 production baseline
+was resolved again and matches todo 6; its required and forbidden checks pass.
+
+Receipt logs: todo 7 `build.log` SHA-256
+`155a96ad7904f1da03218eaf65db350046bfdb9ef504dececdeb16750e6b1cc7`;
+`dtbs_check.log` SHA-256
+`b9745df549c0dab3c15033dea69bf9cfd8be1f3d0686feebe838e5a41b005521`;
+`task-7-island-linux-74-port-neg.txt` SHA-256
+`90a5a1e5fdb9c8960a74492abe9b93a664d9bd3b2640f8dd2bfcf9fbd97a32d8`.
+
+### Image follow-ups and completion status
+
+Both builds retain the same production-input findings; compilation does not
+qualify the production configuration:
+
+- Of 161 required symbols, 159 pass and two fail (required check exit `1`).
+  `CONFIG_PHY_ROCKCHIP_USBDP` requires `y` but resolves `m`: upstream's new
+  `depends on DRM || DRM=n` caps it at `m` with `CONFIG_DRM=m`.
+  `CONFIG_VIDEO_ROCKCHIP_RKVENC` requires `m` but is absent because the pinned
+  image fragment still names the pre-island standalone encoder. Review the
+  PHY module/initramfs closure and replace the stale encoder assertion with
+  the MPP service/client closure at image cutover. The island-fragment fallback
+  tested in todo 6 fixes neither finding.
+- All 68 forbidden checks pass (exit `0`); the declared-fragment check retains
+  the same two failures. All 170 fragment symbols were compared against the
+  re-created v7.2 baseline: only those two resolved values change. There are
+  200 newly resolved symbols. New `CONFIG_ARCH_GOOGLE=y` escapes the pinned
+  fragment and forbidden list; review an explicit OFF declaration and a
+  forbidden row in the image pipeline.
+- Each build reports 78 schema validation violations and 22 unmatched-binding
+  diagnostics, 50 diagnostics per board, with `0` for the HDMI audio targets
+  (`hdmi_receiver`, `#sound-dai-cells`, `hdmi_receiver_sound`). The other
+  diagnostics cover island vendor properties, bindings and MMUs. These remain
+  image follow-ups, not series compile failures. `CHECK_DTBS=y` ignores
+  `dt-validate` failures, so make exit `0` is not globally clean schema proof.
+  No v7.2 schema regression comparison is claimed.
+
+- **DONE, todo 6:** substituted full-series compile receipt above.
+- **DONE, todo 13:** island local gates and push; island CI run
+  `42986538493` succeeded at `8cdbdcb371197849b4ab25ee231a24b5f56bc2fe`.
+- **DONE, todo 13b:** pre-release flags and their self-tests; island CI
+  `43118836877` and release-ref CI `43118836879` succeeded at `be51bf1`.
+- **DONE, todo 14:** island `v2026.11.0` published as a 7.4-line pre-release;
+  validation run `43127267984` and publish run `43127956089` succeeded.
+  Latest remains `v2026.9.5`.
+- **DONE, todo 5:** the consumer carries the published release; consumer CI
+  `43138493135` succeeded at `0d45095a52e9a81bc198ebbe76f3845de0f4abdc`,
+  and `43141161364` succeeded at `7b2ab409ed31218017ecd6bd209ec22bacc5ce09`.
+- **DONE, todo 7 local proof:** real-lane apply, compile and negative receipts
+  above, with final-tree consumer gate receipts. The ledger-only push's new CI
+  result is tracked separately; no completion result is claimed here.
+- **PENDING, image cutover:** the image pipeline is unchanged and still pins
+  `v7.2` and consumer `bc7e44fa35d3eded23567dd48e65f6dc799f4b34`.
+- **PENDING, two-board qualification:** cutover step 6, including the island
+  stale-fault acknowledgement question above, remains `needs-board-proof`.
 
 For this bump, no board validation is claimed. A tree that applies is not a tree that builds,
 and a tree that builds is not a board that works.
@@ -327,6 +435,7 @@ Run in this order. Nothing here happens before 7.4 is the production target.
    main-merge guard together with that script and its CI and release self-test
    calls. Never remove the script alone: the main-merge guard fails if the flow
    still accepts only the branch ref.
+   When the 7.4 line becomes main, drop `--prerelease` together with `--latest=false` and the other branch-scoped release rules in island `release.yml`, and update the release flag self-test expectations in `scripts/check-release-ref.sh`.
 4. **image-building-pipeline.** Update `kernel_source` (tag, commit,
    `patches_commit`, `kernel_release`, `package_version`, `dtb_deb_dir`), the
    fixtures, the symbol lists and the Kconfig fragment.
