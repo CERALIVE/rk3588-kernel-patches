@@ -350,6 +350,13 @@ qualify the production configuration:
 - **DONE, todo 14:** island `v2026.11.0` published as a 7.4-line pre-release;
   validation run `43127267984` and publish run `43127956089` succeeded.
   Latest remains `v2026.9.5`.
+- **DONE, todo 19:** island release version check hardened on
+  `release/linux-7.4`. Commits `4faea9d1e044e3e5483fac00319bafa8ce3bbd7c` and
+  `ad3ebc97814c5421482c96ec13d8da8de7d9a8c6` move it into
+  `scripts/check-release-version.sh`, which validates the whole value and
+  doesn't depend on the locale; island CI `43270140591` and `43274691568`
+  succeeded at those commits. Island `main` keeps the old line-wise check
+  until the cutover merge brings the branch in.
 - **DONE, todo 5:** the consumer carries the published release; consumer CI
   `43138493135` succeeded at `0d45095a52e9a81bc198ebbe76f3845de0f4abdc`,
   and `43141161364` succeeded at `7b2ab409ed31218017ecd6bd209ec22bacc5ce09`.
@@ -567,8 +574,13 @@ FRAGMENT=   # absolute path of manifests/kernel/rk3588-edge.fragment in an image
    kernel tag changes, and always at `v7.4` final, even when step 4 left the
    series bytes unchanged. The release notes and source commit name the kernel
    tag (the `v2026.11.0` notes say "Kernel tag `v7.4-rc2` from
-   `kernel-pin.env`"), so skipping the release would leave production on an
-   rc-gated pre-release. Validate first; `publish=false` runs every gate and
+   `kernel-pin.env`"), so skipping the release would leave the lane that
+   cutover step 2 merges on an rc-gated pre-release. Production doesn't pin
+   this branch release: the owner chose option B on 2026-11-12, so cutover
+   step 3.1 cuts the production Latest release from island `main`. These
+   dispatches already run the hardened version check,
+   `scripts/check-release-version.sh` from island commits `4faea9d` and
+   `ad3ebc9`. Validate first; `publish=false` runs every gate and
    builds the asset but publishes nothing:
 
    ```sh
@@ -758,13 +770,20 @@ Run in this order. Nothing here happens before 7.4 is the production target.
 3. **Island second.** Open the PR from `release/linux-7.4` into island `main`,
    and in the same PR restore `CONSUMER_PIN_REF="main"`. This repository's
    `main` now carries the 7.4 coordinates, so pin-equality passes, and the
-   island's guard requires that value. In the same PR, revert or deliberately
-   keep the branch-scoped release flow. Reverting means restoring the main-only
-   flow with `scripts/check-release-ref.sh` accepting exactly `refs/heads/main`
-   and its self-test expectations updated; the alternative is removing the
-   main-merge guard together with that script and its CI and release self-test
-   calls. Never remove the script alone: the main-merge guard fails if the flow
-   still accepts only the branch ref.
+   island's guard requires that value. In the same PR, restore the main-only
+   release flow, which option B in step 3.1 needs: `scripts/check-release-ref.sh`
+   accepts exactly `refs/heads/main` and its self-test expectations are
+   updated. Keeping the branch-scoped flow, by removing the main-merge guard
+   together with that script and its CI and release self-test calls, was the
+   alternative that option A would have needed; it isn't taken. Never remove
+   the script alone: the main-merge guard fails if the flow still accepts only
+   the branch ref.
+   The same merge brings the release version hardening to island `main`:
+   commits `4faea9d1e044e3e5483fac00319bafa8ce3bbd7c` and
+   `ad3ebc97814c5421482c96ec13d8da8de7d9a8c6` on `release/linux-7.4` validate
+   the whole version value in `scripts/check-release-version.sh`, without
+   depending on the locale. Island `main` keeps the old line-wise check until
+   then, so the step 3.1 release from `main` runs only after this merge.
    When the 7.4 line becomes main, drop `--prerelease` together with `--latest=false` and the other branch-scoped release rules in island `release.yml`, and update the release flag self-test expectations in `scripts/check-release-ref.sh`.
 
    In the same PR, rewrite the island statements that are only true while 7.4
@@ -784,8 +803,7 @@ Run in this order. Nothing here happens before 7.4 is the production target.
    owner-exception sections of `docs/CI.md`, `docs/agents/ci.md`,
    `docs/agents/pr-targeting.md`, the `release/linux-7.4` and `main` lines of
    `docs/agents/key-facts.md`, and `docs/REFERENCES.md`'s mirror note. Rewrite
-   each to match the flow this PR leaves: the main-only flow if it is
-   restored, or the kept branch flow described as production. Island Latest
+   each to match the main-only flow this PR restores. Island Latest
    stays `v2026.9.5` until step 3.1 below changes it, so leave lines about
    Latest until then. The island `AGENTS.md` must stay within the workspace
    budget (`python3 scripts/check-agents-budget.py --repo "$ISLAND"` from a
@@ -793,11 +811,20 @@ Run in this order. Nothing here happens before 7.4 is the production target.
 
    Step 3 then takes two more actions, in this order:
 
-   1. **Production island release (owner decision at cutover).** Every 7.4-line
-      release so far is a non-latest pre-release cut from `release/linux-7.4`,
-      and island Latest is still `v2026.9.5`. The owner chooses which release
-      production pins. In the commands below, `CALVER` is that release's
-      version, set as in the refresh setup block:
+   1. **Production island release (owner decision, 2026-11-12: option B).**
+      Every 7.4-line release so far is a non-latest pre-release cut from
+      `release/linux-7.4`, and island Latest is still `v2026.9.5`. The owner
+      chose option B on 2026-11-12. Once the merge above has restored the
+      main-only release flow and brought the hardened version check to island
+      `main`, cut a Latest release from island `main` at the final pin. In the
+      commands below, `CALVER` is that release's version, set as in the
+      refresh setup block
+      (`gh workflow run release.yml --repo CERALIVE/rk3588-media-island --ref main -f version="${CALVER:?set CALVER}" -f publish=false`,
+      then `publish=true` after the owner's explicit go-ahead). Then open one
+      follow-up PR here that moves the island lane to it, with the lane bump
+      from step 6 of the [rc-to-final refresh](#rc-to-final-refresh).
+
+      The two options considered, kept as the record of the decision:
       - **A. Promote the branch release.** At cutover, flip the release cut
         from the branch at the final pin to Latest
         (`gh release edit "v${CALVER:?set CALVER}" --repo CERALIVE/rk3588-media-island --prerelease=false --latest`).
@@ -814,21 +841,21 @@ Run in this order. Nothing here happens before 7.4 is the production target.
         follow-up PR here that moves the island lane to it, with the lane bump
         from step 6 of the [rc-to-final refresh](#rc-to-final-refresh).
 
-      **Recommendation: B.** It keeps releases from `main` only, squash merges
-      and Latest as production, for the cost of one mechanical PR. This is the
-      owner's decision to make at cutover. Nothing here takes it.
+      **Decision: B** (owner, 2026-11-12), as recommended. It keeps releases
+      from `main` only, squash merges and Latest as production, for the cost
+      of one mechanical PR. Option A isn't taken.
    2. **Root `versions.yaml`.** In
       [`ceralive/versions.yaml`](https://github.com/CERALIVE/ceralive/blob/master/versions.yaml),
-      bump the `rk3588-media-island` `pin:` (now `v2026.9.5`) to the production
-      release chosen above, keep its `kernel-source-island` kind, and change
+      bump the `rk3588-media-island` `pin:` (now `v2026.9.5`) to the Latest
+      release cut from island `main` in step 3.1, keep its `kernel-source-island` kind, and change
       the mainline/edge track comment to 7.4. Root policy changes follow the
       workspace root-first PR flow, before the dependent image change.
 4. **image-building-pipeline.** Update `kernel_source` (tag, commit,
    `patches_commit`, `kernel_release`, `package_version`, `dtb_deb_dir`), the
    fixtures, the symbol lists and the Kconfig fragment. `patches_commit` is
    the 40-character SHA of this repository's `main` that carries the
-   production island lane: the step 2 merge under option A, or the follow-up
-   PR's merge under option B.
+   production island lane: the merge of the step 3.1 follow-up PR (option B),
+   not the step 2 merge, whose lane still names the branch pre-release.
 5. **CeraUI and apt-worker.** Qualify the exact new package names.
 6. **Two-board qualification.** Rock 5B+ and Orange Pi 5 Plus, on the final
    artifact set.
