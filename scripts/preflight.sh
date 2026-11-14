@@ -44,14 +44,17 @@ fi
 # Resolve the sovereign pin from its own source remote. This does not consult
 # Armbian and catches a deleted, moved, or mistyped KERNEL_COMMIT.
 if [[ -n "${KERNELSOURCE:-}" && "${KERNEL_COMMIT:-}" =~ ^[0-9a-f]{40}$ && -n "${KERNEL_TAG:-}" ]]; then
+	lookup_attempts=3
+	lookup_timeout="${PREFLIGHT_LOOKUP_TIMEOUT:-20}"
 	lookup_error="$(mktemp)"
 	lookup_ok=false
-	for attempt in 1 2 3; do
-		if refs="$(git ls-remote "${KERNELSOURCE}" "refs/tags/${KERNEL_TAG}" "refs/tags/${KERNEL_TAG}^{}" 2>"${lookup_error}")"; then
+	for ((attempt = 1; attempt <= lookup_attempts; attempt++)); do
+		# A stalled connection must fail this attempt, not hold the job open.
+		if refs="$(timeout --kill-after=2 "${lookup_timeout}" git ls-remote "${KERNELSOURCE}" "refs/tags/${KERNEL_TAG}" "refs/tags/${KERNEL_TAG}^{}" 2>"${lookup_error}")"; then
 			lookup_ok=true
 			break
 		fi
-		if (( attempt < 3 )) && [[ "${PREFLIGHT_RETRY_DELAY:-2}" != 0 ]]; then
+		if (( attempt < lookup_attempts )) && [[ "${PREFLIGHT_RETRY_DELAY:-2}" != 0 ]]; then
 			sleep "${PREFLIGHT_RETRY_DELAY:-2}"
 		fi
 	done
@@ -66,8 +69,8 @@ if [[ -n "${KERNELSOURCE:-}" && "${KERNEL_COMMIT:-}" =~ ^[0-9a-f]{40}$ && -n "${
 			fail "${KERNEL_TAG} resolves to ${resolved:-<missing>} from ${KERNELSOURCE}, expected ${KERNEL_COMMIT}"
 		fi
 	else
-		cat "${lookup_error}" >&2
-		fail "kernel source remote could not be reached (unreachable): ${KERNELSOURCE} after 3 attempts"
+		[[ ! -s "${lookup_error}" ]] || cat "${lookup_error}" >&2
+		fail "kernel source remote could not be reached (unreachable) within ${lookup_timeout}s per attempt after ${lookup_attempts} attempts: ${KERNELSOURCE}"
 	fi
 	rm -f "${lookup_error}"
 fi

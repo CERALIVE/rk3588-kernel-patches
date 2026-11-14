@@ -26,11 +26,14 @@ fetches, alias changes, missing branch arms, and board-menu differences are
 printed as `info` and never change the exit status.
 
 A failed `git ls-remote` lookup is tried up to three times, with two seconds
-between attempts. Set `PREFLIGHT_RETRY_DELAY` to override that delay (`0` disables
-the backoff for tests). If all attempts fail, preflight prints Git's stderr and
-reports that the remote could not be reached. A reachable remote without the tag
-still reports `<tag> resolves to <missing>`; a different commit still reports
-the mismatch.
+between attempts. Each attempt is killed after 20 seconds (set
+`PREFLIGHT_LOOKUP_TIMEOUT` to override that limit, in seconds), so a stalled
+connection fails the run in about a minute instead of waiting on Git's own
+transport timeout. Set `PREFLIGHT_RETRY_DELAY` to override the backoff (`0`
+disables it for tests). If all attempts fail, preflight prints Git's stderr and
+reports that the remote could not be reached, naming the per-attempt deadline.
+A reachable remote without the tag still reports `<tag> resolves to <missing>`;
+a different commit still reports the mismatch.
 
 The weekly workflow retains its existing non-blocking schedule treatment, but
 push and pull-request runs now receive the same informational-only Armbian

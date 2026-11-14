@@ -24,6 +24,9 @@ retry-once)
 		exit 128
 	fi
 	;;
+blocking)
+	exec sleep "${MOCK_BLOCK_SECONDS:-15}"
+	;;
 unresolvable)
 	exit 0
 	;;
@@ -81,17 +84,20 @@ chmod +x "${dir}/scripts/curl"
 }
 
 run_case() {
-	local name="$1" expected="$2" mode="${3:-ok}" commit="${4:-8d3ae59288f1e7d58d76558a6ee96d533bc5019f}" patchdir="${5:-patch/kernel/archive/rockchip64-7.2}" armbian_mode="${6:-no-drift}" armbian_revision="${7:-pinned-revision}" expected_output="${8:-}"
+	local name="$1" expected="$2" mode="${3:-ok}" commit="${4:-8d3ae59288f1e7d58d76558a6ee96d533bc5019f}" patchdir="${5:-patch/kernel/archive/rockchip64-7.2}" armbian_mode="${6:-no-drift}" armbian_revision="${7:-pinned-revision}" expected_output="${8:-}" lookup_timeout="${9:-}"
 	local dir="${tmp}/${name}"
+	local started="${SECONDS}" elapsed
 	make_pin "${dir}" "${commit}" "${patchdir}" "${armbian_revision}"
 	if MOCK_GIT_MODE="${mode}" MOCK_RESOLVED_COMMIT="8d3ae59288f1e7d58d76558a6ee96d533bc5019f" \
-		MOCK_GIT_STATE="${dir}/git-calls" PREFLIGHT_RETRY_DELAY=0 MOCK_ARMBIAN_MODE="${armbian_mode}" \
-		PATH="${tmp}:${dir}/scripts:${PATH}" "${dir}/scripts/preflight.sh" >"${tmp}/${name}.out" 2>&1; then
+		MOCK_GIT_STATE="${dir}/git-calls" PREFLIGHT_RETRY_DELAY=0 PREFLIGHT_LOOKUP_TIMEOUT="${lookup_timeout}" \
+		MOCK_ARMBIAN_MODE="${armbian_mode}" \
+		PATH="${tmp}:${dir}/scripts:${PATH}" timeout 12s "${dir}/scripts/preflight.sh" >"${tmp}/${name}.out" 2>&1; then
 		actual=0
 	else
 		actual=$?
 	fi
-	printf 'CASE %s: exit %s (expected %s)\n' "${name}" "${actual}" "${expected}"
+	elapsed=$((SECONDS - started))
+	printf 'CASE %s: exit %s (expected %s), %ss (bound 10s)\n' "${name}" "${actual}" "${expected}" "${elapsed}"
 	[[ "${actual}" == "${expected}" ]] || {
 		printf 'FAIL %s: expected exit %s, got %s\n' "${name}" "${expected}" "${actual}" >&2
 		cat "${tmp}/${name}.out" >&2
@@ -104,6 +110,14 @@ run_case() {
 	fi
 	local expected_calls=1 calls
 	case "${mode}" in
+	blocking)
+		expected_calls=3
+		if (( elapsed > 10 )); then
+			printf 'FAIL %s: lookup took %ss; each attempt must be time-bounded\n' "${name}" "${elapsed}" >&2
+			cat "${tmp}/${name}.out" >&2
+			return 1
+		fi
+		;;
 	unreachable)
 		expected_calls=3
 		if ! grep -Fq 'fatal: simulated kernel source connection failure' "${tmp}/${name}.out" ||
@@ -140,6 +154,10 @@ run_case unreachable-source 1 unreachable '' '' no-drift pinned-revision \
 	'remote could not be reached (unreachable)' || failures=$((failures + 1))
 run_case transient-source 0 retry-once '' '' no-drift pinned-revision \
 	'PREFLIGHT OK' || failures=$((failures + 1))
+# A stalled transport must not hold the job open: three blocked attempts each hit
+# the per-attempt deadline, so the whole loop stays under the 12 s case timeout.
+run_case blocking-lookup 1 blocking '' '' no-drift pinned-revision \
+	'remote could not be reached (unreachable) within 1s per attempt' 1 || failures=$((failures + 1))
 (( failures == 0 )) || exit 1
 
 # Exercise the real apply gate against a clean fake kernel tree whose v7.2 tag
