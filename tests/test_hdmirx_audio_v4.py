@@ -17,8 +17,21 @@ def additions(path: str) -> str:
                      if line.startswith("+") and not line.startswith("+++"))
 
 
-def function(source: str, name: str) -> str:
-    match = re.search(r"static [^\n]+ " + name + r"\([^;]*?\)\n\{.*?\n\}", source, re.S)
+def function(source: str, name: str, patches: tuple[str, ...] = ()) -> str:
+    code = source + "\n"
+    for patch in patches:
+        for header, body in re.findall(r"^(@@.*?@@[^\n]*)\n(.*?)(?=^@@|^diff --git|\Z)",
+                                       patch, re.M | re.S):
+            before = "".join(line[1:] + "\n" for line in body.splitlines()
+                             if line.startswith((" ", "-")))
+            after = "".join(line[1:] + "\n" for line in body.splitlines()
+                            if line.startswith((" ", "+")))
+            if before not in code:
+                assert name not in header, f"Unmatched helper hunk: {header}"
+                continue
+            assert code.count(before) == 1, f"Unmatched helper hunk: {header}"
+            code = code.replace(before, after, 1)
+    match = re.search(r"static [^\n]+ " + name + r"\([^;]*?\)\n\{.*?\n\}", code, re.S)
     if match is None:
         raise AssertionError(f"Missing complete helper: {name}")
     return match.group()
@@ -28,44 +41,87 @@ PRELUDE = r"""
 #include <assert.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <stdlib.h>
 typedef uint32_t u32;
 typedef uint64_t u64;
 enum { CMU_TMDSQPCLK_FREQ, PKTDEC_ACR_PH2_1, PKTDEC_ACR_PB3_0,
-       PKTDEC_ACR_PB7_4, AUDIO_PROC_CONFIG0, AUDIO_PROC_CONFIG3 };
+       PKTDEC_ACR_PB7_4, AUDIO_PROC_CONFIG0, AUDIO_PROC_CONFIG3,
+       PKTDEC_AUDIF_PH2_1, PKTDEC_AUDIF_PB3_0, AUDIO_FIFO_STATUS2,
+       AUDIO_FIFO_CONTROL, REG_COUNT };
 enum { EINVAL = 22, EIO = 5, I2S_EN = 2, SPEAKER_ALLOC_OVR_EN = 65536 };
+enum { AFIFO_UNDERFLOW_ST = 1 << 25, AFIFO_OVERFLOW_ST = 1 << 24,
+       HDMIRX_AUDIO_INIT_STATE = 512 };
+struct work_struct { int unused; };
+struct delayed_work { struct work_struct work; };
 struct snps_hdmirx_dev {
     void *dev, *audio_clk;
     u32 audio_fs, audio_clkrate, audio_channels;
-    bool audio_running;
-    int audio_lock, audio_work;
+    bool audio_running, audio_streaming;
+    int audio_lock, audio_pre_state;
+    struct delayed_work audio_work;
+    void (*plugged_cb)(void *, bool);
+    void *codec_dev;
 };
-static u32 regs[6];
-static int clock_error, clock_calls, drains;
+static u32 regs[REG_COUNT], clock_rate;
+static int clock_error, clock_calls, drains, fifo_writes, notifications, queued;
+static unsigned long queued_delay;
 static struct snps_hdmirx_dev *draining;
+#define container_of(p, t, m) ((t *)((char *)(p) - offsetof(t, m)))
+#define to_delayed_work(p) container_of(p, struct delayed_work, work)
+#define system_unbound_wq NULL
+#define msecs_to_jiffies(x) (x)
 #define READ_ONCE(x) (x)
 #define WRITE_ONCE(x, v) ((x) = (v))
 #define lockdep_assert_held(x) assert(*(x) == 1)
 #define dev_err_ratelimited(...) ((void)0)
+#define dev_warn_ratelimited(...) ((void)0)
+#define snd_ctl_notify(...) (notifications++)
+#define snd_pcm_stop_xrun(...) (notifications++)
+#define v4l2_event_queue(...) (notifications++)
 #define swab32(x) __builtin_bswap32(x)
 static u64 div_u64(u64 n, u32 d) { return n / d; }
+#define div64_u64(n, d) ((n) / (d))
 static u32 hdmirx_readl(struct snps_hdmirx_dev *d, int reg)
 { (void)d; return regs[reg]; }
 static void hdmirx_writel(struct snps_hdmirx_dev *d, int reg, u32 value)
-{ (void)d; regs[reg] = value; }
+{
+    (void)d;
+    if (reg == AUDIO_FIFO_CONTROL) {
+        assert(value == (fifo_writes % 2 == 0 ? 1U : 0U));
+        fifo_writes++;
+    }
+    regs[reg] = value;
+}
 static void hdmirx_update_bits(struct snps_hdmirx_dev *d, int reg, u32 mask, u32 v)
 { (void)d; regs[reg] = (regs[reg] & ~mask) | v; }
 static int clk_set_rate(void *clk, u32 rate)
-{ (void)clk; (void)rate; clock_calls++; return clock_error; }
-static void cancel_delayed_work_sync(int *work)
+{ (void)clk; clock_rate = rate; clock_calls++; return clock_error; }
+static void cancel_delayed_work_sync(struct delayed_work *work)
 { (void)work; assert(!draining->audio_running); drains++; }
+static void usleep_range(int low, int high)
+{ assert(low == 200 && high == 210 && regs[AUDIO_FIFO_CONTROL] == 1); }
+static void queue_delayed_work(void *q, struct delayed_work *work, unsigned long delay)
+{ (void)q; (void)work; queued++; queued_delay = delay; }
+static void notify(void *dev, bool present)
+{ (void)dev; (void)present; notifications++; }
+static void source_audio(u32 fs, u32 channels, u32 coding_type)
+{
+    /* 148.5 MHz TMDS; CTS/N pairs recover exact source rates. */
+    regs[CMU_TMDSQPCLK_FREQ] = 37125;
+    regs[PKTDEC_ACR_PB3_0] = swab32(fs == 44100 ? 165000 : 148500);
+    regs[PKTDEC_ACR_PB7_4] = swab32((fs == 44100 ? 6272 : fs * 128 / 1000) << 8);
+    regs[PKTDEC_AUDIF_PB3_0] = ((channels - 1) << 8) | (coding_type << 4);
+}
 """
 
 MAIN = r"""
 int main(int argc, char **argv)
 {
     struct snps_hdmirx_dev d = { .audio_fs = 44100, .audio_clkrate = 5644800,
-                               .audio_running = true, .audio_lock = 1 };
+                               .audio_running = true, .audio_streaming = true,
+                               .audio_channels = 2, .audio_lock = 1,
+                               .plugged_cb = notify };
     assert(argc == 2);
     switch (atoi(argv[1])) {
     case 0:
@@ -111,6 +167,82 @@ int main(int argc, char **argv)
         hdmirx_audio_route(&d, 2);
         assert(d.audio_channels == 2 && regs[AUDIO_PROC_CONFIG0] == I2S_EN);
         break;
+    case 6: {
+        const u32 rates[] = { 44100, 48000, 96000 };
+        for (unsigned int from = 0; from < 3; from++)
+            for (unsigned int to = 0; to < 3; to++) {
+                if (from == to)
+                    continue;
+                d.audio_fs = rates[from];
+                d.audio_clkrate = rates[from] * 128;
+                d.audio_pre_state = 600;
+                source_audio(rates[to], 2, 1);
+                regs[AUDIO_FIFO_STATUS2] = 600;
+                int writes = fifo_writes, calls = clock_calls, runs = queued;
+                hdmirx_audio_work(&d.audio_work.work);
+                assert(d.audio_fs == rates[to] && clock_rate == rates[to] * 128);
+                assert(d.audio_clkrate == clock_rate && clock_calls == calls + 1);
+                assert(fifo_writes == writes + 2 && d.audio_pre_state == 0);
+                assert(d.audio_running && d.audio_streaming && notifications == 0);
+                assert(queued == runs + 1 && queued_delay == 200);
+            }
+        break;
+    }
+    case 7:
+        for (int i = 0; i < 2; i++) {
+            u32 channels = i == 0 ? 8 : 2;
+            source_audio(44100, channels, 1);
+            d.audio_pre_state = 600;
+            int writes = fifo_writes, runs = queued;
+            hdmirx_audio_work(&d.audio_work.work);
+            assert(d.audio_channels == channels && d.audio_fs == 44100);
+            assert(regs[AUDIO_PROC_CONFIG0] ==
+                   (I2S_EN | (channels > 2 ? SPEAKER_ALLOC_OVR_EN : 0)));
+            if (channels > 2)
+                assert(regs[AUDIO_PROC_CONFIG3] == 0xffffffff);
+            assert(fifo_writes == writes + 2 && d.audio_pre_state == 0);
+            assert(d.audio_running && d.audio_streaming && notifications == 0);
+            assert(queued == runs + 1 && queued_delay == 200);
+        }
+        break;
+    case 8:
+        /* AC-3's coding type is ignored: a supported recovered rate is adopted. */
+        source_audio(48000, 2, 2);
+        hdmirx_audio_work(&d.audio_work.work);
+        assert(d.audio_fs == 48000 && d.audio_clkrate == 6144000);
+        assert(fifo_writes == 2 && d.audio_pre_state == 0 && queued_delay == 200);
+        /* HBR's 768 kHz transport rate is invalid, leaving the stream armed. */
+        source_audio(768000, 8, 9);
+        d.audio_pre_state = 600;
+        regs[AUDIO_FIFO_STATUS2] = 700;
+        hdmirx_audio_work(&d.audio_work.work);
+        assert(d.audio_fs == 48000 && d.audio_channels == 2 && clock_calls == 1);
+        assert(fifo_writes == 2 && d.audio_pre_state == 600 && queued_delay == 1000);
+        assert(queued == 2 && d.audio_running && d.audio_streaming && notifications == 0);
+        break;
+    case 9: {
+        const u32 faults[] = { AFIFO_UNDERFLOW_ST, AFIFO_OVERFLOW_ST,
+                              AFIFO_UNDERFLOW_ST | AFIFO_OVERFLOW_ST };
+        for (unsigned int i = 0; i < 3; i++)
+            for (unsigned int valid = 0; valid < 2; valid++) {
+                source_audio(valid ? 96000 : 768000, 8, valid ? 1 : 9);
+                d.audio_fs = 44100;
+                d.audio_clkrate = 5644800;
+                d.audio_channels = 2;
+                d.audio_pre_state = 600;
+                regs[AUDIO_FIFO_STATUS2] = faults[i] | 700;
+                int writes = fifo_writes, calls = clock_calls, runs = queued;
+                hdmirx_audio_work(&d.audio_work.work);
+                assert(fifo_writes == writes + 2 && d.audio_pre_state == 0);
+                assert(d.audio_fs == (valid ? 96000U : 44100U));
+                assert(d.audio_channels == (valid ? 8U : 2U));
+                assert(d.audio_clkrate == (valid ? 12288000U : 5644800U));
+                assert(clock_calls == calls + (int)valid);
+                assert(d.audio_running && d.audio_streaming && notifications == 0);
+                assert(queued == runs + 1 && queued_delay == 200);
+            }
+        break;
+    }
     default: abort();
     }
     return 0;
@@ -137,6 +269,11 @@ class AudioHelpers(unittest.TestCase):
                                (TREE / DRIVER).read_text(), re.S)
             assert actual is not None
             rate_table = actual.group() + "\n"
+        deltas = tuple((ROOT / path).read_text() for path in (
+            "ceralive/0046-hdmirx-audio-clock-errors-and-rates.patch",
+            "ceralive/0047-hdmirx-audio-worker-lifetime.patch",
+            "ceralive/0048-hdmirx-audio-channel-routing.patch",
+        ))
         source = PRELUDE + rate_table
         for text, name in (
             (upstream, "hdmirx_audio_closest_fs"),
@@ -144,8 +281,16 @@ class AudioHelpers(unittest.TestCase):
             (clock, "hdmirx_audio_set_fs"),
             (lifecycle, "hdmirx_audio_stop"),
             (channels, "hdmirx_audio_route"),
+            (channels, "hdmirx_audio_channels"),
+            (upstream, "hdmirx_audio_clk_ppm_inc"),
+            (upstream, "hdmirx_audio_clk_adjust"),
+            (upstream, "hdmirx_audio_fifo_reinit"),
+            (upstream, "hdmirx_audio_work"),
         ):
-            source += function((TREE / DRIVER).read_text() if TREE else text, name) + "\n"
+            source += function((TREE / DRIVER).read_text() if TREE else text, name,
+                               deltas if not TREE and name in (
+                                   "hdmirx_audio_work", "hdmirx_audio_clk_ppm_inc",
+                               ) else ()) + "\n"
         program = directory / "audio-test.c"
         program.write_text(source + MAIN)
         subprocess.run(["cc", "-std=gnu11", "-Wall", "-Wextra", "-Werror",
@@ -171,6 +316,18 @@ class AudioHelpers(unittest.TestCase):
 
     def test_multichannel_to_stereo_clears_override(self) -> None:
         self.run_case(5)
+
+    def test_open_stream_adopts_live_rate_changes_and_resets_fifo(self) -> None:
+        self.run_case(6)
+
+    def test_open_stream_reroutes_live_channel_changes_and_resets_fifo(self) -> None:
+        self.run_case(7)
+
+    def test_non_pcm_ignores_coding_type_but_backs_off_on_hbr_rate(self) -> None:
+        self.run_case(8)
+
+    def test_fifo_faults_reset_even_with_invalid_rate_and_keep_worker_armed(self) -> None:
+        self.run_case(9)
 
     def test_canonical_trailing_context_is_valid_mailbox(self) -> None:
         subprocess.run(["git", "apply", "--numstat",
