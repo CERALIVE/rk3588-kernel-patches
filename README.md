@@ -258,6 +258,10 @@ as a patch.
 
 ## Changing the kernel pin
 
+Preflight retries a failed source lookup up to three times, then reports the
+Git error and an unreachable remote separately from a missing tag. See
+[`docs/PREFLIGHT.md`](docs/PREFLIGHT.md#what-blocks-preflight) for retry settings.
+
 `kernel-pin.env` is the single source of truth. Bumping it is a deliberate act:
 
 ```bash

@@ -25,6 +25,13 @@ verify and apply the patch series to that pinned commit. Armbian mapping
 fetches, alias changes, missing branch arms, and board-menu differences are
 printed as `info` and never change the exit status.
 
+A failed `git ls-remote` lookup is tried up to three times, with two seconds
+between attempts. Set `PREFLIGHT_RETRY_DELAY` to override that delay (`0` disables
+the backoff for tests). If all attempts fail, preflight prints Git's stderr and
+reports that the remote could not be reached. A reachable remote without the tag
+still reports `<tag> resolves to <missing>`; a different commit still reports
+the mismatch.
+
 The weekly workflow retains its existing non-blocking schedule treatment, but
 push and pull-request runs now receive the same informational-only Armbian
 comparison. Repair local pin failures; do not change the pin merely to follow
