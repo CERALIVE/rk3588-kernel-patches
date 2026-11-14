@@ -101,6 +101,41 @@ have to be true before a patch can be dropped, is tracked per patch in
 | `0048` | `ceralive/` | Channel routing, invalid-rate backoff and retained AVI IRQ definition |
 | `0049` | `ceralive/` | Rock family enablement and codec Kconfig closure |
 
+Current audio behavior is characterized off hardware by
+[`tests/test_hdmirx_audio_v4.py`](tests/test_hdmirx_audio_v4.py), which executes
+the extracted v4 helpers and worker with `0046`–`0048` applied:
+
+- With capture open, a recovered source-rate change among 44.1, 48 and 96 kHz,
+  or an Audio InfoFrame channel-count change, sets the reference clock to
+  recovered rate × 128, updates channel routing, re-initializes the FIFO
+  (CONTROL=1, wait 200–210 us, CONTROL=0), and clears `audio_pre_state`.
+  Returning from eight channels to stereo clears the speaker-allocation override.
+  Capture stays armed and the worker requeues after 200 ms.
+- FIFO underflow or overflow takes priority over format tracking. A valid
+  recovered rate updates the clock and routing before the same FIFO reset.
+  With an invalid rate the FIFO still resets, but the stored rate, clock and
+  channels stay unchanged; both paths requeue after 200 ms. If setting a valid
+  rate's clock fails, the worker preserves its recorded state and skips the reset.
+- The worker does not inspect the Audio InfoFrame coding type. An ordinary
+  non-PCM stream with a supported recovered rate follows the same format-change
+  path; this does not implement decoding or prove usable PCM capture. HBR's
+  768 kHz transport rate is unsupported. Without a FIFO fault, an invalid
+  recovered rate preserves the prior state, skips FIFO reset and clock steering,
+  and backs off to 1000 ms while capture remains armed.
+- The 200 ms worker nudges the reference clock in ppm steps to balance the FIFO.
+  During ordinary tracking its next delay ranges from 200 to 500 ms, with
+  30/50/250/450 ppm corrections when the fill offset exceeds 16/32/100/200
+  respectively and continues moving away from the target. A refused clock
+  correction leaves the stored clock rate unchanged.
+- None of these worker paths sends a userspace format or jack notification,
+  stops the ALSA stream, or renegotiates its parameters. At initial `hw_params`,
+  the recovered rate wins over the requested rate; an unavailable recovered
+  rate falls back to the request, then 48 kHz. Live source changes therefore
+  do not promise that an already-open userspace stream matches the new format.
+
+These are code-level findings for the current immutable series. Live audio
+quality, synchronization and recovery still require board qualification.
+
 Where an upstream counterpart was evaluated as a replacement and the answer was
 written down, the verdict gets its own document. So far:
 
